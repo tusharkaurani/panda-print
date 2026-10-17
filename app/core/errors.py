@@ -29,6 +29,7 @@ def explain(source: str, target: str, exc: BaseException) -> SourceError:
     """Turn a low-level network exception into a SourceError."""
     if isinstance(exc, SourceError):
         return exc
+    target = target[:1].upper() + target[1:]
     if isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, BaseException):
         exc = exc.reason
     if isinstance(exc, (socket.timeout, TimeoutError)):

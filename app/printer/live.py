@@ -106,5 +106,5 @@ class LivePrinter:
     def _wrap(source: str, target: str, exc: Exception) -> SourceError:
         if isinstance(exc, ipp.IppError):
             hint = "Check CUPS_QUEUE and that the queue exists." if exc.status == 0x0406 else None
-            return SourceError(source, f"{target}: {exc}", hint)
+            return SourceError(source, f"{target[:1].upper() + target[1:]}: {exc}", hint)
         return explain(source, target, exc)
