@@ -1,0 +1,33 @@
+# panda-print launcher links
+#
+# Each entry becomes a tile on the home page. Edit this file any time: the page
+# picks up changes within a minute (or on reload) with no restart or rebuild.
+# If the file has a mistake, the page shows a friendly message and keeps the last
+# working version of the tiles.
+#
+# Fields
+#   name         required  the tile title
+#   url          required  http(s)://... (or a /path on this same host)
+#   description  optional  one short line under the title
+#   logo         optional  one of:
+#                            - a file name in the logos/ folder next to this file
+#                              (svg, png, jpg, webp, gif, ico), e.g.  cups.svg
+#                            - a full image URL, e.g.  https://example.com/logo.png
+#                            - a bundled generic icon:  builtin:printer, builtin:server,
+#                              builtin:link, builtin:globe
+#                          Leave it out (or if the file is missing) and a coloured
+#                          letter tile is shown instead.
+#   new_tab      optional  true (default) opens in a new tab, false in the same tab
+
+links:
+  - name: Printer Control Panel
+    url: http://192.168.1.18/
+    description: The printer's own web interface
+    logo: builtin:printer
+    new_tab: true
+
+  - name: CUPS Dashboard
+    url: http://192.168.1.10:631/
+    description: Print queues and job administration
+    logo: builtin:server
+    new_tab: true

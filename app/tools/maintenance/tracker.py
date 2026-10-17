@@ -1,0 +1,141 @@
+"""Watches the printer's lifetime counter and records what happened.
+
+Every poll: (1) look at the CUPS job list for nozzle checks printed by the host
+timer, (2) read the counter. A counter increase is split into pages we expect
+(unclaimed nozzle checks, from this app or the host timer) and everything else,
+which is somebody printing. That is how "last print" and "last nozzle check"
+stay separate even though SNMP only gives one number.
+
+Accuracy notes: a change is stamped with the time we *noticed* it and the
+previous read time, so it is only as precise as the poll interval.
+"""
+from __future__ import annotations
+
+import logging
+import threading
+from pathlib import Path
+
+from app.core.errors import SourceError
+from app.printer import Attrs
+from app.settings import Settings
+from app.tools.maintenance import idle
+from app.tools.maintenance.normalize import first
+from app.tools.maintenance.store import Store
+
+log = logging.getLogger(__name__)
+
+APP_USER = "panda-print"
+APP_JOB_MARKER = "panda-print"  # appears in the job name of checks we submit
+JOB_COMPLETED, JOB_CANCELED, JOB_ABORTED = 9, 7, 8
+
+
+def split_delta(delta: int, unclaimed_checks: int) -> tuple[int, int]:
+    """A counter rise of `delta` pages -> (pages that were nozzle checks, pages from others)."""
+    nozzle = max(0, min(delta, unclaimed_checks))
+    return nozzle, delta - nozzle
+
+
+class Tracker:
+    def __init__(self, settings: Settings, store: Store, printer, clock):
+        self.s, self.store, self.printer, self.clock = settings, store, printer, clock
+        self._lock = threading.Lock()
+
+    # ------------------------------------------------------------ polling
+    def poll(self) -> None:
+        with self._lock:
+            now = self.clock()
+            self.store.put("last_poll_ts", now)
+            try:
+                self.import_host_checks(self.printer.list_jobs())
+                self.store.put("cups_error", None)
+            except SourceError as e:
+                self.store.put("cups_error", e.message)
+            try:
+                count = self.printer.read_counter()
+            except SourceError as e:
+                self.store.put("counter_error", e.message)
+                return
+            self.store.put("counter_error", None)
+            self.record_counter(count, now)
+
+    def ensure_fresh(self, max_age: float) -> None:
+        """Poll now unless a poll already happened within max_age seconds."""
+        last = self.store.get("last_poll_ts")
+        if last is None or self.clock() - float(last) >= max_age:
+            self.poll()
+
+    # ------------------------------------------------------------ CUPS sync
+    def import_host_checks(self, jobs: list[Attrs]) -> int:
+        """Record nozzle-check jobs that the host timer submitted (not ours)."""
+        pattern = self.s.nozzle_job_pattern.lower()
+        added = 0
+        for j in jobs:
+            name = str(first(j, "job-name", ""))
+            user = str(first(j, "job-originating-user-name", ""))
+            if pattern not in name.lower():
+                continue
+            if APP_JOB_MARKER in name.lower() or user == APP_USER:
+                continue  # one of ours; recorded when we submitted it
+            job_id, created = first(j, "job-id"), first(j, "time-at-creation")
+            if job_id is None or created is None:
+                continue
+            state = first(j, "job-state")
+            if state == JOB_COMPLETED:
+                ts, status, msg = first(j, "time-at-completed", created), "completed", None
+            elif state in (JOB_CANCELED, JOB_ABORTED):
+                ts, status, msg = created, "failed", "Job was canceled" if state == JOB_CANCELED else "Job was aborted"
+            else:
+                continue  # still queued or printing: import it when it finishes
+            if self.store.add_check(float(ts), "host", status, int(job_id), msg, cups_key=f"{job_id}:{created}"):
+                added += 1
+        return added
+
+    # ------------------------------------------------------------ counter
+    def host_state(self) -> tuple[idle.HostState | None, str | None]:
+        """The host timer's state file, if mounted: (state, error)."""
+        path: Path = self.s.host_state_file
+        try:
+            text = path.read_text()
+        except FileNotFoundError:
+            return None, None
+        except OSError as e:
+            return None, f"Could not read {path}: {e.strerror or e}"
+        state = idle.parse_host_state(text)
+        return state, (None if state else f"{path} is not in the expected '<count> <epoch>' format")
+
+    def record_counter(self, count: int, now: float) -> None:
+        last_raw = self.store.get("last_count")
+        if last_raw is None:
+            self._first_sample(count, now)
+            return
+        last, prev_ts = int(last_raw), self.store.get("last_count_ts")
+        prev = float(prev_ts) if prev_ts else None
+        self.store.put("last_count_ts", now)
+        if count == last:
+            return
+        self.store.put("last_count", count)
+        if count < last:
+            self.store.add_activity(now, 0, count, "baseline",
+                                    note=f"Counter went backwards ({last} to {count}); tracking restarted")
+            return
+        unclaimed = self.store.unclaimed_checks(now - self.s.attribution_window)
+        nozzle, other = split_delta(count - last, len(unclaimed))
+        if nozzle:
+            self.store.claim([r["id"] for r in unclaimed[:nozzle]], now)
+            self.store.add_activity(now, nozzle, count, "nozzle", prev)
+        if other:
+            self.store.add_activity(now, other, count, "external", prev)
+        log.info("counter %s -> %s (%s nozzle, %s other)", last, count, nozzle, other)
+
+    def _first_sample(self, count: int, now: float) -> None:
+        """First ever read: start the idle clock from the host timer's state if it
+        agrees with the counter, otherwise from now."""
+        host, _ = self.host_state()
+        if host and host.count == count:
+            ts, note = host.changed_at, "From the host timer's state file (can lag the real print by a day)"
+        else:
+            ts, note = now, "First reading; earlier prints are unknown"
+        self.store.put("first_seen_ts", now)
+        self.store.put("last_count", count)
+        self.store.put("last_count_ts", now)
+        self.store.add_activity(ts, 0, count, "baseline", note=note)
