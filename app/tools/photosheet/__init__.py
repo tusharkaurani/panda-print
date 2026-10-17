@@ -77,19 +77,45 @@ def create(ctx: AppContext) -> Tool:
         except lay.LayoutError as e:
             raise BadRequest(str(e)) from None
 
-    def read_image() -> tuple[bytes, pdfsheet.Jpeg]:
-        request.max_content_length = settings.max_page_mb * 2**20 + 512 * 1024
+    def read_images() -> list[tuple[bytes, pdfsheet.Jpeg]]:
+        """The photos sent with this request (one or several), each checked to be a usable JPEG."""
+        request.max_content_length = settings.max_page_mb * 2**20 + 512 * 1024  # all the photos together
         try:
-            upload = request.files.get("image")
+            uploads = request.files.getlist("image")
         except RequestEntityTooLarge:
-            raise BadRequest(f"That picture is larger than {settings.max_page_mb} MB.", 413) from None
-        if upload is None:
+            raise BadRequest(f"Those pictures are larger than {settings.max_page_mb} MB together.", 413) from None
+        if not uploads:
             raise BadRequest("Choose a photo first.")
-        data = upload.read()
-        try:
-            return data, pdfsheet.jpeg_info(data)
-        except pdfsheet.ImageError as e:
-            raise BadRequest(str(e), 415) from None
+        if len(uploads) > lay.MAX_PHOTOS:
+            raise BadRequest(f"Use at most {lay.MAX_PHOTOS} different photos on one sheet.")
+        out = []
+        for n, upload in enumerate(uploads, start=1):
+            data = upload.read()
+            try:
+                out.append((data, pdfsheet.jpeg_info(data)))
+            except pdfsheet.ImageError as e:
+                raise BadRequest(f"Photo {n}: {e}" if len(uploads) > 1 else str(e), 415) from None
+        return out
+
+    def plan(raw: dict, n_photos: int, min_margin: float, paper_override=None) -> tuple[lay.Layout, list[int], list[int]]:
+        """The layout, how many copies of each photo, and which photo sits in each place."""
+        layout_ = compute(raw, min_margin, paper_override)
+        asked = raw.get("counts")
+        if asked is None:
+            asked = [1] * n_photos  # no counts: equal shares
+        if (not isinstance(asked, list) or len(asked) != n_photos
+                or any(isinstance(c, bool) or not isinstance(c, int) or not 1 <= c <= lay.MAX_COPIES for c in asked)):
+            raise BadRequest(f"Give each of the {n_photos} photo{'s' if n_photos != 1 else ''} a number of copies from 1 to {lay.MAX_COPIES}.")
+        counts = lay.allocate(asked, layout_.count, bool(raw.get("fill_page", True))) if n_photos > 1 else [layout_.count]
+        left_off = sum(1 for c in counts if c == 0)
+        if left_off:
+            layout_.warnings.append(f"Only {layout_.count} photo{'s' if layout_.count != 1 else ''} fit, so {left_off} of your {n_photos} photos "
+                                    f"{'is' if left_off == 1 else 'are'} left off the sheet.")
+        trimmed = layout_.count - sum(counts)
+        if trimmed > 0:  # fill_page off: the places nobody asked for stay empty
+            layout_.cells = layout_.cells[: sum(counts)]
+            layout_.count = len(layout_.cells)
+        return layout_, counts, lay.assignment(counts)
 
     def read_json_field(name: str) -> dict:
         try:
@@ -100,14 +126,14 @@ def create(ctx: AppContext) -> Tool:
             raise BadRequest(f"The {name} were not understood.")
         return value
 
-    def pdf_for(layout_: lay.Layout, data: bytes, info: pdfsheet.Jpeg, raw: dict, for_media: bool) -> bytes:
+    def pdf_for(layout_: lay.Layout, images: list, assign: list[int], raw: dict, for_media: bool) -> bytes:
         fit = "fit" if raw.get("fit") == "fit" else "fill"
         def unit(key):
             v = raw.get(key, 0.5)
             return min(max(float(v), 0.0), 1.0) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.5
-        return pdfsheet.build_pdf(layout_, data, info, fit=fit, crop_x=unit("crop_x"), crop_y=unit("crop_y"),
-                                  marks=bool(raw.get("marks", True)), outline=bool(raw.get("outline", False)),
-                                  for_media=for_media, title="Photo sheet")
+        return pdfsheet.build_sheet(layout_, images, assign, fit=fit, crop_x=unit("crop_x"), crop_y=unit("crop_y"),
+                                    marks=bool(raw.get("marks", True)), outline=bool(raw.get("outline", False)),
+                                    for_media=for_media, title="Photo sheet")
 
     def printer_or_404(pid: str):
         printer = ctx.printers.get(pid or "")
@@ -144,17 +170,25 @@ def create(ctx: AppContext) -> Tool:
         raw = request.get_json(silent=True)
         if not isinstance(raw, dict):
             return fail(BadRequest("The layout settings are missing."))
+        imgs = raw.get("images") if isinstance(raw.get("images"), list) else ([raw["image"]] if isinstance(raw.get("image"), dict) else [])
+        n_photos = max(len(imgs), 1)
+        if n_photos > lay.MAX_PHOTOS:
+            return fail(BadRequest(f"Use at most {lay.MAX_PHOTOS} different photos on one sheet."))
         try:
             min_margin = float(raw.get("min_margin", capabilities.DEFAULT_MIN_MARGIN_MM))
-            result = compute(raw, 0.0 if raw.get("borderless") else min_margin).to_dict()
+            layout_, counts, assign = plan(raw, n_photos, 0.0 if raw.get("borderless") else min_margin)
+            result = layout_.to_dict()
         except (BadRequest, TypeError, ValueError) as e:
             return fail(e if isinstance(e, BadRequest) else BadRequest("Those numbers weren't understood."))
-        img = raw.get("image")
-        if isinstance(img, dict) and result["cells"]:  # how sharp the picture will be at this size
+        result["counts"], result["assign"] = counts, assign
+        if result["cells"]:  # how sharp the sharpest-limited photo will be at this size
             try:
-                info = pdfsheet.Jpeg(int(img["width"]), int(img["height"]), 3)
                 c = result["cells"][0]
-                result["dpi"] = round(pdfsheet.effective_dpi(info, c["w"], c["h"], "fit" if raw.get("fit") == "fit" else "fill"))
+                fit = "fit" if raw.get("fit") == "fit" else "fill"
+                dpis = [pdfsheet.effective_dpi(pdfsheet.Jpeg(int(i["width"]), int(i["height"]), 3), c["w"], c["h"], fit)
+                        for i, used in zip(imgs, counts) if used]
+                if dpis:
+                    result["dpi"] = round(min(dpis))
             except (KeyError, TypeError, ValueError, ZeroDivisionError):
                 pass
         return jsonify(ok=True, data=result)
@@ -162,10 +196,10 @@ def create(ctx: AppContext) -> Tool:
     @bp.post("/pdf")
     def post_pdf():
         try:
-            data, info = read_image()
+            images = read_images()
             raw = read_json_field("settings")
-            result = compute(raw, 0.0)  # a downloaded sheet is never "too close to the edge" for a printer we don't know
-            body = pdf_for(result, data, info, raw, for_media=False)
+            result, _counts, assign = plan(raw, len(images), 0.0)  # a downloaded sheet is never "too close to the edge" for a printer we don't know
+            body = pdf_for(result, images, assign, raw, for_media=False)
         except BadRequest as e:
             return fail(e)
         resp = Response(body, mimetype="application/pdf")
@@ -182,7 +216,7 @@ def create(ctx: AppContext) -> Tool:
             if not printer.cups_queue:
                 raise BadRequest("This printer has no CUPS print queue, so it can't print from here.",
                                  400, "Download the PDF instead, or set up CUPS and choose the queue under Printers → Edit.")
-            data, info = read_image()
+            images = read_images()
             raw = read_json_field("settings")
             opts = read_json_field("options")
             backend = ctx.backend_for(printer)
@@ -218,7 +252,7 @@ def create(ctx: AppContext) -> Tool:
                 raise BadRequest("Copies must be a whole number from 1 to 20.")
             if copies > 1:
                 job.append((ipp.INTEGER, "copies", copies))
-            result = compute(raw, 0.0 if media["borderless"] else caps["min_margin"], (media["width"], media["height"]))
+            result, _counts, assign = plan(raw, len(images), 0.0 if media["borderless"] else caps["min_margin"], (media["width"], media["height"]))
             now = clock()
             times = [r["ts"] for r in db.query("SELECT ts FROM ps_prints WHERE printer_id=? AND ts>=?", (printer.id, now - rule.window))]
             verdict = ratelimit.check(rule, times, now)
@@ -226,7 +260,7 @@ def create(ctx: AppContext) -> Tool:
                 resp = jsonify(ok=False, error={"source": "rate-limit", "message": verdict.reason, "retry_after": verdict.retry_after})
                 resp.headers["Retry-After"] = str(verdict.retry_after)
                 return resp, 429
-            pdf = pdf_for(result, data, info, raw, for_media=True)  # rotated onto the page the way the paper is fed
+            pdf = pdf_for(result, images, assign, raw, for_media=True)  # rotated onto the page the way the paper is fed
             try:
                 job_id = backend.submit_document(JOB_NAME, pdf, APP_USER, "application/pdf", options=job)
             except SourceError as e:

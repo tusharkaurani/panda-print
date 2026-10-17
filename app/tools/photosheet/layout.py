@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 MM_PER_INCH = 25.4
 MAX_COPIES = 600  # a sanity cap: a 5 mm photo on A4 would otherwise ask for thousands
+MAX_PHOTOS = 20  # different photos on one sheet
 MIN_PHOTO_MM, MAX_PHOTO_MM = 5.0, 300.0
 MIN_PAPER_MM, MAX_PAPER_MM = 40.0, 500.0
 MAX_MARGIN_MM, MAX_GAP_MM = 100.0, 50.0
@@ -198,3 +199,39 @@ def compute(req: Request) -> Layout:
     if req.mode == "fill" and best.capacity >= MAX_COPIES:
         best.warnings.append(f"Showing the first {MAX_COPIES} photos.")
     return best
+
+
+def allocate(requested: list[int], slots: int, fill: bool = True) -> list[int]:
+    """How many copies of each photo go on a sheet with `slots` places.
+
+    `requested` are the copies the person asked for; they count as a ratio. Equal requests (the default is 1 each)
+    give equal shares. With `fill` the sheet is filled: if it holds more than was asked for, the shares grow in the
+    same ratio; if it holds fewer, they shrink in the same ratio. Without `fill`, a request that fits is printed
+    exactly as asked. Rounding leftovers are handed out one at a time, to the photos that lost the most to
+    rounding and then in order, so no photo is favoured. Every photo keeps at least one place when there is room
+    for them all.
+    """
+    k = len(requested)
+    if k == 0 or slots <= 0:
+        return [0] * k
+    if any(isinstance(c, bool) or not isinstance(c, int) or c < 1 for c in requested):
+        raise LayoutError("Each photo needs at least one copy.")
+    total = sum(requested)
+    if not fill and total <= slots:
+        return list(requested)
+    exact = [c * slots / total for c in requested]
+    got = [int(math.floor(e + 1e-9)) for e in exact]
+    for i in sorted(range(k), key=lambda i: (-(exact[i] - got[i]), i))[: slots - sum(got)]:
+        got[i] += 1
+    if slots >= k:  # nobody disappears from the sheet
+        for i in range(k):
+            while got[i] == 0:
+                donor = max(range(k), key=lambda j: (got[j], -requested[j], -j))  # the biggest share, the smaller ask first
+                got[donor] -= 1
+                got[i] += 1
+    return got
+
+
+def assignment(counts: list[int]) -> list[int]:
+    """Which photo goes in each place, in reading order: all copies of the first photo, then the second, ..."""
+    return [i for i, c in enumerate(counts) for _ in range(c)]

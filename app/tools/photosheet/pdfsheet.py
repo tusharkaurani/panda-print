@@ -74,9 +74,16 @@ def _scale(info: Jpeg, cw: float, ch: float, fit: str) -> float:
     return max(s_w, s_h) if fit == "fill" else min(s_w, s_h)
 
 
-def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, *, fit: str = "fill", crop_x: float = 0.5, crop_y: float = 0.5,
-              marks: bool = True, outline: bool = False, for_media: bool = False, title: str = "Photo sheet") -> bytes:
-    """The PDF bytes. `fit`: "fill" crops the picture to the photo size, "fit" shows all of it on white.
+def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, **kw) -> bytes:
+    """A sheet of one photo (see build_sheet)."""
+    return build_sheet(layout, [(jpeg, info)], None, **kw)
+
+
+def build_sheet(layout: Layout, images: list[tuple[bytes, Jpeg]], assign: list[int] | None, *, fit: str = "fill",
+                crop_x: float = 0.5, crop_y: float = 0.5, marks: bool = True, outline: bool = False,
+                for_media: bool = False, title: str = "Photo sheet") -> bytes:
+    """The PDF bytes. `images` are the photos (JPEG bytes and their size); `assign[i]` is the photo in place i
+    (default: the first photo everywhere). `fit`: "fill" crops the picture to the photo size, "fit" shows all of it on white.
     `for_media`: a landscape layout is rotated onto a portrait page, the way the paper is fed into the printer
     (so the printer needs no rotating of its own). The picture is never rotated relative to the sheet."""
     lw, lh = layout.page_w, layout.page_h
@@ -95,7 +102,9 @@ def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, *, fit: str = "fill", cro
 
     if outline or marks:
         out.append("0.25 w 0.2 G")
-    for cell in layout.cells:
+    for n, cell in enumerate(layout.cells):
+        which = assign[n] if assign and n < len(assign) else 0
+        info = images[which][1]
         x, w, h = cell["x"], cell["w"], cell["h"]
         y = ypdf(cell["y"], h)
         scale = _scale(info, w, h, fit)
@@ -105,7 +114,7 @@ def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, *, fit: str = "fill", cro
         iy = y + (h - dh) * ((1 - crop_y) if dh > h else 0.5)
         out.append("q")
         out.append(f"{pt(x)} {pt(y)} {pt(w)} {pt(h)} re W n")
-        out.append(f"{pt(dw)} 0 0 {pt(dh)} {pt(ix)} {pt(iy)} cm /Im0 Do")
+        out.append(f"{pt(dw)} 0 0 {pt(dh)} {pt(ix)} {pt(iy)} cm /Im{which} Do")
         out.append("Q")
         if outline:
             out.append(f"{pt(x)} {pt(y)} {pt(w)} {pt(h)} re S")
@@ -131,17 +140,21 @@ def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, *, fit: str = "fill", cro
 
     content = ("\n".join(out) + "\n").encode()
     objs: list[bytes] = []
+    first_image = 5
     objs.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     objs.append(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
     media = f"[0 0 {pt(pw_mm)} {pt(ph_mm)}]"
+    xobjects = " ".join(f"/Im{i} {first_image + i} 0 R" for i in range(len(images)))
     objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox {media} /Contents 4 0 R "
-                f"/Resources << /XObject << /Im0 5 0 R >> >> >>".encode())
+                f"/Resources << /XObject << {xobjects} >> >> >>".encode())
     objs.append(b"<< /Length %d >>\nstream\n" % len(content) + content + b"endstream")
-    cs = "/DeviceRGB" if info.components == 3 else "/DeviceGray"
-    objs.append((f"<< /Type /XObject /Subtype /Image /Width {info.width} /Height {info.height} /ColorSpace {cs} "
-                 f"/BitsPerComponent 8 /Filter /DCTDecode /Length {len(jpeg)} >>\nstream\n").encode() + jpeg + b"\nendstream")
+    for jpeg, info in images:
+        cs = "/DeviceRGB" if info.components == 3 else "/DeviceGray"
+        objs.append((f"<< /Type /XObject /Subtype /Image /Width {info.width} /Height {info.height} /ColorSpace {cs} "
+                     f"/BitsPerComponent 8 /Filter /DCTDecode /Length {len(jpeg)} >>\nstream\n").encode() + jpeg + b"\nendstream")
     safe = "".join(c for c in title if c.isalnum() or c in " -_.,")[:80] or "Photo sheet"
     objs.append(f"<< /Title ({safe}) /Producer (panda-print) >>".encode())
+    info_obj = len(objs)
 
     buf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets = []
@@ -152,5 +165,5 @@ def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, *, fit: str = "fill", cro
     buf += f"xref\n0 {len(objs) + 1}\n".encode() + b"0000000000 65535 f \n"
     for off in offsets:
         buf += f"{off:010d} 00000 n \n".encode()
-    buf += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    buf += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R /Info {info_obj} 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return bytes(buf)

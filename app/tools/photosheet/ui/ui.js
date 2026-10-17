@@ -14,12 +14,12 @@ export async function mount(root, kit) {
   // ------------------------------------------------------------------ state
   const S = {
     unit: 'mm', photoW: 35, photoH: 45, margin: 5, gap: 2, orientation: 'auto', mode: 'fill', cols: 5, rows: 6, count: 12,
-    fit: 'fill', cropX: 0.5, cropY: 0.5, marks: true, outline: false, paper: 'a4', customW: 210, customH: 297,
+    fit: 'fill', cropX: 0.5, cropY: 0.5, marks: true, outline: false, fillPage: true, paper: 'a4', customW: 210, customH: 297,
     mediaType: '', quality: '', resolution: '', copies: 1,
   };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage is optional */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage is optional */ } };
-  let image = null;       // {blob, width, height, name, bitmap}
+  let images = [];        // the photos: {orig (ImageBitmap), width, height, name, copies, jpegs: {quality: Blob}}
   let config = null;      // GET /photosheet/config
   let layout = null;      // the last good answer of POST /photosheet/layout
   let printer = null;     // this printer's choices, if CUPS is set up
@@ -65,47 +65,76 @@ export async function mount(root, kit) {
     return h('label', { class: 'check-row', for: `ps-${key}` }, el, h('span', {}, h('strong', {}, label), hint && h('span', { class: 'hint' }, hint)));
   };
 
-  // ------------------------------------------------------------------ 1. the photo
-  const picker = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: () => { if (picker.files[0]) loadImage(picker.files[0]); picker.value = ''; } });
-  const dropzone = h('button', { class: 'drop', type: 'button', title: 'Choose your edited photo (JPEG, PNG or WebP)', onclick: () => picker.click() },
-    icon('image', 28), h('strong', {}, 'Choose your photo'), h('span', { class: 'hint' }, 'or drop it here. Use the photo you already edited, cropped to your size.'));
-  const photoNote = h('div', { class: 'photo-note', hidden: true });
-  const photoBox = h('div', { class: 'photo-box' }, dropzone, photoNote);
+  // ------------------------------------------------------------------ 1. the photos
+  const picker = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: () => { if (picker.files.length) loadImages([...picker.files]); picker.value = ''; } });
+  const dropzone = h('button', { class: 'drop', type: 'button', title: 'Choose one or more edited photos (JPEG, PNG or WebP)', onclick: () => picker.click() },
+    icon('image', 28), h('strong', {}, 'Choose your photos'), h('span', { class: 'hint' }, 'or drop them here. Use photos you already edited and cropped to your size. Pick several to share one sheet.'));
+  const photoList = h('ul', { class: 'photo-list', hidden: true });
+  const fillBox = h('div', { class: 'fill-box', hidden: true });
+  const addMore = h('button', { class: 'btn small', type: 'button', title: 'Add more photos to this sheet', hidden: true, onclick: () => picker.click() }, icon('image', 15), 'Add photos');
+  const photoBox = h('div', { class: 'photo-box' }, dropzone, photoList, addMore, fillBox);
   for (const ev of ['dragover', 'dragenter']) photoBox.addEventListener(ev, (e) => { e.preventDefault(); photoBox.classList.add('over'); });
   for (const ev of ['dragleave', 'drop']) photoBox.addEventListener(ev, () => photoBox.classList.remove('over'));
-  photoBox.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer?.files?.[0]; if (f) loadImage(f); });
+  photoBox.addEventListener('drop', (e) => { e.preventDefault(); const f = [...(e.dataTransfer?.files || [])]; if (f.length) loadImages(f); });
 
-  async function loadImage(file) {
-    if (!file.type.startsWith('image/')) { toast('That file is not a picture.', 'bad'); return; }
-    let bitmap;
-    try { bitmap = await createImageBitmap(file); } catch { toast('This browser can’t read that picture. Try a JPEG or PNG.', 'bad'); return; }
-    const k = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-    const w = Math.round(bitmap.width * k), hgt = Math.round(bitmap.height * k);
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = hgt;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, hgt);  // transparent areas print white
-    ctx.drawImage(bitmap, 0, 0, w, hgt);
-    const limit = (config?.limits?.max_mb || 10) * 2 ** 20 - 64 * 1024;
-    let blob = null;
-    for (const q of [0.95, 0.9, 0.85, 0.8]) {  // keep as much quality as the upload limit allows
-      blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', q));
-      if (blob && blob.size <= limit) break;
+  const MAX_PHOTOS = 20;
+  async function loadImages(files) {
+    for (const file of files) {
+      if (images.length >= MAX_PHOTOS) { toast(`At most ${MAX_PHOTOS} different photos fit on one sheet.`, 'bad'); break; }
+      if (!file.type.startsWith('image/')) { toast(`${file.name} is not a picture.`, 'bad'); continue; }
+      let bitmap;
+      try { bitmap = await createImageBitmap(file); } catch { toast(`This browser can’t read ${file.name}. Try a JPEG or PNG.`, 'bad'); continue; }
+      const k = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+      const width = Math.round(bitmap.width * k), height = Math.round(bitmap.height * k);
+      images.push({ orig: bitmap, width, height, name: file.name, copies: 1, jpegs: {} });
     }
-    if (!blob || blob.size > limit) { toast('That picture is too large to send. Make it smaller first.', 'bad'); return; }
-    image = { blob, width: w, height: hgt, name: file.name, bitmap: await createImageBitmap(blob) };
-    paintPhotoNote();
+    paintPhotos();
     changed();
   }
-  function paintPhotoNote() {
-    photoNote.hidden = !image;
-    dropzone.hidden = Boolean(image);  // the photo's own row (with Change photo) takes its place
-    if (!image) return;
-    const thumb = document.createElement('canvas');
-    thumb.width = 64; thumb.height = Math.round(64 * image.height / image.width);
-    thumb.getContext('2d').drawImage(image.bitmap, 0, 0, thumb.width, thumb.height);
-    photoNote.replaceChildren(thumb, h('div', {}, h('strong', {}, image.name), h('div', { class: 'hint' }, `${image.width} × ${image.height} pixels`),
-      h('button', { class: 'btn small', type: 'button', title: 'Remove this photo and choose another', onclick: () => { image = null; paintPhotoNote(); changed(); } }, 'Change photo')));
+  // Each photo is sent as a JPEG. All of them together must fit the upload limit, so quality steps down only if it must.
+  async function encode(img, q) {
+    if (!img.jpegs[q]) {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);  // transparent areas print white
+      ctx.drawImage(img.orig, 0, 0, c.width, c.height);
+      img.jpegs[q] = await new Promise((res) => c.toBlob(res, 'image/jpeg', q));
+    }
+    return img.jpegs[q];
+  }
+  async function jpegs() {
+    const limit = (config?.limits?.max_mb || 10) * 2 ** 20 - 96 * 1024;
+    for (const q of [0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.5]) {
+      const blobs = await Promise.all(images.map((i) => encode(i, q)));
+      if (blobs.every(Boolean) && blobs.reduce((n, b) => n + b.size, 0) <= limit) return blobs;
+    }
+    return null;
+  }
+  const resultText = (i) => (layout?.counts && layout.counts.length === images.length ? layout.counts[i] : null);
+  function paintPhotos() {
+    const some = images.length > 0;
+    dropzone.hidden = some; photoList.hidden = !some; addMore.hidden = !some;
+    fillBox.hidden = images.length < 2;
+    photoList.replaceChildren(...images.map((img, i) => {
+      const thumb = document.createElement('canvas');
+      thumb.width = 48; thumb.height = Math.max(1, Math.round(48 * img.height / img.width));
+      thumb.getContext('2d').drawImage(img.orig, 0, 0, thumb.width, thumb.height);
+      const copies = h('input', { class: 'input mini', type: 'number', min: 1, max: 600, step: 1, value: img.copies, 'aria-label': `Copies of ${img.name}`, title: 'Copies of this photo, as a share of the sheet',
+        oninput: () => { const v = parseInt(copies.value, 10); if (Number.isFinite(v) && v >= 1) { img.copies = v; changed(); } } });
+      return h('li', { class: 'photo-row' }, thumb,
+        h('div', { class: 'photo-meta' }, h('strong', { title: img.name }, img.name), h('span', { class: 'hint' }, `${img.width} × ${img.height} px`)),
+        images.length > 1 ? h('label', { class: 'copies' }, h('span', { class: 'hint' }, 'Copies'), copies, h('span', { class: 'result', 'data-i': i }, '')) : null,
+        h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Remove ${img.name}`, title: 'Remove this photo', onclick: () => { images.splice(i, 1); paintPhotos(); changed(); } }, icon('x', 16)));
+    }));
+    fillBox.replaceChildren(check('fillPage', 'Fill the whole page', 'Copies are a ratio: 1, 1, 1 shares the page equally; 2, 1, 1 gives the first photo half of it. Switch off to print exactly the copies you typed.'));
+    paintResults();
+  }
+  function paintResults() {
+    for (const el of photoList.querySelectorAll('.result')) {
+      const n = resultText(Number(el.dataset.i));
+      el.textContent = n == null ? '' : n === 0 ? '→ not on the sheet' : `→ ${n} on the sheet`;
+    }
   }
 
   // ------------------------------------------------------------------ 2. photo size
@@ -178,7 +207,7 @@ export async function mount(root, kit) {
 
   // ------------------------------------------------------------------ assemble the form
   const form = h('div', { class: 'ps-form' },
-    h('section', { class: 'card ps-card' }, sectionHead('image', 'Your photo'), photoBox, picker),
+    h('section', { class: 'card ps-card' }, sectionHead('image', 'Your photos'), photoBox, picker),
     h('section', { class: 'card ps-card' }, sectionHead('hash', 'Photo size'),
       h('div', { class: 'field' }, h('label', { for: 'ps-preset' }, 'Size'), presetSelect),
       h('div', { class: 'three' }, numberField('photoW', 'Width'), numberField('photoH', 'Height'),
@@ -215,10 +244,15 @@ export async function mount(root, kit) {
   const canvas = h('canvas', { class: 'sheet-canvas', role: 'img', 'aria-label': 'Preview of the sheet' });
   const summary = h('p', { class: 'summary', 'aria-live': 'polite' });
   const warnings = h('div', { class: 'warns' });
-  const downloadBtn = h('button', { class: 'btn', type: 'button', title: 'Download the sheet as a PDF to print yourself', disabled: true, onclick: () => download() }, icon('download', 16), 'Download PDF');
-  const printBtn = h('button', { class: 'btn primary', type: 'button', title: 'Show the sheet, then print it on the selected printer', disabled: true, onclick: () => openPrint() }, icon('printer', 16), 'Preview and print…');
-  const side = h('aside', { class: 'ps-side' }, h('div', { class: 'card ps-card sticky' }, h('div', { class: 'sheet-wrap' }, canvas), summary, warnings,
-    h('div', { class: 'actions left' }, printBtn, downloadBtn)));
+  const downloadBtns = [], printBtns = [];
+  const actionRow = (extra = '') => {
+    const d = h('button', { class: 'btn', type: 'button', title: 'Download the sheet as a PDF to print yourself', disabled: true, onclick: () => download() }, icon('download', 16), 'Download PDF');
+    const p = h('button', { class: 'btn primary', type: 'button', title: 'Show the sheet, then print it on the selected printer', disabled: true, onclick: () => openPrint() }, icon('printer', 16), 'Preview and print…');
+    downloadBtns.push(d); printBtns.push(p);
+    return h('div', { class: `actions left ${extra}` }, p, d);
+  };
+  const side = h('aside', { class: 'ps-side' }, h('div', { class: 'card ps-card sticky' }, h('div', { class: 'sheet-wrap' }, canvas), summary, warnings, actionRow('wide-only')));
+  form.append(h('section', { class: 'card ps-card narrow-only' }, sectionHead('printer', 'Make the sheet'), actionRow()));
   root.append(h('div', { class: 'ps-layout' }, form, side));
 
   function cover(iw, ih, c, fit) {  // where the picture sits inside a cell (mm); the same rule as the PDF writer
@@ -230,7 +264,10 @@ export async function mount(root, kit) {
     const ratio = window.devicePixelRatio || 1;
     const L = layout;
     const pageW = L ? L.page_w : currentPaper().width, pageH = L ? L.page_h : currentPaper().height;
-    const cssW = Math.min(canvas.parentElement.clientWidth || 360, 460);
+    const slim = window.matchMedia('(max-width: 900px)').matches;  // a phone: the preview is a slim strip above the settings
+    const maxH = slim ? Math.max(150, window.innerHeight * 0.28) : Math.max(240, window.innerHeight - 400);
+    let cssW = Math.min(canvas.parentElement.clientWidth || 360, 460);
+    if ((pageH * cssW) / pageW > maxH) cssW = (maxH * pageW) / pageH;  // never taller than the screen allows
     const k = cssW / pageW;
     canvas.width = Math.round(cssW * ratio); canvas.height = Math.round(pageH * k * ratio);
     canvas.style.setProperty('width', `${cssW}px`); canvas.style.setProperty('height', `${pageH * k}px`);
@@ -239,10 +276,11 @@ export async function mount(root, kit) {
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, pageW, pageH);
     if (!L) return;
     ctx.lineWidth = 0.25; ctx.strokeStyle = '#444';
-    for (const c of L.cells) {
+    for (const [n, c] of L.cells.entries()) {
       ctx.save();
       ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.clip();
-      if (image) { const p = cover(image.width, image.height, c, S.fit); ctx.drawImage(image.bitmap, p.x, p.y, p.dw, p.dh); }
+      const img = images[L.assign ? L.assign[n] : 0] || images[0];
+      if (img) { const p = cover(img.width, img.height, c, S.fit); ctx.drawImage(img.orig, p.x, p.y, p.dw, p.dh); }
       else { ctx.fillStyle = '#e8ecf0'; ctx.fillRect(c.x, c.y, c.w, c.h); ctx.fillStyle = '#c4ccd6'; ctx.beginPath(); ctx.arc(c.x + c.w / 2, c.y + c.h * 0.4, c.w * 0.18, 0, 7); ctx.fill();
         ctx.beginPath(); ctx.ellipse(c.x + c.w / 2, c.y + c.h * 0.95, c.w * 0.36, c.h * 0.3, 0, 0, 7); ctx.fill(); }
       ctx.restore();
@@ -272,11 +310,14 @@ export async function mount(root, kit) {
       margin: S.margin, gap: S.gap, mode: S.mode, cols: S.cols, rows: S.rows, count: S.count, orientation: S.orientation,
       align: S.align, fit: S.fit, crop_x: S.cropX, crop_y: S.cropY, marks: S.marks, outline: S.outline,
       min_margin: minMargin(), borderless: Boolean(paper.borderless),
+      counts: images.length ? images.map((i) => i.copies) : undefined, fill_page: S.fillPage,
     };
   }
-  const formData = (extra = {}) => {
+  const formData = async (extra = {}) => {
+    const blobs = await jpegs();
+    if (!blobs) { toast('Those photos are too large to send together. Remove one or use smaller pictures.', 'bad'); return null; }
     const f = new FormData();
-    f.append('image', image.blob, 'photo.jpg');
+    blobs.forEach((b, i) => f.append('image', b, `photo-${i + 1}.jpg`));
     f.append('settings', JSON.stringify(settings()));
     for (const [k, v] of Object.entries(extra)) f.append(k, typeof v === 'string' ? v : JSON.stringify(v));
     return f;
@@ -285,13 +326,13 @@ export async function mount(root, kit) {
   let timer = 0;
   function changed() {
     save();
-    cropBox.hidden = !(image && S.fit === 'fill' && layout?.cells?.length && Math.abs(image.width / image.height - S.photoW / S.photoH) > 0.01);
+    updateCropBox();
     clearTimeout(timer);
     timer = setTimeout(refreshLayout, 120);
   }
   async function refreshLayout() {
     const mine = ++token;
-    const res = await api('/photosheet/layout', { method: 'POST', body: { ...settings(), image: image ? { width: image.width, height: image.height } : undefined } });
+    const res = await api('/photosheet/layout', { method: 'POST', body: { ...settings(), images: images.map((i) => ({ width: i.width, height: i.height })) } });
     if (mine !== token) return;
     warnings.replaceChildren();
     if (!res.ok) {
@@ -311,20 +352,26 @@ export async function mount(root, kit) {
             : `The photo has about ${res.data.dpi} pixels per inch at this size, which is sharp.`)));
       }
     }
-    const ok = Boolean(layout && image);
-    downloadBtn.disabled = !ok;
-    printBtn.disabled = !ok || !canPrint();
-    printBtn.title = canPrint() ? 'Show the sheet, then print it on the selected printer' : 'Needs a printer with a CUPS queue and a paper size it offers. You can still download the PDF.';
-    cropBox.hidden = !(image && S.fit === 'fill' && layout?.cells?.length && Math.abs(image.width / image.height - S.photoW / S.photoH) > 0.01);
+    const ok = Boolean(layout && images.length);
+    for (const b of downloadBtns) b.disabled = !ok;
+    for (const b of printBtns) {
+      b.disabled = !ok || !canPrint();
+      b.title = canPrint() ? 'Show the sheet, then print it on the selected printer' : 'Needs a printer with a CUPS queue and a paper size it offers. You can still download the PDF.';
+    }
+    updateCropBox();
+    paintResults();
     drawPreview();
   }
+  const updateCropBox = () => { cropBox.hidden = !(S.fit === 'fill' && layout?.cells?.length && images.some((i) => Math.abs(i.width / i.height - S.photoW / S.photoH) > 0.01)); };
   const canPrint = () => Boolean(printer && printer.configured !== false && !printer.error && printer.actual_size && S.paper !== 'custom' && currentPaper().keyword);
 
   // ------------------------------------------------------------------ download and print
   async function download() {
-    downloadBtn.disabled = true;
-    const res = await api('/photosheet/pdf?download=1', { method: 'POST', body: formData() });
-    downloadBtn.disabled = false;
+    for (const b of downloadBtns) b.disabled = true;
+    const body = await formData();
+    const res = body ? await api('/photosheet/pdf?download=1', { method: 'POST', body }) : null;
+    for (const b of downloadBtns) b.disabled = false;
+    if (!res) return;
     if (!res.ok) { toast(res.error?.message || 'Could not make the PDF.', 'bad'); return; }
     const url = URL.createObjectURL(res.data);
     const a = h('a', { href: url, download: 'photo-sheet.pdf' });
@@ -356,7 +403,10 @@ export async function mount(root, kit) {
     const mine = ++dlgToken;
     dialog.showModal();
     sheets.replaceChildren(h('p', { class: 'empty' }, 'Drawing the sheet…'));
-    const res = await api('/photosheet/pdf', { method: 'POST', body: formData() });
+    const body = await formData();
+    if (mine !== dlgToken) return;
+    if (!body) { dialog.close(); return; }
+    const res = await api('/photosheet/pdf', { method: 'POST', body });
     if (mine !== dlgToken) return;
     if (!res.ok) { sheets.replaceChildren(h('p', { class: 'empty' }, res.error?.message || 'Could not draw the sheet.')); return; }
     try { await drawPdfBytes(kit, new Uint8Array(await res.data.arrayBuffer()), sheets, { alive: () => mine === dlgToken, width: Math.min(300, dialog.clientWidth - 80), maxPages: 1 }); }
@@ -365,7 +415,9 @@ export async function mount(root, kit) {
   async function doPrint() {
     const p = kit.printer.current;
     goBtn.disabled = true;
-    const res = await api('/photosheet/print', { method: 'POST', body: formData({ printer: p.id, options: printOptions() }) });
+    const body = await formData({ printer: p.id, options: printOptions() });
+    if (!body) { goBtn.disabled = false; return; }
+    const res = await api('/photosheet/print', { method: 'POST', body });
     goBtn.disabled = false;
     if (res.ok) { dialog.close(); toast(`Sent to ${p.name} (job #${res.data.job_id}).`); return; }
     toast(res.error?.message || 'Could not print.', 'bad');
@@ -389,9 +441,15 @@ export async function mount(root, kit) {
   }
   const $ = (id) => document.getElementById(id);
 
+  // The quick-links strip below isn't useful here and would cut the pinned preview short at the end of the page.
+  const view = root.parentElement;
+  const hideLauncher = () => document.body.toggleAttribute('data-hide-launcher', !view.hidden);
+  new MutationObserver(hideLauncher).observe(view, { attributes: true, attributeFilter: ['hidden'] });
+  hideLauncher();
+
   syncMode();
   syncFields();
-  paintPhotoNote();
+  paintPhotos();
   drawPreview();
   kit.printer.subscribe(() => loadConfig());
   window.addEventListener('resize', () => { if (!root.hidden) drawPreview(); });

@@ -1,5 +1,6 @@
 """Photo Sheets: the layout maths, the PDF writer, and the API (config, layout, PDF, print), all against fakes."""
 import itertools
+from pathlib import Path
 import json
 import re
 import struct
@@ -505,3 +506,167 @@ def test_print_options_are_read_from_the_queue(cups):
     from test_ipp import live
     attrs = live(cups).print_options()
     assert isinstance(attrs, dict)
+
+
+# ------------------------------------------------------------------ several photos on one sheet
+
+def test_equal_copies_share_the_sheet_equally_and_leftovers_go_round():
+    assert L.allocate([1, 1, 1], 30) == [10, 10, 10]
+    assert L.allocate([1, 1, 1], 29) == [10, 10, 9]  # the odd one out is handed to the first in order, not lost
+    assert L.allocate([1, 1, 1], 31) == [11, 10, 10]
+    assert L.allocate([5], 30) == [30]
+
+
+def test_copies_are_a_ratio_that_scales_up_or_down_to_the_sheet():
+    assert L.allocate([2, 1, 1], 30) == [15, 8, 7]  # fits more: grows in the same ratio, rounding shared out
+    assert L.allocate([6, 3, 3], 8) == [4, 2, 2]  # fits fewer: shrinks in the same ratio
+    assert L.allocate([10, 1], 6) == [5, 1]  # the small one still gets its place
+
+
+def test_exact_copies_when_the_page_is_not_to_be_filled():
+    assert L.allocate([6, 3, 3], 30, fill=False) == [6, 3, 3]
+    assert L.allocate([6, 3, 3], 12, fill=False) == [6, 3, 3]
+    assert sum(L.allocate([20, 10], 12, fill=False)) == 12  # too many asked for: still scaled down to fit
+
+
+def test_nobody_disappears_while_there_is_room_and_when_there_is_not_the_biggest_ratio_wins():
+    assert all(c >= 1 for c in L.allocate([100, 1, 1], 3))
+    assert L.allocate([1, 1, 1, 1], 3) == [1, 1, 1, 0]  # three places, four photos: someone is left off
+    assert L.allocate([1, 1], 0) == [0, 0] and L.allocate([], 5) == []
+
+
+@pytest.mark.parametrize("bad", [[0], [-1, 2], [1.5], [True], ["2"], [None]])
+def test_copies_must_be_whole_numbers_from_one(bad):
+    with pytest.raises(L.LayoutError):
+        L.allocate(bad, 10)
+
+
+def test_every_allocation_adds_up_and_respects_the_ratio():
+    import random
+    rnd = random.Random(7)
+    for _ in range(600):
+        k = rnd.randint(1, 8)
+        req_ = [rnd.randint(1, 9) for _ in range(k)]
+        slots = rnd.randint(1, 60)
+        for fill in (True, False):
+            got = L.allocate(req_, slots, fill)
+            assert len(got) == k and all(g >= 0 for g in got)
+            if fill or sum(req_) > slots:
+                assert sum(got) == slots, (req_, slots, fill)
+            else:
+                assert got == req_
+            if slots >= k:
+                assert min(got) >= 1, (req_, slots, got)
+            if fill and slots >= sum(req_) and len(set(req_)) == 1:
+                assert max(got) - min(got) <= 1, (req_, slots, got)  # equal asks give equal shares
+            for i in range(k):  # asking for more never gets you less
+                for j in range(k):
+                    if req_[i] > req_[j] and fill:
+                        assert got[i] >= got[j] - 0, (req_, slots, got)
+
+
+def test_places_go_to_photos_in_blocks_in_reading_order():
+    assert L.assignment([2, 3, 1]) == [0, 0, 1, 1, 1, 2] and L.assignment([]) == []
+
+
+def jpeg_n(rig_unused=None, n=3, size=(700, 900), sizes=None):
+    return [make_jpeg(*(sizes[i] if sizes else size)) + bytes([i]) * 3 for i in range(n)]  # distinct bytes per photo
+
+
+def send_many(rig, path, photos, counts=None, fill=None, opts=None, printer=None, **extra):
+    import io
+    st = rig.settings(**extra)
+    if counts is not None:
+        st["counts"] = counts
+    if fill is not None:
+        st["fill_page"] = fill
+    form = {"settings": json.dumps(st), "image": [(io.BytesIO(p), f"p{i}.jpg") for i, p in enumerate(photos)]}
+    if opts is not None:
+        form["options"] = json.dumps(opts)
+    if printer:
+        form["printer"] = printer
+    return rig.client.post(f"/api/photosheet/{path}", data=form, headers=rig.h, content_type="multipart/form-data")
+
+
+def test_the_layout_answer_says_how_many_of_each_and_which_goes_where(rig):
+    body = {**rig.settings(), "images": [{"width": 700, "height": 900}] * 3}
+    d = rig.client.post("/api/photosheet/layout", json=body, headers=rig.h).get_json()["data"]
+    assert d["counts"] == [10, 10, 10] and len(d["assign"]) == 30 and d["assign"][:10] == [0] * 10 and d["assign"][-1] == 2
+    d = rig.client.post("/api/photosheet/layout", json={**body, "counts": [2, 1, 1]}, headers=rig.h).get_json()["data"]
+    assert d["counts"] == [15, 8, 7] and [d["assign"].count(i) for i in range(3)] == [15, 8, 7]
+    d = rig.client.post("/api/photosheet/layout", json={**body, "counts": [2, 1, 1], "fill_page": False}, headers=rig.h).get_json()["data"]
+    assert d["counts"] == [2, 1, 1] and d["count"] == 4 and len(d["cells"]) == 4
+
+
+def test_one_photo_ignores_the_copies_and_fills_the_sheet(rig):
+    d = rig.client.post("/api/photosheet/layout", json={**rig.settings(), "images": [{"width": 700, "height": 900}], "counts": [3]}, headers=rig.h).get_json()["data"]
+    assert d["counts"] == [30] and d["assign"] == [0] * 30
+
+
+def test_bad_copies_and_too_many_photos_are_refused(rig):
+    base = {**rig.settings(), "images": [{"width": 700, "height": 900}] * 3}
+    for bad in ([1, 1], [1, 1, 1, 1], [0, 1, 1], [1, 1, "x"], [1, 1, 99999], "2,1,1"):
+        r = rig.client.post("/api/photosheet/layout", json={**base, "counts": bad}, headers=rig.h)
+        assert r.status_code == 400 and "copies" in r.get_json()["error"]["message"], bad
+    r = rig.client.post("/api/photosheet/layout", json={**rig.settings(), "images": [{"width": 1, "height": 1}] * 21}, headers=rig.h)
+    assert r.status_code == 400 and "at most 20" in r.get_json()["error"]["message"]
+
+
+def test_more_photos_than_places_leaves_some_off_with_a_warning(rig):
+    body = {**rig.settings(photo={"width": 90, "height": 130}), "images": [{"width": 700, "height": 900}] * 6, "margin": 5}
+    d = rig.client.post("/api/photosheet/layout", json=body, headers=rig.h).get_json()["data"]
+    assert d["count"] == 4 and sum(d["counts"]) == 4 and d["counts"].count(0) == 2
+    assert any("left off the sheet" in w for w in d["warnings"])
+
+
+def test_the_sharpness_warning_looks_at_the_softest_photo_used(rig):
+    body = {**rig.settings(), "images": [{"width": 700, "height": 900}, {"width": 120, "height": 150}]}
+    d = rig.client.post("/api/photosheet/layout", json=body, headers=rig.h).get_json()["data"]
+    assert d["dpi"] < 120  # the small one decides
+    d2 = rig.client.post("/api/photosheet/layout", json={**body, "counts": [1, 1], "images": [{"width": 700, "height": 900}] * 2}, headers=rig.h).get_json()["data"]
+    assert d2["dpi"] > 400
+
+
+def test_a_pdf_of_several_photos_draws_each_the_right_number_of_times(rig):
+    photos = jpeg_n(n=3)
+    r = send_many(rig, "pdf", photos, counts=[2, 1, 1])
+    assert r.status_code == 200 and len(objects(r.data)) == 3 + 5
+    pdf = r.data
+    assert [pdf.count(f"/Im{i} Do".encode()) for i in range(3)] == [15, 8, 7]
+    for p in photos:
+        assert pdf.count(p) == 1  # each photo is embedded once, untouched
+    assert pages.count_pdf_pages(pdf) == 1 and b"/Im0 5 0 R /Im1 6 0 R /Im2 7 0 R" in pdf
+
+
+def test_the_photos_sit_in_blocks_in_reading_order(rig):
+    pdf = send_many(rig, "pdf", jpeg_n(n=2), counts=[1, 1], marks=False).data
+    order = [int(m) for m in re.findall(rb"/Im(\d) Do", pdf)]
+    assert order == [0] * 15 + [1] * 15
+
+
+def test_a_bad_photo_among_several_is_named(rig):
+    r = send_many(rig, "pdf", [make_jpeg(), b"\x89PNG\r\n\x1a\n" + b"0" * 50, make_jpeg()])
+    assert r.status_code == 415 and "Photo 2" in r.get_json()["error"]["message"]
+    assert send_many(rig, "pdf", [make_jpeg()] * 21).status_code == 400
+
+
+def test_counts_must_match_the_photos_when_building_the_pdf(rig):
+    r = send_many(rig, "pdf", jpeg_n(n=3), counts=[1, 2])
+    assert r.status_code == 400 and "copies" in r.get_json()["error"]["message"]
+
+
+def test_printing_several_photos_sends_one_pdf_with_all_of_them(rig):
+    photos = jpeg_n(n=2)
+    r = send_many(rig, "print", photos, counts=[3, 1], opts=GOOD, printer=PID)
+    assert r.status_code == 202
+    doc = rig.backend.submitted[-1]["document"]
+    assert doc.count(photos[0]) == 1 and doc.count(photos[1]) == 1
+    assert [doc.count(f"/Im{i} Do".encode()) for i in range(2)] == [5, 1]  # 3:1 on the 6 places of a 4 x 6 sheet... as 5 and 1
+    assert r.get_json()["data"]["count"] == 6
+
+
+def test_the_preview_card_stays_in_view_css_is_in_place():
+    css = (Path(__file__).resolve().parent.parent / "app/tools/photosheet/ui/ui.css").read_text()
+    assert "align-self: stretch" in css and "position: sticky" in css  # the column is as tall as the form, so the card stays pinned
+    assert "max-height: calc(100vh" in css  # and it is never taller than the screen
+    assert "display: contents" in css  # on a phone the strip is pinned inside the page-long column
