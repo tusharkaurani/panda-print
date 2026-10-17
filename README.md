@@ -135,7 +135,7 @@ keeps its own history in SQLite, separately for each printer:
 4. **Idle clock.** Like the host script, a nozzle check counts as a print and restarts the idle clock, so *next automated check due* is `last print of any kind + idle days` (7 by default).
 5. **First run.** If the printer has a timer state file set and its count equals the printer's current count, the idle clock starts from its timestamp (it can lag the real print by up to a day). Otherwise it starts from the newest finished non-nozzle job in CUPS, and failing that from the first reading, in which case the card says "at least".
 
-The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's logic, with no I/O) and the scheduler in `schedule.py`. The app also exposes `POST /api/maintenance/<printer id>/nozzle/print` (one check now: CSRF-protected and rate-limited), but there is no button for it in the UI.
+The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's logic, with no I/O) and the scheduler in `schedule.py`. **Run a check now** (inside the Automation card, with a confirm dialog) prints one check on demand through `POST /api/maintenance/<printer id>/nozzle/print`: CSRF-protected and rate-limited. It is recorded as a manual check and restarts the idle clock.
 
 ## Automatic nozzle check (Nozzle Check tab)
 

@@ -15,6 +15,45 @@ export function mount(root, kit) {
   const refresh = () => load(nozzleCard, 'nozzle', renderNozzle);
   const refreshAuto = () => load(autoCard, 'automation', renderAutomation);
 
+  // ------------------------------------------------------------ run a check now (to test the real thing)
+  // The button and its dialog are created once; the card body they sit in is rebuilt on every save.
+  let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
+  const runBtn = h('button', { class: 'btn', type: 'button', onclick: () => dialog.showModal() }, icon('droplet', 16), 'Run a check now');
+  const runHint = h('span', { class: 'hint' });
+
+  function paintRun() {
+    const left = Math.ceil((waitUntil - Date.now()) / 1000);
+    runBtn.disabled = left > 0;
+    runHint.textContent = left > 0
+      ? `You can run another in ${fmt.countdown(left)}.`
+      : 'Prints one nozzle check page right now. It counts as a print, so the idle clock starts again.';
+  }
+  setInterval(() => { if (waitUntil > Date.now()) paintRun(); }, 1000);
+
+  const dialog = h('dialog', { 'aria-labelledby': 'mt-run-title' },
+    h('h3', { id: 'mt-run-title' }, 'Print a nozzle check now?'),
+    h('p', {}, 'This sends one small test page with cyan, magenta, yellow and black bars to the printer. It uses a sheet of paper and a little ink.'),
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'button', onclick: runNow }, icon('droplet', 16), 'Print')));
+  root.append(dialog);
+
+  async function runNow() {
+    dialog.close();
+    runBtn.disabled = true;
+    const res = await api(`${base()}/nozzle/print`, { method: 'POST' });
+    if (res.ok) {
+      toast(`Nozzle check sent to the printer (job #${res.data.job_id}).`);
+    } else {
+      toast(res.error?.message || 'Could not print.', 'bad');
+      if (res.status === 429) waitUntil = Date.now() + (res.retryAfter || 60) * 1000;
+    }
+    paintRun();
+    refresh();
+    // the page counter moves a few seconds after the job is accepted
+    [4000, 15000, 40000].forEach((ms) => setTimeout(refresh, ms));
+  }
+
   // ------------------------------------------------------------ nozzle check
   function checkRow(c) {
     const state = c.state === 'failed' ? ['Failed', 'bad'] : c.state === 'submitted' ? ['Sent', 'info'] : ['Printed', 'ok'];
@@ -33,6 +72,9 @@ export function mount(root, kit) {
       ? (nx?.overdue ? ui.badge('Check due · auto off', 'warn') : ui.badge('Auto check off'))
       : a.state === 'blocked' ? ui.badge('Auto check waiting', 'warn')
       : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Check starting' : `Next check ${fmt.when(a.next_run_at)}`, 'ok') : null);
+
+    waitUntil = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
+    paintRun();
 
     const t = d.tracking;
     const problems = [t.counter_error && `Can’t read the page counter: ${t.counter_error}`, t.cups_error && `Can’t read CUPS: ${t.cups_error}`,
@@ -131,11 +173,14 @@ export function mount(root, kit) {
         h('div', { class: 'actions left' },
           h('button', { class: 'btn primary', type: 'submit' }, 'Save settings'),
           h('button', { class: 'btn', type: 'button', disabled: !custom, onclick: reset }, 'Reset to defaults'),
-          custom && h('span', { class: 'sub' }, `Changed from the defaults: ${d.customised.length} setting${d.customised.length === 1 ? '' : 's'}.`))));
+          custom && h('span', { class: 'sub' }, `Changed from the defaults: ${d.customised.length} setting${d.customised.length === 1 ? '' : 's'}.`))),
+      h('div', { class: 'runnow' }, runBtn, runHint));
+    paintRun();
   }
 
   // another printer was chosen (or this one's settings were edited): start over
   kit.printer.subscribe(() => {
+    waitUntil = 0;
     for (const c of [nozzleCard, autoCard]) { c.set(ui.skeleton()); c.setBadge(null); c.stamp(''); }
     refresh();
     refreshAuto();
