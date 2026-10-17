@@ -5,9 +5,9 @@ import { icon } from './icons.js';
 import * as fmt from './fmt.js';
 import * as ui from './ui.js';
 
-export function makeKit(root) {
+export function makeKit(root, toolId) {
   return {
-    api, h, svg, clear, icon, fmt, ui,
+    toolId, api, h, svg, clear, icon, fmt, ui,
     toast: ui.toast,
     // poll while this tool is the one on screen
     poll: (fn, ms) => ui.poll(fn, ms, () => !root.hidden),

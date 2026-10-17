@@ -16,8 +16,7 @@ secret.key
 .env.*
 !.env.example
 
-# user-specific launcher config: copy config/links.example.yml to config/links.yml
-# (the committed links.yml is the starter config; logos you drop in are yours)
+# config/links.yml is committed as the starter config; logos you add are yours, so keep them out of git
 config/logos/*
 !config/logos/README.md
 

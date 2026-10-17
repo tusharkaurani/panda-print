@@ -94,6 +94,9 @@ def parse_links(text: str, logos_dir: Path) -> tuple[list[dict], list[str]]:
         name = name.strip()
         label = f"'{name}'"
         url = raw.get("url")
+        if url is None:
+            warnings.append(f"{label} skipped: 'url' is required.")
+            continue
         if not isinstance(url, str) or not _valid_url(url.strip()):
             warnings.append(f"{label} skipped: 'url' must start with http:// or https:// (got {url!r}).")
             continue

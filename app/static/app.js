@@ -92,7 +92,7 @@ async function mountTool(t) {
     if (t.error) throw new Error(t.error);
     if (t.css) document.head.append(h('link', { rel: 'stylesheet', href: t.css }));
     const mod = await import(t.entry);
-    await mod.mount(content, makeKit(root));
+    await mod.mount(content, makeKit(root, t.id));
   } catch (e) {
     console.error(`tool ${t.id} failed`, e);
     content.append(errorBox({ message: `The "${t.title}" tool could not start.`, hint: String(e.message || e) }));
