@@ -202,6 +202,20 @@ Every button and tab in the app shows what it does when you hover over it (a tes
 - Strict Content-Security-Policy (no inline script or style, no external hosts except images you point links at), and logo files are served sandboxed.
 - The SNMP community and addresses are configuration, not secrets, but nothing sensitive is committed: `.env`, `data/`, `secret.key` and your logos are git-ignored.
 
+## Several printers
+
+Add as many printers as you like (**Manage printers…** in the header menu). The rules the code and `tests/test_multi_printer.py` hold to:
+
+- **Everything per printer stays per printer:** status, history, automatic-print settings, rotation order and switches, rate limits, locks. Changing one printer never changes another.
+- **Shared on purpose:** the library of pages (a new page appears in every printer's list; deleting one removes it from every list) and the launcher links file (a link can be limited to some printers with `printers:`).
+- **One printer's trouble stays its own:** an unreachable address, a slow CUPS or a failing queue shows as that printer's error card. The background poller gives each printer its own worker, never runs one printer twice at once, and a hung printer doesn't delay the others.
+- **Removing a printer** deletes its history and settings (not the shared pages) and, if it was selected, the header falls back to the first one. Removing the last one returns to the welcome wizard. A new printer that reuses a removed printer's name starts clean.
+- **Editing** keeps the printer's id, so renaming keeps its history; changing its address or queue rebuilds its connection, and the print lock survives the rebuild so two copies can't print at once.
+- **Names and ids:** any name works (symbols, other alphabets, near-identical names). Ids are made from the name, made unique, and never clash with the app's own words (`pages`, `probe`, `discover`, ...).
+- Two CUPS queues on one physical printer are fine; each keeps its own books.
+
+The tests use fakes only. `test_a_removed_printer_leaves_nothing_in_any_table` fails if a new tool adds a `printer_id` table and forgets `on_delete`, and `test_every_printer_route_answers_404_for_an_unknown_printer_and_never_500` walks the URL map, so a new per-printer route is covered automatically.
+
 ## Adding a tool
 
 A tool is a folder under `app/tools/` that the app discovers at start-up. It owns its API routes, its tables
@@ -258,7 +272,7 @@ def create(ctx):
 ```
 
 - State-changing routes are CSRF-protected automatically; just call them with `kit.api`.
-- A tool about printers keeps its data **per printer** (a `printer_id` column) and puts the id in its routes, like `/api/maintenance/<printer id>/nozzle`. Register `ctx.printers.on_delete(fn)` to remove that data when a printer is removed. See `app/tools/maintenance/` (`store.py`, `runtimes.py`).
+- A tool about printers keeps its data **per printer** (a `printer_id` column) and puts the id in its routes, like `/api/maintenance/<printer id>/nozzle`. Register `ctx.printers.on_delete(fn)` to remove that data when a printer is removed. See `app/tools/maintenance/` (`store.py`, `runtimes.py`). Do background work per printer on its own thread, as `poller.py` does, so one printer's trouble can't stall the rest.
 - Return `ok: false` with an `error` for upstream trouble (printer unreachable) so only that card shows an error. Raise `app.core.errors.SourceError("source", "friendly message", "hint")` for that.
 - Static files in `ui/` are served at `/tools/scan/`.
 

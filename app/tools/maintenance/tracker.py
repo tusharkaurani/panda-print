@@ -43,7 +43,8 @@ def allocate(delta: int, pages_left: list[int]) -> tuple[list[int], int]:
 
 
 class Tracker:
-    def __init__(self, settings: Settings, store: Store, printer, clock, host_state_file: str = ""):
+    def __init__(self, settings: Settings, store: Store, printer, clock, host_state_file: str = "",
+                 lock: threading.Lock | None = None):
         self.s, self.store, self.printer, self.clock = settings, store, printer, clock
         self.host_state_file = Path(host_state_file) if host_state_file else None
         self._newest_document: float | None = None  # newest finished non-nozzle job seen in CUPS
@@ -51,7 +52,7 @@ class Tracker:
         # when CUPS couldn't be asked. Zero while the counter moves means the pages came from
         # somewhere else: a phone printing straight to the printer, or a copy made on its glass.
         self._cups_active: int | None = None
-        self._lock = threading.Lock()
+        self._lock = lock or threading.Lock()  # one per printer, kept across rebuilds (see Runtimes)
 
     def automation(self) -> auto.Automation:
         """This printer's settings: what it overrides, else the defaults (the environment values)."""

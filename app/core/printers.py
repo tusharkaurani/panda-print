@@ -170,6 +170,15 @@ def default_name(draft: dict, taken: Iterable[str]) -> str:
     return name
 
 
+# Ids that would be confusing as a printer id: they are words the API and the pages already use.
+_RESERVED_IDS = frozenset({"discover", "probe", "pages", "defaults", "links", "setup", "tools", "csrf", "health", "printers",
+                           "new", "static", "logos", "test"})
+
+
+def reserved_ids() -> frozenset:
+    return _RESERVED_IDS
+
+
 def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "printer"
 
@@ -180,6 +189,7 @@ class PrinterRegistry:
         db.migrate("core", MIGRATIONS)
         self._lock = threading.Lock()
         self._delete_hooks: list[Callable[[str], None]] = []
+        self._add_hooks: list[Callable[[str], None]] = []
 
     # --- reads
     def list(self) -> list[Printer]:
@@ -205,10 +215,12 @@ class PrinterRegistry:
             ids = {p.id for p in self.list()}
             base, n = slugify(clean["name"]), 1
             pid = base
-            while pid in ids:
+            while pid in ids or pid in _RESERVED_IDS:
                 n += 1
                 pid = f"{base}-{n}"
             printer = Printer(id=pid, created_at=self.clock(), **clean)
+            for hook in self._add_hooks:  # clear anything left under this id before the printer exists
+                hook(pid)
             self.db.execute(
                 "INSERT INTO printers(id,name,ip,ipp_url,snmp_community,snmp_port,counter_oid,cups_url,"
                 "cups_queue,host_state_file,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -238,6 +250,10 @@ class PrinterRegistry:
     def on_delete(self, hook: Callable[[str], None]) -> None:
         """Tools register a callback to remove the data they keep per printer."""
         self._delete_hooks.append(hook)
+
+    def on_add(self, hook: Callable[[str], None]) -> None:
+        """Called with the new printer's id just before it is saved (to clear stale data under a reused id)."""
+        self._add_hooks.append(hook)
 
     def delete(self, printer_id: str) -> bool:
         with self._lock:

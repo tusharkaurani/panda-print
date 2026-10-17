@@ -32,13 +32,14 @@ class RateLimited(Exception):
 
 
 class Service:
-    def __init__(self, ctx: AppContext, printer, backend, store: Store, tracker: Tracker, library: pages.Library):
+    def __init__(self, ctx: AppContext, printer, backend, store: Store, tracker: Tracker, library: pages.Library,
+                 print_lock: threading.Lock | None = None):
         self.ctx, self.s, self.store, self.tracker = ctx, ctx.settings, store, tracker
         self.library = library  # the pages shared by every printer
         self.config = printer  # this printer's saved settings (address, queue, ...)
         self.printer = backend  # IPP/SNMP/CUPS access for this one printer
         self.clock = ctx.clock
-        self._print_lock = threading.Lock()
+        self._print_lock = print_lock or threading.Lock()  # one per printer, kept across rebuilds (see Runtimes)
         self._printer_cache: TTLCache = TTLCache(LIVE_CACHE_SECONDS)
         self._queue_cache: TTLCache = TTLCache(LIVE_CACHE_SECONDS)
         self._jobs_cache: TTLCache = TTLCache(LIVE_CACHE_SECONDS)

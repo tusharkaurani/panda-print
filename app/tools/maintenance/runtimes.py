@@ -26,7 +26,10 @@ class Runtimes:
         self.library = library or Library.from_settings(ctx.db, ctx.settings, ctx.clock)  # shared by every printer
         self._lock = threading.Lock()
         self._items: dict[str, Runtime] = {}
+        # The locks outlive a rebuild (editing a printer), so an old and a new Service can't both print at once.
+        self._locks: dict[str, tuple[threading.Lock, threading.Lock]] = {}
         ctx.printers.on_delete(self.forget)
+        ctx.printers.on_add(self.forget)  # a new printer never inherits the leftovers of a removed one with the same id
 
     def get(self, printer_id: str) -> Runtime | None:
         """The runtime for a printer, rebuilt if its settings were edited; None if unknown."""
@@ -44,8 +47,9 @@ class Runtimes:
         ctx = self.ctx
         backend = ctx.backend_for(printer)
         store = Store(ctx.db, printer.id)
-        tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file)
-        return Runtime(printer, store, tracker, Service(ctx, printer, backend, store, tracker, self.library))
+        track_lock, print_lock = self._locks.setdefault(printer.id, (threading.Lock(), threading.Lock()))
+        tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file, track_lock)
+        return Runtime(printer, store, tracker, Service(ctx, printer, backend, store, tracker, self.library, print_lock))
 
     def all(self) -> list[Runtime]:
         return [rt for p in self.ctx.printers.list() if (rt := self.get(p.id))]
@@ -54,4 +58,5 @@ class Runtimes:
         """A printer was removed: drop its runtime and its history."""
         with self._lock:
             self._items.pop(printer_id, None)
+            self._locks.pop(printer_id, None)
         Store(self.ctx.db, printer_id).delete_all()
