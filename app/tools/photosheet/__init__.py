@@ -344,5 +344,5 @@ def create(ctx: AppContext) -> Tool:
         return resp
 
     return Tool(
-        id="photosheet", title="Photo Sheets", description="Lay out passport and ID photos at an exact size on a sheet of paper",
-        icon="image", blueprint=bp, ui_dir=HERE / "ui", order=15, needs_printer=False)
+        id="photosheet", title="Photo Sheet Maker", description="Lay out passport and ID photos at an exact size on a sheet of paper, then download or print it",
+        icon="image", blueprint=bp, ui_dir=HERE / "ui", order=15, needs_printer=False, parent="utilities")  # listed inside Print Utilities

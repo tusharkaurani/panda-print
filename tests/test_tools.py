@@ -74,3 +74,12 @@ def test_maintenance_has_an_overview_tab_and_a_nozzle_tab(client):
     # the shell imports the entry, which loads one module per tab
     for name in ("ui.js", "overview.js", "nozzle.js", "shared.js", "ui.css"):
         assert client.get(f"/tools/maintenance/{name}").status_code == 200, name
+
+
+def test_a_tool_can_live_inside_another_tools_page(make_app):
+    app, _ = make_app()
+    tools = {t["id"]: t for t in app.test_client().get("/api/tools").get_json()["tools"]}
+    for t in tools.values():
+        if t.get("parent"):
+            assert t["parent"] in tools and t["parent"] != t["id"] and not tools[t["parent"]].get("parent"), t["id"]  # one level, and the parent exists
+    assert tools["maintenance"]["parent"] is None and tools["utilities"]["parent"] is None

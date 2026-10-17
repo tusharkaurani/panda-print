@@ -539,3 +539,10 @@ main.wrap > *, #view-tools, #view-printers { min-width: 0; }  /* a wide child (t
   main.wrap { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }  /* room so the bar never covers content */
   #toasts { bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
+
+/* breadcrumb above a tool that lives inside another tool's page */
+.crumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 14px; color: var(--muted); }
+.crumbs a { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; font-weight: 600; color: var(--muted); padding: 4px 8px 4px 4px; border-radius: 8px; }
+.crumbs a:hover { background: var(--surface-2); color: var(--text); }
+.crumbs a svg { transform: rotate(90deg); }
+.crumbs strong { color: var(--text); }

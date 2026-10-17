@@ -19,17 +19,29 @@ export async function mount(root, kit) {
       h('span', { class: 'pu-host' }, tool.host));
   }
 
+  // tools that live inside this page (they declare parent: "utilities"): they open in the app, not in a new tab
+  const BUILT_IN_ART = { photosheet: 'passport' };
+  function builtIn(t) {
+    return h('a', { class: 'pu-card', href: `#${t.id}`, title: `Open ${t.title}` },
+      h('span', { class: 'pu-thumb', 'aria-hidden': 'true' }, art(kit, BUILT_IN_ART[t.id] || 'document')),
+      h('span', { class: 'pu-name' }, t.title),
+      t.description && h('span', { class: 'pu-desc' }, t.description),
+      h('span', { class: 'pu-host' }, 'Built in'));
+  }
+
   async function load() {
     page.replaceChildren(ui.skeleton());
-    const res = await api('/utilities/catalog');
+    const [res, toolsRes] = await Promise.all([api('/utilities/catalog'), api('/tools')]);
     if (!res.ok) { page.replaceChildren(ui.errorBox(res.error, load)); return; }
     const { categories, warnings, error, source } = res.data;
+    const inside = (toolsRes.ok ? toolsRes.data.tools || [] : []).filter((t) => t.parent === 'utilities' && !t.error);
     page.replaceChildren(...[
       error && h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, error)),
       warnings?.length > 0 && h('details', { class: 'pu-notes' }, h('summary', {}, `${warnings.length} note${warnings.length === 1 ? '' : 's'} about print-utilities.yml`),
         h('ul', {}, warnings.map((w) => h('li', {}, w)))),
-      h('p', { class: 'pu-intro' }, 'Online tools for things worth printing. Each site says its tools are free (checked 17 Oct 2026), and opens in a new tab. Sites change, so check before you rely on one.',
-        source === 'custom' ? ' This is your own list (print-utilities.yml).' : ''),
+      inside.length > 0 && h('section', { class: 'pu-cat', 'aria-labelledby': 'pu-builtin' },
+        h('div', { class: 'pu-head' }, h('h2', { id: 'pu-builtin' }, 'Built in'), h('p', {}, 'Tools that run inside panda-print.')),
+        h('div', { class: 'pu-grid' }, inside.map(builtIn))),
       ...categories.map((c) => h('section', { class: 'pu-cat', 'aria-labelledby': `pu-${c.id}` },
         h('div', { class: 'pu-head' }, h('h2', { id: `pu-${c.id}` }, c.name), c.description && h('p', {}, c.description)),
         h('div', { class: 'pu-grid' }, c.tools.map(card)))),

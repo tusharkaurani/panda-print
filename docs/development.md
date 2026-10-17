@@ -84,6 +84,8 @@ def create(ctx):
 - Return `ok: false` with an `error` for upstream trouble (printer unreachable) so only that card shows an error. Raise `app.core.errors.SourceError("source", "friendly message", "hint")` for that.
 - Static files in `ui/` are served at `/tools/scan/`.
 
+**A tool inside another tool's page.** To keep the top-level tabs few, a tool can set `parent="utilities"` (the id of another tool). It then has no tab of its own: the parent's page lists it as a card (Print Utilities shows these under *Built in*), opening it shows the parent's tab as selected and a breadcrumb back to it, and its address is still `#<tool id>`. The photo tool (`app/tools/photosheet/`) is the example; a new built-in print utility is a new tool with `parent="utilities"` and needs no change to the shell.
+
 **Frontend** (`ui/ui.js`). `mount(root, kit)` is the whole contract. `kit` has `api(path, {method, body})` (never throws, resolves to `{ok, data, error}`),
 `h()` for building elements, `icon()`, `fmt` (ago/abs/days), `ui` (`card`, `badge`, `gauge`, `stat`, `errorBox`, `skeleton`),
 `toast()`, `poll(fn, ms)` (runs while the tab is on screen), `toolId`, `tabId`, and `printer` (`printer.current` is the selected printer, `printer.subscribe(fn)` fires when the selection or its settings change; reload your cards there). See `app/tools/maintenance/ui/ui.js` for a full example.

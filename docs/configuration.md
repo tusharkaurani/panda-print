@@ -55,4 +55,6 @@ links:
 
 ## Print Utilities list
 
+The Print Utilities tab shows the tools built into panda-print first (*Built in*), then cards that open free online tools in a new tab. Only the online ones are in this list.
+
 The built-in list is `app/tools/utilities/catalog.yml`. To use your own, copy it to `print-utilities.yml` next to `links.yml` (in the folder you mount at `/config`), then edit: categories, tools, and for each tool `name`, `url` (https), `description`, `art` (which drawing) and optionally `image` (a picture URL). The page picks up changes within a minute; a mistake is reported on the page and the built-in list keeps showing. Every site in the built-in list was read on 17 Oct 2026 and says on its own pages that it is free; that is the site's claim, not a guarantee, and a few ask for a free account for some things (the card says so). Sites that charge for the result or put the main content behind a membership are deliberately left out. They are third-party sites and change, so check a link if it stops working or starts asking for money.

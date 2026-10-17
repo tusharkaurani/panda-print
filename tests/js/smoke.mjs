@@ -132,5 +132,5 @@ for (const sel of $$('select')) if (!sel.options.length) problems.push(`an empty
 for (const e of errors) problems.push(`console error: ${e}`);
 for (const t of toasts.filter((t) => t.startsWith('bad:'))) problems.push(`error toast: ${t}`);
 
-console.log(JSON.stringify({ problems, calls: calls.length, rows: $$('.photo-row').length, chips: $$('.chip').length }));
+console.log(JSON.stringify({ problems, calls: calls.length, rows: $$('.photo-row').length, chips: $$('.chip').length, text: root.textContent.slice(0, 6000) }));
 process.exit(problems.length ? 1 : 0);

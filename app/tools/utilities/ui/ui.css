@@ -1,6 +1,5 @@
 /* Print Utilities: category sections of link cards, at most four to a row */
 .pu-page { display: grid; gap: 28px; }
-.pu-intro { margin: 0; color: var(--muted); font-size: 14px; }
 .pu-notes { font-size: 13px; color: var(--muted); }
 .pu-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 12px; }
 .pu-head h2 { margin: 0; font-size: 19px; font-weight: 720; letter-spacing: -.02em; }

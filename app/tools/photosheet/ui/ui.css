@@ -3,7 +3,9 @@
 .ps-form { display: grid; gap: 16px; min-width: 0; }
 .ps-side { min-width: 0; align-self: stretch; }  /* as tall as the form, so the card inside can stay in view while the form scrolls */
 .ps-card { padding: 18px 20px; display: grid; gap: 14px; }
-.ps-card.sticky { position: sticky; top: 76px; z-index: 4; max-height: calc(100vh - 156px); overflow: auto; }  /* always fits the screen, so it never has to scroll off */
+.sticky-col { position: sticky; top: 76px; z-index: 4; display: grid; gap: 14px; }  /* the preview and its buttons stay in view together */
+.preview-card { max-height: calc(100vh - 230px); overflow: auto; }  /* the card plus the buttons always fit the screen, so nothing has to scroll off */
+.ps .actions.center { justify-content: center; }
 .ps-head { display: flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 680; letter-spacing: -.01em; margin: 0; }
 .ps-head svg { box-sizing: content-box; padding: 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
 .ps .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -41,12 +43,13 @@
   /* a flex column (not a grid), so the pinned card's containing block is the whole page-long column */
   .ps-layout { display: flex; flex-direction: column; gap: 16px; }
   .ps-side { display: contents; }
-  .ps-card.sticky { order: -1; align-self: stretch; width: auto; }
+  .sticky-col { order: -1; align-self: stretch; }
   /* the preview stays pinned under the top bar while you work through the settings; its buttons move to the end of the form */
-  .ps-card.sticky { top: 68px; padding: 10px 12px; gap: 8px; box-shadow: 0 8px 20px -10px rgba(15, 23, 42, .35); }
-  .ps-card.sticky .sheet-wrap { padding: 8px; }
-  .ps-card.sticky .warns, .ps-card.sticky .wide-only { display: none; }
-  .ps-card.sticky .summary { font-size: 13px; }
+  .sticky-col { top: 68px; }
+  .preview-card { padding: 10px 12px; gap: 8px; max-height: none; overflow: visible; box-shadow: 0 8px 20px -10px rgba(15, 23, 42, .35); }
+  .preview-card .sheet-wrap { padding: 8px; }
+  .preview-card .warns, .sticky-col .wide-only { display: none; }
+  .preview-card .summary { font-size: 13px; }
   .narrow-only { display: grid; }
 }
 @media (max-width: 520px) {

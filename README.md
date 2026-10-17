@@ -26,8 +26,8 @@ needs about 40 MB of memory.
 - **Pages worth printing:** rotate through your own PDFs, PNGs and JPEGs (colouring pages, worksheets) instead of colour bars, with real previews. Multi-page files can print on both sides on printers that flip the paper by themselves.
 - **Print now:** shows the page that will print first, then asks you to confirm.
 - **Several printers:** add as many as you like, each with its own settings and history. A first-run wizard finds your printer on the network.
-- **Photo Sheets:** lay out copies of one or several edited passport or ID photos at an exact size (mm, cm or inches) on the paper you choose, with per-photo cropping, the option to use only half of the paper, a live preview that stays in view, and presets for the jobs you repeat, then download a PDF or print it at actual size with the paper type and quality your printer offers.
-- **Quick links and Print Utilities:** links to each printer's own pages, plus a tab of free online tools (passport photos, worksheets, calendars, posters).
+- **Photo Sheet Maker** (inside Print Utilities): lay out copies of one or several edited passport or ID photos at an exact size (mm, cm or inches) on the paper you choose, with per-photo cropping, the option to use only half of the paper, a live preview that stays in view, and presets for the jobs you repeat, then download a PDF or print it at actual size with the paper type and quality your printer offers.
+- **Quick links and Print Utilities:** links to each printer's own pages, plus a Print Utilities tab with the built-in photo tool and links to free online tools (passport photos, worksheets, calendars, posters).
 - **Careful by design:** no cloud, no CDN, no accounts. Printing is rate-limited and requests are CSRF-protected. Light and dark themes, and a phone-friendly layout.
 
 ## Quick start (Docker)

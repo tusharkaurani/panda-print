@@ -5,6 +5,7 @@ import { drawPdfBytes } from '/tools/maintenance/preview.js';
 
 const UNITS = { mm: { f: 1, dp: 1, step: 0.5 }, cm: { f: 10, dp: 2, step: 0.1 }, in: { f: 25.4, dp: 3, step: 0.05 } };
 const KEY = 'pp-photosheet';
+const SHOW_YAML = false;  // "Copy as YAML" (to ship a preset with the code) is hidden for now; the API and the dialog are still there
 const MAX_SIDE = 7000;  // px: bigger pictures are scaled down before they are sent
 
 export async function mount(root, kit) {
@@ -325,7 +326,7 @@ export async function mount(root, kit) {
       h('span', { class: 'preset-name' }, ...[h('strong', {}, cur.name), S.presetDirty ? h('span', { class: 'hint' }, ' · changed') : null, cur.builtin ? h('span', { class: 'hint' }, ' · comes with the app') : null].filter(Boolean)),
       h('div', { class: 'row-inline' }, ...[
         !cur.builtin && S.presetDirty ? h('button', { class: 'btn small', type: 'button', title: 'Replace this preset with the settings as they are now', onclick: () => saveAs(cur.name) }, 'Save changes') : null,
-        h('button', { class: 'btn small', type: 'button', title: 'Show the settings on the page as text you can paste into presets.yml to ship them with the app', onclick: () => showYaml(cur) }, 'Copy as YAML'),
+        SHOW_YAML ? h('button', { class: 'btn small', type: 'button', title: 'Show the settings on the page as text you can paste into presets.yml to ship them with the app', onclick: () => showYaml(cur) }, 'Copy as YAML') : null,
         !cur.builtin ? h('button', { class: 'btn small danger', type: 'button', title: 'Delete this preset (asks first)', onclick: () => confirmDelete(cur) }, 'Delete') : null].filter(Boolean)));
   }
   async function loadPresets() {
@@ -483,7 +484,9 @@ export async function mount(root, kit) {
     downloadBtns.push(d); printBtns.push(p);
     return h('div', { class: `actions left ${extra}` }, p, d);
   };
-  const side = h('aside', { class: 'ps-side' }, h('div', { class: 'card ps-card sticky' }, h('div', { class: 'sheet-wrap' }, canvas), summary, warnings, actionRow('wide-only')));
+  const side = h('aside', { class: 'ps-side' }, h('div', { class: 'sticky-col' },
+    h('div', { class: 'card ps-card preview-card' }, h('div', { class: 'sheet-wrap' }, canvas), summary, warnings),
+    actionRow('wide-only center')));  // the buttons: centred, below the preview card
   form.append(h('section', { class: 'card ps-card narrow-only' }, sectionHead('printer', 'Make the sheet'), actionRow()));
   root.append(h('div', { class: 'ps-layout' }, form, side));
 

@@ -57,6 +57,7 @@ def fixtures(app, variant: str) -> dict:
     for name in ("printer", "queue", "nozzle", "automation", "rotation"):
         fx[f"GET /maintenance/PID/{name}"] = get(client, f"{m}/{name}")
     fx["GET /utilities/catalog"] = get(client, "/api/utilities/catalog")
+    fx["GET /tools"] = get(client, "/api/tools")  # the hub lists the tools that live inside it
     fx["GET /photosheet/config?printer=no"] = get(client, "/api/photosheet/config")
     fx["GET /photosheet/config?printer=yes"] = get(client, f"/api/photosheet/config?printer={PID}")
     fx["GET /photosheet/presets"] = get(client, "/api/photosheet/presets")
@@ -121,8 +122,11 @@ def test_the_printer_maintenance_tabs_open_in_every_state(tmp_path, make_app_mod
     run(tmp_path, fixtures(make_app_module(variant), variant), "maintenance", tab)
 
 
-def test_the_print_utilities_tab_opens(tmp_path, make_app_module):
-    run(tmp_path, fixtures(make_app_module("normal"), "normal"), "utilities")
+def test_the_print_utilities_tab_opens_with_the_built_in_tool_and_no_chatter(tmp_path, make_app_module):
+    result = run(tmp_path, fixtures(make_app_module("normal"), "normal"), "utilities")
+    text = result["text"]
+    assert "Built in" in text and "Photo Sheet Maker" in text  # the photo tool is a card on this page
+    assert "Photos & IDs" in text and "checked" not in text and "Sites change" not in text  # and the page carries no disclaimer text
 
 
 def test_the_harness_does_catch_a_page_that_prints_false(tmp_path, make_app_module):

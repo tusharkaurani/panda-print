@@ -102,6 +102,7 @@ function buildViews() {
 }
 
 const visibleViews = () => views.filter((v) => !v.tool.needs_printer || store.list.length > 0);
+const topViews = () => visibleViews().filter((v) => !v.tool.parent);  // tools that live inside another tool's page have no tab of their own
 
 function activeView() {
   const route = location.hash.slice(1);
@@ -116,6 +117,11 @@ async function mountView(v) {
   const root = h('section', { class: 'tool', id: `tool-${v.key.replace('/', '-')}`, role: 'tabpanel', hidden: true });
   $('tools').append(root);
   mounted.set(v.key, { root });
+  const parent = t.parent && tools.find((p) => p.id === t.parent);
+  if (parent) {  // a tool inside another's page: a way back to it
+    root.append(h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' },
+      h('a', { href: `#${parent.id}`, title: `Back to ${parent.title}` }, icon('chevron', 14), parent.title), h('span', { 'aria-hidden': 'true' }, '/'), h('strong', {}, t.title)));
+  }
   const content = h('div', { class: 'tool-body' });
   root.append(content);
   try {
@@ -130,7 +136,7 @@ async function mountView(v) {
 }
 
 function paintTabs() {
-  const list = visibleViews();
+  const list = topViews();
   const tabs = $('tool-tabs');
   tabs.hidden = list.length < 2 || !shown?.startsWith('view:');
   const sig = list.map((v) => v.key).join();
@@ -138,7 +144,8 @@ function paintTabs() {
     tabs.dataset.sig = sig;
     fill(tabs, list.map((v) => h('a', { class: 'tab', href: `#${v.key}`, role: 'tab', 'data-key': v.key, title: v.description || v.title }, icon(v.icon || 'wrench', 16), v.title)));
   }
-  const current = activeView();
+  const shownView = activeView();
+  const current = shownView?.tool.parent ? list.find((v) => v.tool.id === shownView.tool.parent) || shownView : shownView;  // a child lights its parent's tab
   tabs.querySelectorAll('a').forEach((a) => {
     const on = !!current && a.dataset.key === current.key;
     a.setAttribute('aria-selected', String(on));

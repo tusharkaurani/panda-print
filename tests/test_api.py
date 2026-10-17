@@ -14,6 +14,9 @@ def test_index_and_tool_registry(client):
     tools = client.get("/api/tools").get_json()["tools"]
     assert [t["id"] for t in tools] == ["maintenance", "photosheet", "utilities"]
     assert all(tab["description"] for tab in tools[0]["tabs"])  # each tab says what it holds on hover
+    by_id = {t["id"]: t for t in tools}
+    assert [t["id"] for t in tools if not t["parent"]] == ["maintenance", "utilities"]  # three tabs at the top: Overview, Nozzle Care, Print Utilities
+    assert by_id["photosheet"]["parent"] == "utilities"  # the photo tool lives inside the Print Utilities page
     assert client.get(tools[0]["entry"]).status_code == 200
     assert client.get("/tools/maintenance/../../settings.py").status_code == 404
     assert client.get("/tools/nope/ui.js").status_code == 404

@@ -48,6 +48,7 @@ class Tool:
     needs_printer: bool = False  # True: the shell shows this tool only once a printer is added,
     #                              and gives its UI a printer selector (kit.printer)
     tabs: list[ToolTab] = field(default_factory=list)  # empty: one tab with the tool's own title
+    parent: str | None = None  # a tool id: no tab of its own; it is listed inside that tool's page (for example "utilities")
 
 
 @dataclass

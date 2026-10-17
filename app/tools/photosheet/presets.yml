@@ -21,7 +21,7 @@
 #     copies      copies of the whole sheet
 presets:
 - id: preset1
-  name: 35 × 45 mm on A4 (as A5 Half)
+  name: 35 × 45 mm on A4 (as A5)
   settings:
     photo:
       width: 35.0
