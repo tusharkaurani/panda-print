@@ -39,7 +39,27 @@ function paperCanvas() {
 }
 
 // A small PNG picture of a file for the library, or null if it can't be drawn (the page still works without one).
-export async function makeThumb(file) {
+// Never waits forever: a browser tab that isn't being painted (in the background) stalls pdf.js, and an upload
+// must not hang on a picture.
+export function makeThumb(file, limitMs = 15000) {
+  return Promise.race([drawThumb(file), new Promise((res) => setTimeout(() => res(null), limitMs))]);
+}
+
+const drawn = new Map();  // page id -> data: URL (or null): pictures drawn here for pages stored without one
+
+// The picture for a page the library has no thumbnail for (e.g. uploaded before thumbnails existed). Not stored.
+export function drawnThumb(item) {
+  if (!drawn.has(item.id)) {
+    drawn.set(item.id, (async () => {
+      const res = await fetch(`/api/maintenance/pages/${item.id}/file`, { credentials: 'same-origin' });
+      const png = res.ok ? await makeThumb(new File([await res.blob()], item.name, { type: item.mime })) : null;
+      return png ? await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(png); }) : null;  // data: (CSP allows it, not blob:)
+    })().catch(() => null));
+  }
+  return drawn.get(item.id);
+}
+
+async function drawThumb(file) {
   try {
     const { canvas, ctx } = paperCanvas();
     const margin = 6, boxW = PAPER.w - 2 * margin, boxH = PAPER.h - 2 * margin;

@@ -1,7 +1,7 @@
 // "Manage pages" dialog: the shared library of pages (upload, delete, preview) and this printer's order,
 // on/off switches and rotation. Everything saves as you go; closing the dialog just refreshes the card behind it.
 
-import { createPreview, makeThumb, standardSvg } from './preview.js';
+import { createPreview, drawnThumb, makeThumb, standardSvg } from './preview.js';
 
 const bytes = (n) => (n >= 2 ** 20 ? `${(n / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const KIND = { 'application/pdf': 'PDF', 'image/png': 'PNG', 'image/jpeg': 'JPEG' };
@@ -93,7 +93,11 @@ export function createPagesDialog(kit, { base, onChange }) {
       : item.thumb ? h('img', { src: `${file}/thumb`, alt: '', loading: 'lazy', decoding: 'async' })
       : item.mime.startsWith('image/') ? h('img', { src: `${file}/file`, alt: '', loading: 'lazy', decoding: 'async' })
       : h('span', { class: 'docicon' }, icon('file', 22), h('b', {}, 'PDF'));
-    return h('button', { class: 'paper', type: 'button', title: 'Preview', 'aria-label': `Preview ${item.name}`, onclick: () => preview.open(item) }, inner);
+    const button = h('button', { class: 'paper', type: 'button', title: 'Preview', 'aria-label': `Preview ${item.name}`, onclick: () => preview.open(item) }, inner);
+    if (!item.standard && !item.thumb && item.mime === 'application/pdf') {  // stored without a picture: draw it here
+      drawnThumb(item).then((url) => { if (url) button.replaceChildren(h('img', { src: url, alt: '' })); });
+    }
+    return button;
   }
 
   function row(item, index) {
