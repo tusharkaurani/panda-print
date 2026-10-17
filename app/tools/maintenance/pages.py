@@ -129,7 +129,7 @@ class Library:
 
     def __init__(self, db: Database, directory: Path, max_file_bytes: int, max_files: int, max_total_bytes: int,
                  clock=time.time):
-        self.db, self.dir, self.clock = db, directory, clock
+        self.db, self.dir, self.clock = db, Path(directory).resolve(), clock  # absolute: send_file would read a relative path from the app folder
         self.max_file, self.max_files, self.max_total = max_file_bytes, max_files, max_total_bytes
 
     @classmethod

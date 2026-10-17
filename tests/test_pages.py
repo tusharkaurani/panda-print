@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.core.db import Database
@@ -98,3 +100,11 @@ def test_deleting_a_page_removes_its_thumbnail_too(library, tmp_path):
     page = library.add(PNG, "A.png", PNG + b"t")
     library.delete(page["id"])
     assert not list((tmp_path / "pages").glob("*"))
+
+
+def test_the_library_folder_is_absolute_so_files_can_be_served_when_data_dir_is_relative(tmp_path, monkeypatch):
+    """`DATA_DIR=.local/data` (make dev) once made downloads and previews 500: send_file looks relative paths up
+    from the app folder, not from where the app was started."""
+    monkeypatch.chdir(tmp_path)
+    lib = Library(None, Path("rel/pages"), max_file_bytes=1, max_files=1, max_total_bytes=1)
+    assert lib.dir.is_absolute() and lib.dir == (tmp_path / "rel" / "pages").resolve()
