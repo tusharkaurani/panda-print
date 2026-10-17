@@ -31,6 +31,8 @@ class Automation:
     attribution_minutes: float  # how long a check can wait for the counter to move
     enabled: bool  # print the nozzle check automatically (off unless asked for)
     run_at: str  # "HH:MM": never print before this time of day
+    rotate: bool  # print the pages in the printer's rotation instead of always the standard test page
+    plain_every: int  # with rotation: every Nth print is the standard test page as well (0 = never)
 
     @property
     def attribution_seconds(self) -> float:
@@ -61,6 +63,8 @@ def defaults(settings: Settings) -> Automation:
         attribution_minutes=settings.attribution_window / 60,
         enabled=settings.auto_check,
         run_at=settings.check_time if _HHMM.match(settings.check_time) else "10:00",
+        rotate=False,
+        plain_every=0,
     )
 
 
@@ -76,7 +80,16 @@ def validate(payload: dict) -> tuple[dict, dict[str, str]]:
         if key not in payload:
             continue
         raw = payload[key]
-        if key == "enabled":
+        if key == "plain_every":
+            try:
+                number = int(float(raw))
+                if number != float(raw) or not 0 <= number <= 50:
+                    raise ValueError
+                clean[key] = number
+            except (TypeError, ValueError):
+                errors[key] = "Enter a whole number from 0 to 50 (0 means never)."
+            continue
+        if key in ("enabled", "rotate"):
             if isinstance(raw, bool):
                 clean[key] = raw
             elif str(raw).strip().lower() in ("true", "1", "on", "yes"):

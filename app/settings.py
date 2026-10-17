@@ -66,6 +66,11 @@ class Settings:
 
     recent_jobs: int = 10
 
+    # --- the library of pages the nozzle print can rotate through
+    max_page_mb: int = 10  # MAX_PAGE_MB: largest single upload
+    max_pages: int = 50  # MAX_PAGES: how many pages the library holds
+    max_library_mb: int = 100  # MAX_LIBRARY_MB: total size of the library
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "panda-print.db"
@@ -111,4 +116,7 @@ class Settings:
             print_cooldown=_num(e.get("PRINT_COOLDOWN"), d.print_cooldown),
             print_max_per_hour=int(_num(e.get("PRINT_MAX_PER_HOUR"), d.print_max_per_hour)),
             recent_jobs=int(_num(e.get("RECENT_JOBS"), d.recent_jobs)),
+            max_page_mb=int(_num(e.get("MAX_PAGE_MB"), d.max_page_mb)),
+            max_pages=int(_num(e.get("MAX_PAGES"), d.max_pages)),
+            max_library_mb=int(_num(e.get("MAX_LIBRARY_MB"), d.max_library_mb)),
         )

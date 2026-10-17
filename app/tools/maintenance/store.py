@@ -82,6 +82,7 @@ class Store:
             c.execute("DELETE FROM mt_activity WHERE printer_id=?", (self.pid,))
             c.execute("DELETE FROM mt_checks WHERE printer_id=?", (self.pid,))
             c.execute("DELETE FROM mt_automation WHERE printer_id=?", (self.pid,))
+            c.execute("DELETE FROM mt_rotation WHERE printer_id=?", (self.pid,))
             prefix = self._key("")
             c.execute("DELETE FROM kv WHERE substr(key, 1, ?) = ?", (len(prefix), prefix))
 
@@ -101,6 +102,18 @@ class Store:
             self.db.execute("INSERT INTO mt_automation(printer_id,data) VALUES(?,?) "
                             "ON CONFLICT(printer_id) DO UPDATE SET data=excluded.data",
                             (self.pid, json.dumps(overrides)))
+
+    # --- the rotation: this printer's order and on/off for each page of the shared library
+    def rotation_rows(self) -> list[tuple[str, int, bool]]:
+        rows = self.db.query("SELECT page_id, position, enabled FROM mt_rotation WHERE printer_id=?", (self.pid,))
+        return [(r["page_id"], r["position"], bool(r["enabled"])) for r in rows]
+
+    def set_rotation(self, rows: list[tuple[str, bool]]) -> None:
+        """Replace this printer's order: [(page id, enabled)] in the order they should print."""
+        with self.db.tx() as c:
+            c.execute("DELETE FROM mt_rotation WHERE printer_id=?", (self.pid,))
+            c.executemany("INSERT INTO mt_rotation(printer_id,page_id,position,enabled) VALUES(?,?,?,?)",
+                          [(self.pid, pid, i, int(en)) for i, (pid, en) in enumerate(rows)])
 
     # --- activity (counter changes)
     def add_activity(self, ts: float, delta: int, count: int | None, kind: str,

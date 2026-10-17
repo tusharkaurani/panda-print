@@ -10,11 +10,13 @@ from app.core.context import AppContext
 from app.core.errors import SourceError
 from app.core.ttlcache import TTLCache
 from app.tools.maintenance import automation as auto
-from app.tools.maintenance import idle, normalize, schedule
+from app.tools.maintenance import idle, normalize, pages, schedule
 from app.tools.maintenance.store import Store
 from app.tools.maintenance.tracker import APP_USER, Tracker
 
 log = logging.getLogger(__name__)
+
+CHOICES = ("enabled", "rotate")  # what to do and what to print: not tuning settings, so a reset leaves them
 
 NOZZLE_PS = (Path(__file__).with_name("nozzle-check.ps")).read_bytes()
 JOB_NAME = "panda-print nozzle check"
@@ -30,8 +32,9 @@ class RateLimited(Exception):
 
 
 class Service:
-    def __init__(self, ctx: AppContext, printer, backend, store: Store, tracker: Tracker):
+    def __init__(self, ctx: AppContext, printer, backend, store: Store, tracker: Tracker, library: pages.Library):
         self.ctx, self.s, self.store, self.tracker = ctx, ctx.settings, store, tracker
+        self.library = library  # the pages shared by every printer
         self.config = printer  # this printer's saved settings (address, queue, ...)
         self.printer = backend  # IPP/SNMP/CUPS access for this one printer
         self.clock = ctx.clock
@@ -177,15 +180,15 @@ class Service:
     def _check(row) -> dict | None:
         if row is None:
             return None
-        return {"ts": row["ts"], "source": row["source"], "state": row["state"],
-                "job_id": row["job_id"], "message": row["message"]}
+        return {"ts": row["ts"], "source": row["source"], "state": row["state"], "job_id": row["job_id"],
+                "message": row["message"], "page_name": row["page_name"], "pages": row["pages"]}
 
     # ------------------------------------------------------------ automation settings
     def automation_status(self) -> dict:
         base = auto.defaults(self.s)
         overrides = self.store.automation_overrides()
         # the on/off switch is not one of the settings: it is neither counted as "changed" nor cleared by a reset
-        settings_changed = sorted(k for k in overrides if k != "enabled")
+        settings_changed = sorted(k for k in overrides if k not in CHOICES)
         return {"values": auto.effective(base, overrides).to_dict(), "defaults": base.to_dict(),
                 "customised": settings_changed, "timezone": schedule.tz_label(self.s.timezone)}
 
@@ -203,7 +206,7 @@ class Service:
     def reset_automation(self) -> dict:
         """Back to the defaults for every setting. The on/off switch stays as it is."""
         overrides = self.store.automation_overrides()
-        self.store.set_automation_overrides({k: v for k, v in overrides.items() if k == "enabled"})
+        self.store.set_automation_overrides({k: v for k, v in overrides.items() if k in CHOICES})
         return self.automation_status()
 
     # ------------------------------------------------------------ printing
@@ -212,24 +215,108 @@ class Service:
         v = ratelimit.check(self.rule, times, now)
         return {"allowed": v.allowed, "retry_after": v.retry_after, "reason": v.reason}
 
-    def _submit(self, source: str, now: float) -> int:
-        """Send one nozzle check to CUPS and record it (as a failed row if CUPS says no). Caller holds the lock."""
+    # ------------------------------------------------------------ what to print
+    def _items(self) -> list[tuple[str, bool]]:
+        """This printer's pages in print order: [(id, enabled)], the standard test page included."""
+        return pages.arrange([p["id"] for p in self.library.list()], self.store.rotation_rows())
+
+    def _load(self, page_id: str):
+        """(name, mime, bytes, sheets) of a page, or None if it can't be read (deleted behind our back)."""
+        if page_id == pages.STANDARD:
+            return pages.STANDARD_NAME, "application/postscript", NOZZLE_PS, 1
+        got = self.library.read(page_id)
+        if got is None:
+            return None
+        page, data = got
+        return page["name"], page["mime"], data, page["pages"]
+
+    def _next(self, cfg: auto.Automation) -> pages.Choice:
+        """What the next automatic or 'Print now' would print (without advancing anything)."""
+        if not cfg.rotate:
+            return pages.Choice(pages.STANDARD)
+        enabled = [pid for pid, on in self._items() if on]
+        return pages.choose(enabled, self.store.get("rotation_last"), int(self.store.get("rotation_count") or 0),
+                            cfg.plain_every)
+
+    def rotation_status(self) -> dict:
+        cfg = self.tracker.automation()
+        library = {p["id"]: p for p in self.library.list()}
+        items = []
+        for pid, on in self._items():
+            p = library.get(pid)
+            items.append({"id": pid, "enabled": on, "standard": pid == pages.STANDARD,
+                          "name": pages.STANDARD_NAME if p is None else p["name"],
+                          "mime": "application/postscript" if p is None else p["mime"],
+                          "pages": 1 if p is None else p["pages"], "size": None if p is None else p["size"]})
+        nxt = self._next(cfg)
+        names = {i["id"]: i["name"] for i in items}
+        return {"rotate": cfg.rotate, "plain_every": cfg.plain_every, "items": items,
+                "next": {"id": nxt.id, "name": names.get(nxt.id, pages.STANDARD_NAME), "plain": nxt.plain},
+                "count": int(self.store.get("rotation_count") or 0), "limits": self.library.limits()}
+
+    def save_rotation(self, items) -> dict:
+        """Set this printer's order and which pages are on: [{id, enabled}] in print order."""
+        if not isinstance(items, list):
+            raise pages.PageError("Send the pages as a list.")
+        known = {pages.STANDARD} | {p["id"] for p in self.library.list()}
+        rows, seen = [], set()
+        for it in items:
+            pid = it.get("id") if isinstance(it, dict) else None
+            if pid not in known or pid in seen:
+                raise pages.PageError("That list has a page that doesn't exist, or one listed twice.")
+            seen.add(pid)
+            rows.append((pid, bool(it.get("enabled", True))))
+        self.store.set_rotation(rows)
+        return self.rotation_status()
+
+    def _pick(self, cfg: auto.Automation, explicit: str | None):
+        """-> (page id, (name, mime, data, sheets), advance the rotation afterwards?)"""
+        if explicit:
+            doc = self._load(explicit)
+            if doc is None:
+                raise pages.PageError("That page doesn't exist (any more).", 404)
+            return explicit, doc, False
+        if not cfg.rotate:
+            return pages.STANDARD, self._load(pages.STANDARD), False
+        enabled = [pid for pid, on in self._items() if on]
+        last, count = self.store.get("rotation_last"), int(self.store.get("rotation_count") or 0)
+        while True:
+            choice = pages.choose(enabled, last, count, cfg.plain_every)
+            doc = self._load(choice.id)
+            if doc is not None:
+                return choice.id, doc, True
+            enabled = [pid for pid in enabled if pid != choice.id]  # unreadable: skip it and try the next
+            if not enabled:
+                return pages.STANDARD, self._load(pages.STANDARD), True
+
+    def _submit(self, source: str, now: float, explicit: str | None = None) -> int:
+        """Print one page (the next in the rotation, or the one asked for) and record it, as a failed row if CUPS
+        says no. Caller holds the lock."""
+        cfg = self.tracker.automation()
+        page_id, (name, mime, data, sheets), advance = self._pick(cfg, explicit)
+        mark = None if page_id == pages.STANDARD else page_id
+        count = int(self.store.get("rotation_count") or 0)
         try:
-            job_id = self.printer.submit_document(f"{JOB_NAME} ({source})", NOZZLE_PS, APP_USER, "application/postscript")
+            job_id = self.printer.submit_document(f"{JOB_NAME} ({source}) - {name}"[:120], data, APP_USER, mime)
         except SourceError as e:
-            self.store.add_check(now, source, "failed", message=e.message)
+            self.store.add_check(now, source, "failed", message=e.message, page_id=mark, page_name=name)
             raise
-        self.store.add_check(now, source, "submitted", job_id)
+        self.store.add_check(now, source, "submitted", job_id, page_id=mark, page_name=name, pages=sheets)
+        if advance:  # remember where the rotation is, by page id so reordering or deleting can't confuse it
+            if not (cfg.plain_every and (count + 1) % cfg.plain_every == 0):  # a plain turn doesn't move the cursor
+                self.store.put("rotation_last", page_id)
+            self.store.put("rotation_count", count + 1)
         self._queue_cache.clear()
         self._jobs_cache.clear()
         self._printer_cache.clear()
         return job_id
 
-    def request_print(self) -> dict:
-        """Print one nozzle check now (the API's manual print). Raises RateLimited or SourceError."""
+    def request_print(self, page_id: str | None = None) -> dict:
+        """Print now (the API's manual print): the next page in the rotation, or `page_id` if given (which
+        leaves the rotation where it was). Raises RateLimited, SourceError or PageError."""
         with self._print_lock:  # serialise: check + submit + record is one step
             now = self.clock()
             verdict = ratelimit.check(self.rule, self.store.manual_attempt_times(now - self.rule.window), now)
             if not verdict.allowed:
                 raise RateLimited(verdict)
-            return {"job_id": self._submit("manual", now), "submitted_at": now}
+            return {"job_id": self._submit("manual", now, page_id), "submitted_at": now}

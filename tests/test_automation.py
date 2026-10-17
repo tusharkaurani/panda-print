@@ -95,7 +95,8 @@ def url(pid=PID):
 def test_new_printer_starts_on_the_defaults(client):
     d = client.get(url()).get_json()["data"]
     assert d["values"] == d["defaults"] == {"idle_days": 7.0, "check_minutes": 5.0, "job_pattern": "nozzle-check",
-                                            "attribution_minutes": 30.0, "enabled": False, "run_at": "10:00"}
+                                            "attribution_minutes": 30.0, "enabled": False, "run_at": "10:00",
+                                            "rotate": False, "plain_every": 0}
     assert d["customised"] == []
 
 
@@ -206,3 +207,20 @@ def test_quiet_hours_use_the_container_zone_not_utc(make_app, tz, expected):
     c.put(url(), json={"enabled": True, "idle_days": 2, "run_at": "10:00"}, headers=csrf_headers(c))
     a = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["automation"]
     assert a["state"] == expected, a
+
+
+def test_rotate_and_plain_every_are_validated():
+    assert auto.validate({"rotate": "on", "plain_every": "3"}) == ({"rotate": True, "plain_every": 3}, {})
+    for bad in ("-1", "51", "2.5", "often", None):
+        assert "whole number" in auto.validate({"plain_every": bad})[1]["plain_every"], bad
+    assert "on or off" in auto.validate({"rotate": "sometimes"})[1]["rotate"]
+
+
+def test_reset_keeps_what_to_print_like_it_keeps_the_switch(client):
+    h = csrf_headers(client)
+    client.put(url(), json={"rotate": True, "plain_every": 4, "idle_days": 3}, headers=h)
+    d = client.delete(url(), headers=h).get_json()["data"]
+    assert d["values"]["rotate"] is True                         # a choice, not a setting
+    assert d["values"]["plain_every"] == 0 and d["values"]["idle_days"] == 7.0  # settings are back to the defaults
+    assert d["customised"] == []
+    assert client.put(url(), json={"rotate": False}, headers=h).get_json()["data"]["customised"] == []

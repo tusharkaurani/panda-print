@@ -131,6 +131,11 @@ class Library:
         self.db, self.dir, self.clock = db, directory, clock
         self.max_file, self.max_files, self.max_total = max_file_bytes, max_files, max_total_bytes
 
+    @classmethod
+    def from_settings(cls, db: Database, settings, clock=time.time) -> "Library":
+        return cls(db, settings.data_dir / "pages", max_file_bytes=settings.max_page_mb * 2**20,
+                   max_files=settings.max_pages, max_total_bytes=settings.max_library_mb * 2**20, clock=clock)
+
     def limits(self) -> dict:
         return {"max_file_mb": self.max_file // 2**20, "max_files": self.max_files,
                 "max_total_mb": self.max_total // 2**20}
@@ -141,7 +146,7 @@ class Library:
                 "created_at": r["created_at"]}
 
     def list(self) -> list[dict]:
-        return [self._row(r) for r in self.db.query("SELECT * FROM mt_pages ORDER BY created_at, id")]
+        return [self._row(r) for r in self.db.query("SELECT * FROM mt_pages ORDER BY created_at, rowid")]
 
     def get(self, page_id: str) -> dict | None:
         r = self.db.one("SELECT * FROM mt_pages WHERE id=?", (page_id,))

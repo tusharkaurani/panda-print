@@ -15,7 +15,8 @@ def main() -> None:
     log.info("panda-print listening on %s:%s", settings.host, settings.port)
     # 8 threads: a page load fires several slow device calls at once
     serve(app, host=settings.host, port=settings.port, threads=8, ident="panda-print",
-          max_request_body_size=64 * 1024, connection_limit=50, channel_timeout=30, _quiet=True)
+          # room for a page upload; Flask itself caps every other request at 64 KB
+          max_request_body_size=(settings.max_page_mb + 1) * 2**20, connection_limit=50, channel_timeout=30, _quiet=True)
 
 
 if __name__ == "__main__":

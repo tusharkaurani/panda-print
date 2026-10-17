@@ -11,6 +11,7 @@ from pathlib import Path
 from app.core.context import AppContext
 from app.core.tool import Tool, ToolTab
 from app.tools.maintenance import automation, schedule, store
+from app.tools.maintenance.pages import Library
 from app.tools.maintenance.api import build_blueprint
 from app.tools.maintenance.runtimes import Runtimes
 
@@ -20,7 +21,8 @@ log = logging.getLogger(__name__)
 def create(ctx: AppContext) -> Tool:
     store.migrate(ctx.db)
     log.info("nozzle check clock: %s", schedule.tz_label(ctx.settings.timezone))
-    runtimes = Runtimes(ctx)
+    library = Library.from_settings(ctx.db, ctx.settings, ctx.clock)
+    runtimes = Runtimes(ctx, library)
 
     def poll_forever() -> None:
         stop = threading.Event()
@@ -48,7 +50,7 @@ def create(ctx: AppContext) -> Tool:
         title="Printer Maintenance",
         description="Status, ink levels, queue and nozzle checks",
         icon="wrench",
-        blueprint=build_blueprint(runtimes, ctx.clock),
+        blueprint=build_blueprint(runtimes, ctx.clock, library),
         ui_dir=Path(__file__).parent / "ui",
         start=start,
         order=10,

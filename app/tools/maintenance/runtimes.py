@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.core.context import AppContext
 from app.core.printers import Printer
+from app.tools.maintenance.pages import Library
 from app.tools.maintenance.service import Service
 from app.tools.maintenance.store import Store
 from app.tools.maintenance.tracker import Tracker
@@ -20,8 +21,9 @@ class Runtime:
 
 
 class Runtimes:
-    def __init__(self, ctx: AppContext):
+    def __init__(self, ctx: AppContext, library: Library | None = None):
         self.ctx = ctx
+        self.library = library or Library.from_settings(ctx.db, ctx.settings, ctx.clock)  # shared by every printer
         self._lock = threading.Lock()
         self._items: dict[str, Runtime] = {}
         ctx.printers.on_delete(self.forget)
@@ -43,7 +45,7 @@ class Runtimes:
         backend = ctx.backend_for(printer)
         store = Store(ctx.db, printer.id)
         tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file)
-        return Runtime(printer, store, tracker, Service(ctx, printer, backend, store, tracker))
+        return Runtime(printer, store, tracker, Service(ctx, printer, backend, store, tracker, self.library))
 
     def all(self) -> list[Runtime]:
         return [rt for p in self.ctx.printers.list() if (rt := self.get(p.id))]
