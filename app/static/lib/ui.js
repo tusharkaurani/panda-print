@@ -22,7 +22,7 @@ export function errorBox(error, onRetry) {
 }
 
 // A titled card whose body can be swapped, with a refresh button and a "busy" state.
-export function card({ title, iconName, wide = false, onRefresh, actions = [] }) {
+export function card({ title, iconName, wide = false, onRefresh, actions = [], quietStamp = false }) {
   const badgeSlot = h('span');
   const updated = h('span', { class: 'updated' });
   const heading = h('h3', {}, iconName && icon(iconName, 18), h('span', { class: 'card-title' }, title));
@@ -37,7 +37,11 @@ export function card({ title, iconName, wide = false, onRefresh, actions = [] })
     setTitle(text) { heading.querySelector('.card-title').textContent = text; el.setAttribute('aria-label', text); },
     setBadge(node) { clear(badgeSlot); if (node) badgeSlot.append(node); },
     busy(on) { el.setAttribute('aria-busy', on ? 'true' : 'false'); },
-    stamp(blank) { updated.textContent = blank === '' ? '' : `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; },
+    stamp(blank) {
+      const text = blank === '' ? '' : `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      if (quietStamp && refresh) refresh.title = text ? `Refresh (${text.toLowerCase()})` : 'Refresh';  // a crowded header keeps the time in the tooltip
+      else updated.textContent = text;
+    },
   };
 }
 

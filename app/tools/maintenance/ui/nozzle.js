@@ -19,9 +19,9 @@ export function mount(root, kit) {
   let cupsOff = false;  // this printer has no CUPS queue, so nothing here can print
   let rotation = null;  // this printer's pages and what prints next (Service.rotation_status)
   const runLabel = h('span', {}, 'Print now');
-  const runBtn = h('button', { class: 'btn small primary', type: 'button', title: 'Show the page that will print, then confirm', onclick: () => openRun() }, icon('droplet', 15), runLabel);
+  const runBtn = h('button', { class: 'btn small primary', type: 'button', title: 'Show the page that will print, then confirm', onclick: () => openRun() }, runLabel);
 
-  const nozzleCard = ui.card({ title: 'Nozzle care', iconName: 'droplet', wide: true, onRefresh: () => refresh(), actions: [runBtn] });
+  const nozzleCard = ui.card({ title: 'Nozzle care', iconName: 'droplet', wide: true, onRefresh: () => refresh(), actions: [runBtn], quietStamp: true });
   const autoCard = ui.card({ title: 'Automation', iconName: 'clock', wide: true, onRefresh: () => refreshAuto() });
   root.append(h('div', { class: 'grid' }, nozzleCard.el, autoCard.el));
   const refresh = () => load(nozzleCard, 'nozzle', renderNozzle);
@@ -55,7 +55,7 @@ export function mount(root, kit) {
     h('p', { class: 'hint' }, 'It uses a sheet of paper and a little ink.'),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', type: 'button', title: 'Close without printing', onclick: () => dialog.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', type: 'button', title: 'Send this page to the printer now', onclick: runNow }, icon('droplet', 16), 'Print')));
+      h('button', { class: 'btn primary', type: 'button', title: 'Send this page to the printer now', onclick: runNow }, 'Print')));
   dialog.addEventListener('close', () => { if (dialog.open) return; runToken += 1; runSheets.replaceChildren(); });
   root.append(dialog);
 
@@ -103,12 +103,13 @@ export function mount(root, kit) {
   function renderNozzle(d) {
     const lp = d.last_print, nx = d.next_check, a = d.automation;
     cupsOff = d.cups?.configured === false;
-    // the next check is summarised by this badge, so it has no card of its own
-    nozzleCard.setBadge(cupsOff ? ui.badge('Printing needs CUPS')
+    // the next print is summarised by this status badge, which sits above the figures (not in the crowded header)
+    const status = (cupsOff ? ui.badge('Printing needs CUPS')
       : !a.enabled
       ? (nx?.overdue ? ui.badge('Print due · auto print off', 'warn') : ui.badge('Auto print off'))
       : a.state === 'blocked' ? ui.badge('Auto print waiting', 'warn')
       : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Printing soon' : `Next print ${a.next_run_label || fmt.when(a.next_run_at)}`, 'ok') : null);
+    nozzleCard.setBadge(null);
 
     waitUntil = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
     paintRun();
@@ -118,6 +119,7 @@ export function mount(root, kit) {
       a.enabled && a.state === 'blocked' && !cupsOff && `Auto print is waiting: ${a.reason}`].filter(Boolean);
 
     nozzleCard.set(
+      status && h('div', { class: 'status-line' }, status),
       problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
       h('div', { class: cupsOff ? 'stats two' : 'stats four' },
         ui.stat('Last print', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',

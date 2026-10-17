@@ -35,3 +35,4 @@
 .mt .steps pre { margin-top: 6px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text); font-family: var(--mono); font-size: 13px; overflow-x: auto; }
 .mt .steps code { font-family: var(--mono); font-size: 13px; color: var(--text); }
 .mt .cups-copy a.btn { text-decoration: none; }
+.mt .status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
