@@ -42,6 +42,10 @@ MIGRATIONS.append("""
     );
 """)
 
+from app.tools.maintenance import pages as _pages  # noqa: E402
+
+MIGRATIONS.append(_pages.MIGRATION)  # the shared page library and each printer's rotation
+
 OK_STATES = ("submitted", "completed")
 
 
