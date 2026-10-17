@@ -16,137 +16,96 @@
 #                                 pdf poster labels craft document
 #         image: https://...      optional, a picture URL to show instead of the drawing
 #
-# Third-party sites: they change, add ads or move things behind a paid plan. Where a site is freemium
-# the line says so. Nothing here is affiliated with panda-print.
+# Every site below was read on 17 Oct 2026 and says, on its own pages, that using it costs nothing (several
+# are paid for by ads). That is the site's claim, not a guarantee: sites change, and a few ask for a free
+# account for some things; the description says so. Sites that charge for the result, or put their main
+# content behind a membership, are left out. If you find one that is not free, remove it from your list and
+# tell the maintainer. Nothing here is affiliated with panda-print.
 categories:
   - name: Photos & IDs
-    description: Passport and ID photos, sized and tiled so one sheet of photo paper does the job.
+    description: Passport and ID photos made in your browser, with a 4×6 sheet to print.
     tools:
-      - name: ePassportPhoto
-        url: https://www.epassportphoto.com/
-        description: Crop a passport or visa photo to the right size and tile it onto 4×6 paper.
+      - name: FreePassport.photo
+        url: https://freepassport.photo/
+        description: Photo and 4×6 sheet both free, no watermark or account. Works on your device (first use loads about 45 MB).
         art: passport
-      - name: IDPhoto4You
-        url: https://www.idphoto4you.com/
-        description: Passport, visa and ID photos for many countries, ready to print.
+      - name: PicToPassport
+        url: https://pictopassport.com/
+        description: Free passport photo and 4×6 sheet, no sign-up, processed on your device.
         art: passport
 
   - name: Student worksheets
-    description: Practice sheets by subject and grade, or made to order.
+    description: Practice sheets to print, with no account needed.
     tools:
       - name: Math-Drills
         url: https://www.math-drills.com/
-        description: Thousands of free maths worksheets with answer keys.
+        description: Over 70,000 maths worksheets, free to print, with answer keys.
         art: math
-      - name: K5 Learning
-        url: https://www.k5learning.com/free-worksheets
-        description: Free reading and maths worksheets for kindergarten to grade 5.
-        art: worksheet
-      - name: WorksheetWorks
-        url: https://www.worksheetworks.com/
-        description: Make your own maths, handwriting and puzzle sheets.
-        art: worksheet
       - name: Handwriting Worksheets
         url: https://handwritingworksheets.com/
-        description: Type any words and print a handwriting practice sheet.
+        description: Type any words and print a practice sheet, free, no sign-up.
         art: handwriting
-      - name: Math Worksheets 4 Kids
-        url: https://www.mathworksheets4kids.com/
-        description: Printable maths and English sheets for primary school.
-        art: math
-      - name: TLS Books
-        url: https://www.tlsbooks.com/
-        description: Free worksheets and activity pages for the early years.
+      - name: Teaching Squared
+        url: https://www.teachingsquared.com/
+        description: Free worksheet sets for teachers and parents, no sign-up.
         art: worksheet
-      - name: Education.com
-        url: https://www.education.com/resources/worksheets/
-        description: Worksheets by grade and subject (free sign-up for the full library).
-        art: worksheet
-      - name: Dad's Worksheets
-        url: https://www.dadsworksheets.com/
-        description: Maths worksheet generators with several difficulty levels.
-        art: math
 
   - name: Colouring pages
     description: Good for a quick, colourful print that exercises every ink.
     tools:
       - name: Crayola
         url: https://www.crayola.com/free-coloring-pages
-        description: Free colouring pages for kids, by character and season.
-        art: colouring
-      - name: Super Coloring
-        url: https://www.supercoloring.com/
-        description: Large library of colouring pages, from simple to detailed.
+        description: Free colouring pages to download and print, by character and season.
         art: colouring
       - name: Best Coloring Pages for Kids
         url: https://www.bestcoloringpagesforkids.com/
-        description: Animals, vehicles and holidays, printable as PDF.
-        art: colouring
-      - name: Just Color
-        url: https://www.justcolor.net/
-        description: Detailed colouring pages for older kids and adults.
+        description: Free printable animals, vehicles and holiday pages (ad-supported).
         art: colouring
 
   - name: Calendars, planners & paper
     description: Plain paper in every ruling, and calendars for any month or year.
     tools:
-      - name: Time and Date calendars
-        url: https://www.timeanddate.com/calendar/
-        description: Printable calendars for any year, with holidays for your country.
-        art: calendar
-      - name: Vertex42
-        url: https://www.vertex42.com/calendars/
-        description: Calendars and planners to print or download as spreadsheets.
-        art: calendar
       - name: Calendar Labs
         url: https://www.calendarlabs.com/
-        description: Monthly, yearly and weekly calendars in many layouts.
+        description: Free calendars to download or print, for home, school or work.
         art: calendar
       - name: Printable Paper
         url: https://www.printablepaper.net/
-        description: Lined, graph, dot grid, music and checklist paper as PDF.
+        description: Lined, graph, dot grid and music paper, free as PDF (a paid bundle is optional).
         art: lined
       - name: Incompetech graph paper
         url: https://incompetech.com/graphpaper/
-        description: Graph, isometric, dot and polar paper, with the spacing you choose.
+        description: Graph, isometric, dot and polar paper at the spacing you choose. Public domain (CC0).
         art: graph
       - name: FreePrintable
         url: https://www.freeprintable.com/
-        description: Planners, charts and other printable templates.
+        description: Planners, charts and templates, "always free" for personal and school use.
         art: dots
 
   - name: PDF & documents
     description: Tidy a file before it goes to the printer.
     tools:
-      - name: iLovePDF
-        url: https://www.ilovepdf.com/
-        description: Merge, split, compress and rotate PDFs (free tier).
-        art: pdf
       - name: PDF24 Tools
         url: https://tools.pdf24.org/en/
-        description: "Free PDF tools: merge, split, compress, pages per sheet."
+        description: Merge, split, compress and arrange PDFs. Free with no limits, paid for by ads.
         art: pdf
-      - name: Print Friendly & PDF
-        url: https://www.printfriendly.com/
-        description: Turn a web page into a clean, ad-free page to print.
-        art: document
 
   - name: Posters, labels & crafts
     description: Bigger than one sheet, smaller than one sheet, or cut and fold.
     tools:
       - name: The Rasterbator
         url: https://rasterbator.net/
-        description: Split any picture into pages and tape them into a poster.
+        description: Split any picture into pages and tape them into a poster. Completely free.
         art: poster
       - name: BlockPosters
         url: https://www.blockposters.com/
-        description: Turn an image into a multi-page poster, with page overlap.
+        description: Turn an image into a multi-page poster, free.
         art: poster
       - name: Avery templates
         url: https://www.avery.com/templates
-        description: Label and card templates for the sheets you buy.
+        description: Free label and card templates for the sheets you buy.
         art: labels
       - name: Canon Creative Park
         url: https://creativepark.canon/en/
-        description: Free papercraft, cards, certificates and calendars, for any printer.
+        description: Free papercraft, cards and calendars for any printer (some need a free Canon ID).
         art: craft

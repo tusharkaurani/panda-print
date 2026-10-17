@@ -87,3 +87,13 @@ def test_the_api_serves_the_catalog_and_the_tool_has_its_own_tab(make_app):
 def test_cards_are_laid_out_four_to_a_row_at_most():
     css = (UI / "ui.css").read_text()
     assert "calc((100% - 3 * var(--gap)) / 4)" in css and "auto-fill" in css
+
+
+# Sites that turned out to charge for the result, or to put their main content behind a membership or limits.
+NOT_FREE = {"epassportphoto.com", "idphoto4you.com", "ilovepdf.com", "mathworksheets4kids.com", "education.com",
+            "k5learning.com", "dadsworksheets.com", "justcolor.net", "twinkl.com", "canva.com", "smallpdf.com", "vertex42.com"}
+
+
+def test_no_site_known_to_charge_is_in_the_built_in_list():
+    hosts = {t["host"] for c in cat.parse(BUILTIN.read_text())[0] for t in c["tools"]}
+    assert not hosts & NOT_FREE, hosts & NOT_FREE

@@ -28,7 +28,7 @@ export async function mount(root, kit) {
       error && h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, error)),
       warnings?.length > 0 && h('details', { class: 'pu-notes' }, h('summary', {}, `${warnings.length} note${warnings.length === 1 ? '' : 's'} about print-utilities.yml`),
         h('ul', {}, warnings.map((w) => h('li', {}, w)))),
-      h('p', { class: 'pu-intro' }, 'Free online tools for things worth printing. Each opens in a new tab on the tool’s own site; some have paid extras.',
+      h('p', { class: 'pu-intro' }, 'Online tools for things worth printing. Each site says its tools are free (checked 17 Oct 2026), and opens in a new tab. Sites change, so check before you rely on one.',
         source === 'custom' ? ' This is your own list (print-utilities.yml).' : ''),
       ...categories.map((c) => h('section', { class: 'pu-cat', 'aria-labelledby': `pu-${c.id}` },
         h('div', { class: 'pu-head' }, h('h2', { id: `pu-${c.id}` }, c.name), c.description && h('p', {}, c.description)),
