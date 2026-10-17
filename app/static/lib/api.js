@@ -15,8 +15,12 @@ export async function api(path, { method = 'GET', body } = {}, retried = false) 
     const init = { method, credentials: 'same-origin', headers: {} };
     if (method !== 'GET') {
       init.headers['X-CSRF-Token'] = await csrf(retried);
-      init.headers['Content-Type'] = 'application/json';
-      init.body = JSON.stringify(body ?? {});
+      if (body instanceof FormData) {
+        init.body = body;  // a file upload: the browser sets the multipart boundary itself
+      } else {
+        init.headers['Content-Type'] = 'application/json';
+        init.body = JSON.stringify(body ?? {});
+      }
     }
     const res = await fetch('/api' + path, init);
     let json = null;

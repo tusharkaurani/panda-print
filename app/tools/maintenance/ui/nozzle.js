@@ -1,5 +1,6 @@
 // Nozzle Check tab: when the printer last printed, the history of checks, and the Automation settings that
 // drive how checks are tracked. This is the file to extend with more nozzle-check features.
+import { createPagesDialog } from './pages.js';
 import { cardLoader } from './shared.js';
 
 // who sent a nozzle check: the Run now button, this app's schedule, or an older timer seen in the CUPS history
@@ -15,7 +16,14 @@ export function mount(root, kit) {
   const autoCard = ui.card({ title: 'Automation', iconName: 'clock', wide: true, onRefresh: () => refreshAuto() });
   root.append(h('div', { class: 'grid' }, nozzleCard.el, autoCard.el));
   const refresh = () => load(nozzleCard, 'nozzle', renderNozzle);
-  const refreshAuto = () => load(autoCard, 'automation', renderAutomation);
+  let rotation = null;  // this printer's pages and what prints next (Service.rotation_status)
+  async function refreshAuto() {
+    const rot = await api(`${base()}/rotation`);
+    rotation = rot.ok ? rot.data : null;
+    return load(autoCard, 'automation', renderAutomation);
+  }
+  const pagesDialog = createPagesDialog(kit, { base, onChange: () => { refreshAuto(); refresh(); } });
+  root.append(pagesDialog.dialog);
 
   // ------------------------------------------------------------ run a check now (to test the real thing)
   // The button and its dialog are created once; the card body they sit in is rebuilt on every save.
@@ -28,7 +36,9 @@ export function mount(root, kit) {
     runBtn.disabled = left > 0;
     runHint.textContent = left > 0
       ? `You can run another in ${fmt.countdown(left)}.`
-      : 'Prints one nozzle check page right now (a manual print). It restarts the idle clock.';
+      : rotation?.rotate
+        ? `Prints the next page, “${rotation.next.name}”, right now (a manual print). It restarts the idle clock.`
+        : 'Prints one nozzle check page right now (a manual print). It restarts the idle clock.';
   }
   setInterval(() => { if (waitUntil > Date.now()) paintRun(); }, 1000);
 
@@ -52,6 +62,7 @@ export function mount(root, kit) {
     }
     paintRun();
     refresh();
+    refreshAuto();  // "Next:" has moved on
     // the page counter moves a few seconds after the job is accepted
     [4000, 15000, 40000].forEach((ms) => setTimeout(refresh, ms));
   }
@@ -62,7 +73,7 @@ export function mount(root, kit) {
     return h('li', { class: 'row' },
       h('span', { class: 'ic' }, icon('droplet', 18)),
       h('div', { class: 'main' }, h('div', { class: 'title' }, SOURCE[c.source] || c.source),
-        h('div', { class: 'meta' }, [fmt.abs(c.ts), c.job_id && `job #${c.job_id}`].filter(Boolean).join(' · ')),
+        h('div', { class: 'meta' }, [c.page_name && `“${c.page_name}”${c.pages > 1 ? ` (${c.pages} pages)` : ''}`, fmt.abs(c.ts), c.job_id && `job #${c.job_id}`].filter(Boolean).join(' · ')),
         c.message && h('div', { class: 'msg' }, c.message)),
       h('div', { class: 'side' }, ui.badge(...state)));
   }
@@ -174,10 +185,28 @@ export function mount(root, kit) {
       refresh();
     }
 
+    async function setRotate(on) {
+      const res = await api(`${base()}/automation`, { method: 'PUT', body: { rotate: on } });
+      if (!res.ok) { toast(res.error?.message || 'Could not save.', 'bad'); return; }
+      await refreshAuto();
+      paintRun();
+    }
+    const radio = (label, checked, value) => h('label', { class: 'radio' },
+      h('input', { type: 'radio', name: 'auto-rotate', checked: checked ? true : null, onchange: () => setRotate(value) }), label);
+    const mine = rotation ? rotation.items.filter((i) => !i.standard && i.enabled).length : 0;
+    // one quiet line: what prints, and a way into the library
+    const pagesRow = rotation && h('div', { class: 'pagesrow' },
+      h('span', { class: 'pagesrow-label' }, 'Page to print'),
+      radio('Standard test page', !rotation.rotate, false),
+      radio('Rotate my pages', rotation.rotate, true),
+      h('span', { class: 'sub pagesrow-note' }, rotation.rotate ? `Next: “${rotation.next.name}”` : mine ? `${mine} of your pages ready` : ''),
+      h('button', { class: 'btn small', type: 'button', onclick: () => pagesDialog.open() }, 'Manage pages…'));
+
     autoCard.set(
       h('label', { class: 'switch', for: 'auto-enabled' }, toggle, h('span', { class: 'track', 'aria-hidden': 'true' }),
         h('span', { class: 'switch-text' }, h('strong', {}, 'Print the nozzle check automatically'),
           h('span', { class: 'sub' }, `When the printer has been idle for ${d.values.idle_days} day${d.values.idle_days === 1 ? '' : 's'}, a small test page is sent to its CUPS queue. Leave this off if another timer already does it. Default for new printers: ${d.defaults.enabled ? 'on' : 'off'}.`))),
+      pagesRow,
       h('form', { class: 'autoform', onsubmit: save },
         h('div', { class: 'autogrid' }, FIELDS.map(field)),
         h('div', { class: 'actions left' },
