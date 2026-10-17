@@ -1081,3 +1081,15 @@ def test_presets_remember_the_part_of_the_page():
 def test_the_page_has_the_print_on_control():
     js = (Path(__file__).resolve().parent.parent / "app/tools/photosheet/ui/ui.js").read_text()
     assert "'Print on'" in js and "Top half only" in js and "stays blank" in js
+
+
+def test_the_two_shipped_presets_differ_in_the_part_of_the_page_they_use():
+    built = {p["id"]: p["settings"] for p in pre.load_builtin(Path(pre.__file__).with_name("presets.yml"))}
+    assert built["builtin-preset1"]["area"] == "top" and built["builtin-preset2"]["area"] == "full"  # a half page, and the whole page
+
+
+def test_a_preset_can_switch_back_from_a_half_page_to_the_whole_page(rig):
+    half = rig.client.post("/api/photosheet/presets", json={"name": "Half", "settings": good_settings(area="top")}, headers=rig.h).get_json()["data"]
+    whole = rig.client.post("/api/photosheet/presets", json={"name": "Whole", "settings": good_settings(area="full")}, headers=rig.h).get_json()["data"]
+    saved = {p["id"]: p["settings"]["area"] for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]}
+    assert saved[half["id"]] == "top" and saved[whole["id"]] == "full"

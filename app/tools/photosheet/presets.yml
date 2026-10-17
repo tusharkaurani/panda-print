@@ -60,7 +60,7 @@ presets:
     mode: fill
     align: center
     fit: fit
-    area: top
+    area: full
     margin: 3.0
     gap: 3.0
     marks: false
