@@ -107,3 +107,12 @@ def test_a_pdf_is_sent_with_its_own_type_and_scaled_to_fit(cups):
 def test_postscript_is_sent_without_scaling_attributes(cups):
     live(cups).submit_document("x", NOZZLE_PS, "u")
     assert ipp.decode_response(FakeCups.seen[-1][3]).of(ipp.JOB_ATTRS) == []
+
+
+def test_both_sides_goes_to_cups_as_the_standard_sides_attribute(cups):
+    p = live(cups)
+    p.submit_document("x", b"%PDF-1.4\n%fake\n", "u", "application/pdf", sides="two-sided-long-edge")
+    job = ipp.decode_response(FakeCups.seen[-1][3]).of(ipp.JOB_ATTRS)[0]
+    assert job["sides"] == ["two-sided-long-edge"] and job["print-scaling"] == ["fit"]
+    p.submit_document("x", b"%PDF-1.4\n%fake\n", "u", "application/pdf")  # not asked: no attribute, the queue's default applies
+    assert "sides" not in ipp.decode_response(FakeCups.seen[-1][3]).of(ipp.JOB_ATTRS)[0]

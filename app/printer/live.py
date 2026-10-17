@@ -13,13 +13,13 @@ PRINTER_ATTRS = [
     "printer-state-reasons", "printer-state-message", "printer-is-accepting-jobs", "printer-uuid",
     "printer-firmware-string-version", "printer-firmware-name", "printer-more-info", "printer-up-time",
     "printer-device-id", "marker-names", "marker-levels", "marker-colors", "marker-types",
-    "marker-low-levels", "marker-high-levels", "media-ready", "media-default", "sides-default",
+    "marker-low-levels", "marker-high-levels", "media-ready", "media-default", "sides-default", "sides-supported",
     "print-color-mode-default", "printer-input-tray",
 ]
 QUEUE_ATTRS = [
     "printer-name", "printer-info", "printer-location", "printer-make-and-model", "printer-state",
     "printer-state-reasons", "printer-state-message", "printer-is-accepting-jobs", "queued-job-count",
-    "device-uri", "printer-uri-supported",
+    "device-uri", "printer-uri-supported", "sides-supported",
 ]
 JOB_ATTRS = [
     "job-id", "job-name", "job-state", "job-state-reasons", "job-originating-user-name",
@@ -103,10 +103,14 @@ class LivePrinter:
             jobs.extend(resp.of(ipp.JOB_ATTRS))
         return jobs
 
-    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript") -> int:
+    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript",
+                        sides: str | None = None) -> int:
         self._need_queue()
         # PDFs and pictures are scaled to fit the paper (CUPS converts them for the printer); PostScript is left alone
-        job_attrs = [(ipp.KEYWORD, "print-scaling", "fit")] if mime != "application/postscript" else None
+        job_attrs = [(ipp.KEYWORD, "print-scaling", "fit")] if mime != "application/postscript" else []
+        if sides:  # one-sided / two-sided-long-edge / two-sided-short-edge
+            job_attrs.append((ipp.KEYWORD, "sides", sides))
+        job_attrs = job_attrs or None
         try:
             resp = self.ipp.request(self._queue_url, ipp.PRINT_JOB, self._queue_uri, [
                 (ipp.NAME, "requesting-user-name", user),

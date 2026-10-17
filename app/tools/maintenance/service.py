@@ -17,7 +17,7 @@ from app.tools.maintenance.tracker import APP_USER, Tracker
 
 log = logging.getLogger(__name__)
 
-CHOICES = ("enabled", "rotate")  # what to do and what to print: not tuning settings, so a reset leaves them
+CHOICES = ("enabled", "rotate", "sides")  # what to do and how to print: not tuning settings, so a reset leaves them
 
 NOZZLE_PS = (Path(__file__).with_name("nozzle-check.ps")).read_bytes()
 JOB_NAME = "panda-print nozzle check"
@@ -292,7 +292,9 @@ class Service:
                           "thumb": False if p is None else p["thumb"]})
         nxt = self._next(cfg)
         names = {i["id"]: i["name"] for i in items}
-        return {"cups_configured": self.cups_configured, "rotate": cfg.rotate, "plain_every": cfg.plain_every, "items": items,
+        return {"cups_configured": self.cups_configured, "sides": cfg.sides,
+                "duplex_supported": self.automatic_duplex(),  # automatic two-sided printing only (it prints unattended)
+                "rotate": cfg.rotate, "plain_every": cfg.plain_every, "items": items,
                 "next": {"id": nxt.id, "name": names.get(nxt.id, pages.STANDARD_NAME), "plain": nxt.plain},
                 "count": int(self.store.get("rotation_count") or 0), "limits": self.library.limits()}
 
@@ -338,8 +340,9 @@ class Service:
         page_id, (name, mime, data, sheets), advance = self._pick(cfg, explicit)
         mark = None if page_id == pages.STANDARD else page_id
         count = int(self.store.get("rotation_count") or 0)
+        sides = self._sides_for(cfg, sheets)
         try:
-            job_id = self.printer.submit_document(f"{JOB_NAME} ({source}) - {name}"[:120], data, APP_USER, mime)
+            job_id = self.printer.submit_document(f"{JOB_NAME} ({source}) - {name}"[:120], data, APP_USER, mime, sides=sides)
         except SourceError as e:
             self.store.add_check(now, source, "failed", message=e.message, page_id=mark, page_name=name)
             raise
@@ -352,6 +355,32 @@ class Service:
         self._jobs_cache.clear()
         self._printer_cache.clear()
         return job_id
+
+    @staticmethod
+    def _two_sided(attrs) -> bool:
+        return any(str(x).startswith("two-sided") for x in (attrs.get("sides-supported") or []))
+
+    def automatic_duplex(self) -> bool:
+        """Can this printer print on both sides BY ITSELF? Printing here is unattended, so it must not depend on
+        someone flipping the paper. Both the printer and its CUPS queue must offer two-sided printing; a printer
+        without an automatic duplexer doesn't list it. If either can't be read right now (switched off), the last
+        answer is used, and a printer never confirmed is treated as not capable."""
+        if not self.cups_configured:
+            return False
+        try:
+            printer = self._printer_cache.get(self.printer.printer_info)
+            queue = self._queue_cache.get(self.printer.queue_info)
+        except SourceError:
+            return self.store.get("auto_duplex") == "1"
+        ok = self._two_sided(printer) and self._two_sided(queue)
+        self.store.put("auto_duplex", "1" if ok else "0")
+        return ok
+
+    def _sides_for(self, cfg: auto.Automation, sheets: int) -> str | None:
+        """Both sides only for a file with more than one page, and only on a printer with an automatic duplexer."""
+        if sheets < 2 or cfg.sides == "one-sided" or not self.automatic_duplex():
+            return None
+        return cfg.sides
 
     def request_print(self, page_id: str | None = None) -> dict:
         """Print now (the API's manual print): the next page in the rotation, or `page_id` if given (which

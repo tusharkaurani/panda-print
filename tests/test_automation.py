@@ -96,7 +96,7 @@ def test_new_printer_starts_on_the_defaults(client):
     d = client.get(url()).get_json()["data"]
     assert d["values"] == d["defaults"] == {"idle_days": 7.0, "check_minutes": 5.0, "job_pattern": "nozzle-check",
                                             "attribution_minutes": 30.0, "enabled": False, "run_at": "10:00",
-                                            "rotate": False, "plain_every": 0}
+                                            "rotate": False, "plain_every": 0, "sides": "one-sided"}
     assert d["customised"] == []
 
 

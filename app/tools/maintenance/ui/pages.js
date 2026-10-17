@@ -4,6 +4,7 @@
 import { createPreview, drawnThumb, makeThumb, standardSvg } from './preview.js';
 
 const bytes = (n) => (n >= 2 ** 20 ? `${(n / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const SIDES = [['one-sided', 'on one side'], ['two-sided-long-edge', 'on both sides (flip like a book)'], ['two-sided-short-edge', 'on both sides (flip like a notepad)']];
 const KIND = { 'application/pdf': 'PDF', 'image/png': 'PNG', 'image/jpeg': 'JPEG' };
 
 export function createPagesDialog(kit, { base, onChange }) {
@@ -78,6 +79,13 @@ export function createPagesDialog(kit, { base, onChange }) {
     await load();
   }
 
+  async function setSides(select, message) {
+    const res = await api(`${base()}/automation`, { method: 'PUT', body: { sides: select.value } });
+    if (!res.ok) { message.textContent = res.error?.fields?.sides || res.error?.message || 'Could not save.'; return; }
+    message.textContent = '';
+    await load();
+  }
+
   async function setPlainEvery(input, message) {
     const res = await api(`${base()}/automation`, { method: 'PUT', body: { plain_every: input.value } });
     if (!res.ok) { message.textContent = res.error?.fields?.plain_every || res.error?.message || 'Could not save.'; return; }
@@ -102,8 +110,9 @@ export function createPagesDialog(kit, { base, onChange }) {
 
   function row(item, index) {
     const last = index === data.items.length - 1;
+    const bothSides = data.duplex_supported && data.sides !== 'one-sided' && item.pages > 1;  // multi-page files only
     const meta = item.standard ? 'Four colour bars, so every ink gets used'
-      : `${KIND[item.mime] || ''} · ${item.pages} page${item.pages === 1 ? '' : 's'} · ${bytes(item.size)}`;
+      : `${KIND[item.mime] || ''} · ${item.pages} page${item.pages === 1 ? '' : 's'} · ${bytes(item.size)}${bothSides ? ' · both sides' : ''}`;
     const ask = armed?.id === item.id ? armed.kind : null;
     const confirm = (kind, text, go) => h('span', { class: 'confirm' }, h('span', {}, text),
       h('button', { class: `btn small${kind === 'delete' ? ' danger' : ' primary'}`, type: 'button', title: kind === 'delete' ? 'Delete this page for good' : 'Send this page to the printer now', onclick: go }, kind === 'delete' ? 'Delete' : 'Print'),
@@ -133,6 +142,9 @@ export function createPagesDialog(kit, { base, onChange }) {
   function render() {
     if (!data) { body.replaceChildren(ui.skeleton()); return; }
     const message = h('p', { class: 'msg', role: 'alert' });
+    const sidesMessage = h('p', { class: 'msg', role: 'alert' });
+    const sides = h('select', { id: 'pg-sides', class: 'input mini wide-select', title: 'Print files with more than one page on both sides of the paper to save paper', onchange: (e) => setSides(e.target, sidesMessage) },
+      SIDES.map(([value, label]) => h('option', { value, selected: value === data.sides ? true : null }, label)));
     const every = h('input', { class: 'input mini', type: 'number', min: 0, max: 50, step: 1, value: data.plain_every, 'aria-label': 'Standard test page every N prints',
       onchange: (e) => setPlainEvery(e.target, message) });
     body.replaceChildren(...[
@@ -145,6 +157,9 @@ export function createPagesDialog(kit, { base, onChange }) {
         h('span', { class: 'hint' }, `PDF, PNG or JPEG, up to ${data.limits.max_file_mb} MB each (or drop files here).`)),
       problems.length > 0 && h('ul', { class: 'problems' }, problems.map((p) => h('li', { class: 'msg' }, p))),
       h('ul', { class: 'pagelist' }, data.items.map(row)),
+      // only for a printer that flips the paper by itself: printing here is unattended
+      data.duplex_supported && h('div', { class: 'plainrow sidesrow' }, h('label', { for: 'pg-sides' }, 'Multi-page files print'), sides,
+        h('span', { class: 'unit' }, 'Saves paper. One-page files print as they are.'), sidesMessage),
       h('div', { class: 'plainrow' }, h('label', { for: undefined }, 'Also print the standard test page every'), every,
         h('span', { class: 'unit' }, 'prints (0 = never)'), message),
     ].filter(Boolean));  // (the native replaceChildren would print a stray "false")

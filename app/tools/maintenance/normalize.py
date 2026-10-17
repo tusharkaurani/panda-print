@@ -168,4 +168,5 @@ def queue(attrs: Attrs) -> dict:
         "state": state,
         "queued": first(attrs, "queued-job-count", 0),
         "device": first(attrs, "device-uri"),
+        "sides_supported": list(attrs.get("sides-supported") or []),
     }

@@ -70,6 +70,8 @@ class FakePrinter:
         self._next_job = FIRST_JOB_ID + len(HISTORY)
         self._pending: list[tuple[float, int, int]] = []  # (done at, job id, pages)
         self.submitted: list[dict] = []  # every document sent through submit_document, for the tests
+        self.sides_supported = ("one-sided", "two-sided-long-edge", "two-sided-short-edge")  # what the CUPS queue offers
+        self.printer_sides = ("one-sided", "two-sided-long-edge", "two-sided-short-edge")  # what the printer itself can do (an automatic duplexer?)
 
     # ---- helpers
     @staticmethod
@@ -123,6 +125,7 @@ class FakePrinter:
             "marker-types": ["ink-cartridge"] * 4, "marker-low-levels": [10] * 4, "marker-high-levels": [100] * 4,
             "media-ready": ["iso_a4_210x297mm"], "media-default": ["iso_a4_210x297mm"],
             "sides-default": ["one-sided"], "print-color-mode-default": ["color"],
+            "sides-supported": [x for x in ("one-sided", "two-sided-long-edge", "two-sided-short-edge") if x in self.printer_sides],
         }
 
     def read_counter(self) -> int:
@@ -143,6 +146,7 @@ class FakePrinter:
             "printer-state": [4 if busy else 3], "printer-state-reasons": ["none"],
             "printer-is-accepting-jobs": [True], "queued-job-count": [len(self._pending)],
             "device-uri": [self.p.ipp_endpoint],
+            "sides-supported": [x for x in ("one-sided", "two-sided-long-edge", "two-sided-short-edge") if x in self.sides_supported],
             "printer-uri-supported": [f"ipp://localhost/printers/{self.p.cups_queue}"],
         }
 
@@ -153,7 +157,8 @@ class FakePrinter:
             self._tick()
             return [dict(j) for j in self.jobs]
 
-    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript") -> int:
+    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript",
+                        sides: str | None = None) -> int:
         self._need_queue()
         self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
         if mime == "application/postscript" and not document.startswith(b"%!PS"):
@@ -165,7 +170,7 @@ class FakePrinter:
             now = self.clock()
             job_id, self._next_job = self._next_job, self._next_job + 1
             self.jobs.append(self._job(job_id, job_name, user, now, None, 0))
-            self.submitted.append({"job_id": job_id, "name": job_name, "mime": mime, "size": len(document), "pages": pages})
+            self.submitted.append({"job_id": job_id, "name": job_name, "mime": mime, "size": len(document), "pages": pages, "sides": sides})
             self._pending.append((now + PRINT_SECONDS, job_id, pages))
             return job_id
 

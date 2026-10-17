@@ -75,6 +75,7 @@ export function mount(root, kit) {
     runName.textContent = item.standard
       ? `${rotation?.rotate ? 'Next in the rotation: the' : 'The'} standard test page, four colour bars (cyan, magenta, yellow, black).`
       : `Next in the rotation: “${item.name}” · ${item.pages} page${item.pages === 1 ? '' : 's'}`;
+    if (item.pages > 1 && rotation?.duplex_supported && rotation.sides !== 'one-sided') runName.textContent += ', printed on both sides';
     dialog.showModal();
     drawSheets(kit, item, runSheets, { alive: () => mine === runToken, width: Math.min(250, dialog.clientWidth - 80), maxPages: 3 });
   }

@@ -27,8 +27,10 @@ class PrinterBackend(Protocol):
     def list_jobs(self) -> list[Attrs]:
         """CUPS jobs, queued and completed."""
 
-    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript") -> int:
-        """IPP Print-Job of a document (PostScript, PDF, PNG or JPEG) to the CUPS queue; returns the job id."""
+    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript",
+                        sides: str | None = None) -> int:
+        """IPP Print-Job of a document (PostScript, PDF, PNG or JPEG) to the CUPS queue; returns the job id.
+        `sides` is an IPP value ("two-sided-long-edge", ...) or None to leave it to the queue's default."""
 
 
 class PrinterAccess(Protocol):

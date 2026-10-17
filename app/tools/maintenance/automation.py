@@ -33,6 +33,7 @@ class Automation:
     run_at: str  # "HH:MM": never print before this time of day
     rotate: bool  # print the pages in the printer's rotation instead of always the standard test page
     plain_every: int  # with rotation: every Nth print is the standard test page as well (0 = never)
+    sides: str  # how multi-page files print: "one-sided", "two-sided-long-edge" or "two-sided-short-edge"
 
     @property
     def attribution_seconds(self) -> float:
@@ -47,6 +48,8 @@ class Automation:
 
 
 KEYS = [f.name for f in fields(Automation)]
+
+SIDES = ("one-sided", "two-sided-long-edge", "two-sided-short-edge")  # the standard IPP values
 
 # (minimum, maximum) for the numeric fields
 BOUNDS = {"idle_days": (0.5, 365.0), "check_minutes": (1.0, 1440.0), "attribution_minutes": (1.0, 1440.0)}
@@ -65,6 +68,7 @@ def defaults(settings: Settings) -> Automation:
         run_at=settings.check_time if _HHMM.match(settings.check_time) else "10:00",
         rotate=False,
         plain_every=0,
+        sides="one-sided",
     )
 
 
@@ -98,6 +102,13 @@ def validate(payload: dict) -> tuple[dict, dict[str, str]]:
                 clean[key] = False
             else:
                 errors[key] = "Choose on or off."
+            continue
+        if key == "sides":
+            text = str(raw if raw is not None else "").strip()
+            if text in SIDES:
+                clean[key] = text
+            else:
+                errors[key] = "Choose one side or both sides."
             continue
         if key == "run_at":
             text = str(raw if raw is not None else "").strip()
