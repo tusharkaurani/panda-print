@@ -165,7 +165,7 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .gauge svg { width: 100%; max-width: var(--ring, 132px); height: auto; }
 .gauge .track { stroke: var(--track); }
 .gauge .fill { stroke: var(--gauge); transition: stroke-dasharray .9s cubic-bezier(.2, .8, .2, 1); }
-.gauge text { fill: var(--text); font: 700 21px var(--font); }
+.gauge text { fill: var(--text); font: 700 19px var(--font); }
 .gauge .name { font-size: 14px; font-weight: 650; }
 .gauge.C { --gauge: var(--ink-c); } .gauge.M { --gauge: var(--ink-m); }
 .gauge.Y { --gauge: var(--ink-y); } .gauge.K { --gauge: var(--ink-k); }
@@ -323,7 +323,6 @@ select.input { appearance: auto; }
 
 /* ---- details tab: use the width instead of long thin lists */
 .printer-top { --ring: clamp(100px, 10.4vw, 132px); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px 28px; align-items: start; }
-.ink-note.tight { margin-top: -6px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
 /* Model, Firmware / Uptime, Web interface: a 2x2 block exactly as tall as the rings and centred on them
    (the ring labels hang below that height, so they don't pull the block off-centre) */
@@ -338,6 +337,7 @@ select.input { appearance: auto; }
 .fact-link:hover { text-decoration: underline; }
 /* recent prints: a list, one card per line */
 .rows.cards { gap: 8px; }
+.list-note { color: var(--muted); font-size: 12.5px; margin-top: 8px; }  /* the same 8px as between the cards above */
 .rows.cards .row { border-top: 0; background: var(--surface-2); border-radius: 12px; padding: 10px 14px; }
 @media (max-width: 900px) {   /* not enough room beside the rings: the cards go under them */
   .printer-top { grid-template-columns: 1fr; }

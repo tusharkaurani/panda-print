@@ -162,15 +162,15 @@ app/tools/scan/
 
 **Each utility is a tab.** The dashboard shows a tab bar (the address becomes `#<tool>` or `#<tool>/<tab>`). A new tool
 is a new tab with no other change. A tool can also declare several tabs of its own, as Printer Maintenance does with
-**Details** (printer, ink, queue, recent prints) and **Nozzle Check**:
+**Overview** (printer, ink, queue, recent prints) and **Nozzle Check**:
 
 ```python
 from app.core.tool import Tool, ToolTab
-Tool(id="maintenance", ..., tabs=[ToolTab("details", "Details", "printer"), ToolTab("nozzle", "Nozzle Check", "droplet")])
+Tool(id="maintenance", ..., tabs=[ToolTab("overview", "Overview", "printer"), ToolTab("nozzle", "Nozzle Check", "droplet")])
 ```
 
 The shell calls `mount(root, kit)` once per tab, the first time it is opened, and `kit.tabId` says which one. Keep
-each tab in its own module (see `app/tools/maintenance/ui/`: `ui.js` picks `details.js` or `nozzle.js`, and
+each tab in its own module (see `app/tools/maintenance/ui/`: `ui.js` picks `overview.js` or `nozzle.js`, and
 `shared.js` holds what they share), so a new feature is a new file plus one `ToolTab`. Tabs of tools that set
 `needs_printer` appear once a printer exists, and reload when the printer selection changes.
 
@@ -219,7 +219,7 @@ app/
   core/                 db, csrf, rate-limit rule, links.yml loader, tool registry, printer registry + API, errors
   printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, discovery.py (wizard: find + probe)
   static/               index.html, app.css, app.js, printers.js (wizard + admin), lib/ (dom, api, ui kit, icons)
-  tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/ (details.js, nozzle.js, shared.js)
+  tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/ (overview.js, nozzle.js, shared.js)
   tools/_template/      copy me
 config/                 links.yml (starter) and logos/
 tests/                  fakes.py (fake printer/CUPS/network) and pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)

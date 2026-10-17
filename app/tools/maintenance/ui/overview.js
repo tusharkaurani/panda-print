@@ -1,4 +1,4 @@
-// Details tab: the printer itself (state, ink, page counter) and its CUPS queue with recent prints.
+// Overview tab: the printer itself (state, ink, page counter, specs) and its CUPS queue with recent prints.
 import { JOB_BADGE, cardLoader, reasonKind } from './shared.js';
 
 export function mount(root, kit) {
@@ -25,9 +25,10 @@ export function mount(root, kit) {
         c.value != null && c.as_of && !c.error && h('span', { class: 'fact-note' }, ` read ${fmt.ago(c.as_of)}`)),
       c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`));
     printerCard.set(
-      (d.state.reasons.length || d.state.message)
+      // The badge already says Idle/Printing; only add words when there is something to flag
+      (d.state.reasons.length || (d.state.message && d.state.health !== 'ok'))
         ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity))),
-            d.state.message && h('span', { class: 'sub' }, d.state.message))
+            d.state.message && d.state.health !== 'ok' && h('span', { class: 'sub' }, d.state.message))
         : null,
       // one row: the four rings, then Model / Firmware / Uptime / Web interface beside them
       h('div', { class: 'printer-top' },
@@ -35,7 +36,6 @@ export function mount(root, kit) {
           ? h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge))
           : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
         beside.length ? h('dl', { class: 'facts beside' }, beside.map(fact)) : null),
-      d.inks.length ? h('p', { class: 'ink-note tight' }, 'Ink levels are the printer’s own estimate.') : null,
       h('dl', { class: 'facts' }, counter, rest.map(fact)));
   }
 
@@ -97,7 +97,7 @@ export function mount(root, kit) {
         d.jobs_error && ui.errorBox(d.jobs_error),
         recent.length ? h('ul', { class: 'rows cards' }, recent.map((r) => r.row))
           : !d.jobs_error && h('p', { class: 'empty' }, 'Nothing printed yet.'),
-        h('p', { class: 'ink-note' }, 'CUPS only knows about prints that go through it. Prints sent straight to the printer (from a phone, or copies made on the printer) are spotted from its page counter, so they show a page count and an approximate time.')));
+        h('p', { class: 'list-note' }, 'CUPS only knows about prints that go through it. Prints sent straight to the printer (from a phone, or copies made on the printer) are spotted from its page counter, so they show a page count and an approximate time.')));
   }
 
   // another printer was chosen (or this one's settings were edited): start over
