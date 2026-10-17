@@ -3,7 +3,7 @@
 import { cardLoader } from './shared.js';
 
 // who sent a nozzle check: the Run now button, this app's schedule, or an older timer seen in the CUPS history
-const SOURCE = { manual: 'Manual check', auto: 'Automatic check · panda-print', host: 'Automatic check · another timer' };
+const SOURCE = { manual: 'Manual print', auto: 'Auto print · panda-print', host: 'Auto print · another timer' };
 const BY = { manual: 'by you', auto: 'by panda-print', host: 'by another timer' };
 const KIND = { external: 'A document', direct: 'Sent straight to the printer', nozzle: 'A nozzle check', baseline: 'Earliest known activity' };
 
@@ -20,7 +20,7 @@ export function mount(root, kit) {
   // ------------------------------------------------------------ run a check now (to test the real thing)
   // The button and its dialog are created once; the card body they sit in is rebuilt on every save.
   let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
-  const runBtn = h('button', { class: 'btn', type: 'button', onclick: () => dialog.showModal() }, icon('droplet', 16), 'Run a check now');
+  const runBtn = h('button', { class: 'btn', type: 'button', onclick: () => dialog.showModal() }, icon('droplet', 16), 'Print now');
   const runHint = h('span', { class: 'hint' });
 
   function paintRun() {
@@ -28,7 +28,7 @@ export function mount(root, kit) {
     runBtn.disabled = left > 0;
     runHint.textContent = left > 0
       ? `You can run another in ${fmt.countdown(left)}.`
-      : 'Prints one nozzle check page right now. It counts as a print, so the idle clock starts again.';
+      : 'Prints one nozzle check page right now (a manual print). It restarts the idle clock.';
   }
   setInterval(() => { if (waitUntil > Date.now()) paintRun(); }, 1000);
 
@@ -71,36 +71,36 @@ export function mount(root, kit) {
     const lp = d.last_print, nx = d.next_check, a = d.automation;
     // the next check is summarised by this badge, so it has no card of its own
     nozzleCard.setBadge(!a.enabled
-      ? (nx?.overdue ? ui.badge('Check due · automatic check off', 'warn') : ui.badge('Automatic check off'))
-      : a.state === 'blocked' ? ui.badge('Automatic check waiting', 'warn')
-      : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Check starting' : `Next check ${a.next_run_label || fmt.when(a.next_run_at)}`, 'ok') : null);
+      ? (nx?.overdue ? ui.badge('Print due · auto print off', 'warn') : ui.badge('Auto print off'))
+      : a.state === 'blocked' ? ui.badge('Auto print waiting', 'warn')
+      : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Print starting' : `Next auto print ${a.next_run_label || fmt.when(a.next_run_at)}`, 'ok') : null);
 
     waitUntil = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
     paintRun();
 
     const t = d.tracking;
     const problems = [t.counter_error && `Can’t read the page counter: ${t.counter_error}`, t.cups_error && `Can’t read CUPS: ${t.cups_error}`,
-      a.enabled && a.state === 'blocked' && `The automatic check is waiting: ${a.reason}`].filter(Boolean);
+      a.enabled && a.state === 'blocked' && `The auto print is waiting: ${a.reason}`].filter(Boolean);
 
     nozzleCard.set(
       problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
       h('div', { class: 'stats four' },
-        ui.stat('Last page printed', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
+        ui.stat('Last print', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
           lp && `${fmt.abs(lp.ts)} · ${KIND[lp.kind] || ''}`),
         ui.stat('Idle for', fmt.days(d.days_since_last_print),
-          a.enabled ? `Automatic check after ${d.idle_days_threshold} idle days` : 'Automatic check is off'),
-        ui.stat('Last automatic check', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet',
+          a.enabled ? `Auto print after ${d.idle_days_threshold} idle days` : 'Auto print is off'),
+        ui.stat('Last auto print', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet',
           d.last_auto ? `${fmt.abs(d.last_auto.ts)} · ${BY[d.last_auto.source] || ''}` : 'None seen since tracking began'),
-        ui.stat('Last manual check', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
+        ui.stat('Last manual print', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
           d.last_manual ? (d.last_manual.state === 'failed' ? 'Failed: ' + (d.last_manual.message || '') : fmt.abs(d.last_manual.ts)) : null)),
-      h('div', {}, h('h4', {}, 'Recent checks'),
-        d.history.length ? h('ul', { class: 'rows' }, d.history.map(checkRow)) : h('p', { class: 'empty' }, 'No nozzle checks recorded yet.')),
+      h('div', {}, h('h4', {}, 'Recent nozzle prints'),
+        d.history.length ? h('ul', { class: 'rows' }, d.history.map(checkRow)) : h('p', { class: 'empty' }, 'No nozzle prints recorded yet.')),
       h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'How this is tracked'),
         h('div', { class: 'footnote', style: { 'margin-top': '10px' } },
           h('p', {}, 'A nozzle check is a test page that gets printed. Reading the printer’s page total is different: it prints nothing, it is only how the dashboard notices prints.'),
           h('p', {}, `The page total is read every ${fmt.minutes(t.poll_interval / 60)}. When it rises, that is a print, so prints from any device are counted and their times are accurate to about that interval.`),
           h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list. Pages that appear on the counter with no CUPS job behind them are shown as printed straight to the printer.'),
-          t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter check ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
+          t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter read ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
           d.host_state.configured && (d.host_state.error
             ? h('p', {}, `Timer state file: ${d.host_state.error}`)
             : h('p', {}, `An older timer last noticed the counter at ${d.host_state.count} on ${fmt.abs(d.host_state.noticed_at)}.`)))));
@@ -109,11 +109,11 @@ export function mount(root, kit) {
   // ------------------------------------------------------------ automation settings
   // [key, label, input type, unit text, hint]. Every value falls back to the default shown in its hint.
   const FIELDS = [
-    ['idle_days', 'Idle days before a check is due', 'number', 'days', 'How long the printer can sit unused before a nozzle check is printed.'],
-    ['run_at', 'Don’t print before', 'time', '', 'Quiet hours: a check that falls due earlier waits until this time of day.'],
+    ['idle_days', 'Idle days before an auto print', 'number', 'days', 'How long the printer can sit unused before a nozzle check is printed.'],
+    ['run_at', 'Don’t print before', 'time', '', 'Quiet hours: an auto print that falls due earlier waits until this time of day.'],
     ['check_minutes', 'Read the page counter every', 'number', 'minutes', 'How often the dashboard asks the printer for its page total, to notice new prints. It only sets how quickly prints are noticed, not when the check prints.'],
-    ['attribution_minutes', 'A new page counts as the check if it prints within', 'number', 'minutes', 'After a check is sent, the printer’s page total goes up by one. A rise within this time is credited to the check; a later one is treated as someone else’s print.'],
-    ['job_pattern', 'Also recognise checks whose job name has', 'text', '', 'Nozzle-check pages sent to CUPS by another timer carry this text in their job name, so they are listed here and not mistaken for someone printing.'],
+    ['attribution_minutes', 'A new page counts as the nozzle check if it prints within', 'number', 'minutes', 'After a check is sent, the printer’s page total goes up by one. A rise within this time is credited to the check; a later one is treated as someone else’s print.'],
+    ['job_pattern', 'Also recognise nozzle checks whose job name has', 'text', '', 'Nozzle-check pages sent to CUPS by another timer carry this text in their job name, so they are listed here and not mistaken for someone printing.'],
   ];
 
   function renderAutomation(d) {
@@ -132,7 +132,7 @@ export function mount(root, kit) {
       onchange: async (e) => {
         const res = await api(`${base()}/automation`, { method: 'PUT', body: { enabled: e.target.checked } });
         if (!res.ok) { e.target.checked = !e.target.checked; toast(res.error?.message || 'Could not save.', 'bad'); return; }
-        toast(res.data.values.enabled ? 'Automatic nozzle check is on.' : 'Automatic nozzle check is off.');
+        toast(res.data.values.enabled ? 'Auto print is on.' : 'Auto print is off.');
         renderAutomation(res.data);
         refresh();
       } });

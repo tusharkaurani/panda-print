@@ -135,11 +135,11 @@ keeps its own history in SQLite, separately for each printer:
 4. **Idle clock.** Like the host script, a nozzle check counts as a print and restarts the idle clock, so *next automated check due* is `last print of any kind + idle days` (7 by default).
 5. **First run.** If the printer has a timer state file set and its count equals the printer's current count, the idle clock starts from its timestamp (it can lag the real print by up to a day). Otherwise it starts from the newest finished non-nozzle job in CUPS, and failing that from the first reading, in which case the card says "at least".
 
-The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's logic, with no I/O) and the scheduler in `schedule.py`. **Run a check now** (inside the Automation card, with a confirm dialog) prints one check on demand through `POST /api/maintenance/<printer id>/nozzle/print`: CSRF-protected and rate-limited. It is recorded as a manual check and restarts the idle clock.
+The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's logic, with no I/O) and the scheduler in `schedule.py`. **Print now** (inside the Automation card, with a confirm dialog) prints one check on demand through `POST /api/maintenance/<printer id>/nozzle/print`: CSRF-protected and rate-limited. It is recorded as a manual check and restarts the idle clock.
 
 ## Automatic nozzle check (Nozzle Check tab)
 
-Two words to keep apart: a **nozzle check** is a test page that is *printed*; **reading** the page total prints nothing and is how the app notices prints (every 5 minutes by default). The tab's cards: *Last page printed* (anything, from any device), *Idle for* (time since then), *Last automatic check* (a check printed by this app or by another timer found in the CUPS history) and *Last manual check* (one you started with Run a check now).
+Two words to keep apart: a **print** is something that came out of the printer, and a **nozzle check** is the test page; **reading** the page total prints nothing and is how the app notices prints (every 5 minutes by default). The tab's cards: *Last print* (anything, from any device), *Idle for* (time since then), *Last auto print* (a nozzle check printed automatically, by this app or by another timer found in the CUPS history) and *Last manual print* (one you started with **Print now**). *Recent nozzle prints* lists them with where each came from.
 
 Inkjet nozzles clog when a printer sits unused. panda-print can print one small test page (four colour bars) when a
 printer has gone a set number of days without printing anything. It replaces a cron or systemd timer on the host: if
