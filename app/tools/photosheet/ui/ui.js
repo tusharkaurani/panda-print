@@ -233,9 +233,16 @@ export async function mount(root, kit) {
     const p = config?.presets?.[Number(presetSelect.value)];
     if (p) { S.photoW = p.width; S.photoH = p.height; syncFields(); changed(); }
   } });
+  // The "Size" list always shows the common size that matches the width and height, or the prompt when none does.
+  function syncSizePick() {
+    const list = config?.presets || [];
+    const at = list.findIndex((p) => Math.abs(p.width - S.photoW) < 0.05 && Math.abs(p.height - S.photoH) < 0.05);
+    presetSelect.value = at >= 0 ? String(at) : '';
+  }
   function fillPresets() {
     presetSelect.replaceChildren(h('option', { value: '' }, 'Choose a common size…'),
       ...(config?.presets || []).map((p, i) => h('option', { value: i }, p.label)));
+    syncSizePick();
   }
 
   // ------------------------------------------------------------------ 3. paper and layout
@@ -545,6 +552,7 @@ export async function mount(root, kit) {
 
   let timer = 0;
   function changed() {
+    syncSizePick();
     save();
     clearTimeout(timer);
     timer = setTimeout(refreshLayout, 120);

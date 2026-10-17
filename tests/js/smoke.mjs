@@ -96,7 +96,17 @@ async function photoScenario() {
   for (const area of ['top', 'bottom', 'left', 'right', 'full']) { change(document.getElementById('ps-area'), area); await settle(); }
   const unit = $('.unit-pick'); change(unit, 'in'); await settle(); change(unit, 'cm'); await settle(); change(unit, 'mm'); await settle();
   for (const mode of ['grid', 'count', 'fill']) { change(document.getElementById('ps-mode'), mode); await settle(); }
-  const chips = $$('.chip'); if (!chips.length) problems.push('no preset chips'); else { chips[0].click(); await settle(); chips[chips.length - 1].click(); await settle(); }
+  const chips = $$('.chip'); if (!chips.length) problems.push('no preset chips');
+  else {
+    typeInto(document.getElementById('ps-photoW'), '50'); typeInto(document.getElementById('ps-photoH'), '70'); await settle();
+    chips[0].click(); await settle();
+    const w = document.getElementById('ps-photoW').value, hh = document.getElementById('ps-photoH').value;
+    if (w !== '35' || hh !== '45') problems.push(`a preset did not set the photo size: ${w} x ${hh}`);
+    if (document.getElementById('ps-preset').value !== '0') problems.push(`the Size list does not show the 35 x 45 size after a preset: "${document.getElementById('ps-preset').value}"`);
+    typeInto(document.getElementById('ps-photoW'), '41'); await settle();
+    if (document.getElementById('ps-preset').value !== '') problems.push('the Size list should go back to its prompt when the size matches none');
+    chips[chips.length - 1].click(); await settle();
+  }
   const save = $$('button').find((b) => /Save these settings/.test(b.textContent)); save.click(); await settle();
   const name = document.getElementById('ps-preset-name'); typeInto(name, 'Mine'); await settle();
   const go = $$('dialog button').find((b) => b.textContent.trim() === 'Save preset'); go.click(); await settle();
