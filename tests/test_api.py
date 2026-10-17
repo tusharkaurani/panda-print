@@ -242,3 +242,17 @@ def test_build_id_is_exposed_so_open_pages_can_spot_a_restart(make_app):
     c = app.test_client()
     build = c.get("/api/health").get_json()["build"]
     assert build and c.get("/api/tools").get_json()["build"] == build  # the same id everywhere within one run
+
+
+def test_css_never_draws_a_closed_dialog(client):
+    """A `display:` on a bare `dialog` selector overrides the browser's rule that hides closed dialogs (this
+    once left the Manage pages dialog visible at the bottom of the page)."""
+    import re
+    css = client.get("/static/app.css").get_data(as_text=True)
+    for selectors, body in re.findall(r"([^{}]*)\{([^}]*)\}", css):
+        if not re.search(r"(^|;)\s*display\s*:", body):
+            continue
+        for selector in selectors.split(","):
+            target = selector.strip().split()[-1] if selector.strip() else ""  # what the rule styles: the last part
+            if target.startswith("dialog") and "[open]" not in target and ":not(" not in target:
+                assert False, f"{selector.strip()!r} sets display without [open]"

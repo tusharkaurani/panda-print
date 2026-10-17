@@ -379,8 +379,10 @@ select.input { appearance: auto; }
 .pagesrow-note { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
 .radio { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 14px; }
 .radio input { accent-color: var(--accent); width: 16px; height: 16px; }
-dialog.wide { width: min(760px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+dialog.wide { width: min(760px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 48px); flex-direction: column; }
+/* only when open: a display value on the closed dialog would override the browser's "closed dialogs are hidden" */
 dialog.wide[open] { display: flex; }
+dialog:not([open]) { display: none; }  /* belt and braces: a closed dialog is never drawn, whatever else is set */
 .dlg-body { display: grid; gap: 14px; overflow-y: auto; padding: 4px 2px; margin-top: 8px; }
 dialog.drag { outline: 3px dashed var(--accent); outline-offset: -8px; }
 .addrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
