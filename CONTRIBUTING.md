@@ -27,7 +27,7 @@ The tests never touch a real printer or CUPS. `tests/fakes.py` has a fake printe
 
 ## Adding a tool
 
-See "Adding a tool" in the README. A tool is a folder under `app/tools/` with `create(ctx) -> Tool`, an optional API
+See "Adding a tool" in [docs/development.md](docs/development.md). A tool is a folder under `app/tools/` with `create(ctx) -> Tool`, an optional API
 blueprint and a `ui/ui.js`.
 
 ## Sending a change

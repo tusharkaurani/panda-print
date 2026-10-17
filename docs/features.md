@@ -1,0 +1,91 @@
+# Features in detail
+
+[← Back to the README](../README.md)
+
+## CUPS is optional
+
+panda-print talks to the printer directly (IPP for status and ink, SNMP for the page count). **CUPS**, the print service on
+a Pi, Mac or Linux box, is only needed for printing. CUPS can run on the same machine or on another one on your network.
+
+| Without CUPS you get | With CUPS you also get |
+|---|---|
+| Printer status and ink levels | The print queue and recent print jobs |
+| Lifetime page count, and any print noticed from it | Telling a print from a computer apart from one sent straight to the printer |
+| Last print, idle time | **Print now** (with a preview) |
+| Several printers, quick links, the Print Utilities tab | Automatic printing when the printer sits unused, and your own pages in rotation |
+
+A printer is "without CUPS" when it has no print queue. Cards that need CUPS show a faded sketch of what they would hold, what
+CUPS adds and how to set it up (install CUPS, add the printer to it, then choose the queue under **Printers → Edit**). Nothing is
+shown as an error for a choice you haven't made. A queue that is set but unreachable still shows an error with a retry.
+
+## Automatic nozzle check (Nozzle Care tab)
+
+Two words to keep apart: a **print** is something that came out of the printer, and a **nozzle check** is the test page; **reading** the page total prints nothing and is how the app notices prints (every 5 minutes by default). The tab's cards: *Last print* (anything, from any device), *Idle for* (time since then), *Last auto print* (a nozzle check printed automatically, by this app or by another timer found in the CUPS history) and *Last manual print* (one you started with **Print now**). *Recent prints* lists them with where each came from.
+
+Inkjet nozzles clog when a printer sits unused. panda-print can print one small test page (four colour bars) when a
+printer has gone a set number of days without printing anything. It replaces a cron or systemd timer on the host: if
+you used one, retire it once you switch this on (otherwise both would print).
+
+How it decides, per printer:
+
+1. The idle clock is the printer's last print of any kind: a document from any device, or a nozzle check (which counts, so one check restarts the clock).
+2. When the printer has been idle for the set number of days **and** the time of day is past the *don't print before* time, it sends one check to the printer's CUPS queue (IPP `Print-Job`; no `lp` needed in the container).
+3. Guards: it only acts when the page counter can be read (so "idle" is known, not guessed). When a check comes due, the app reads the counter once more right before sending, so a page printed a minute ago cancels it, and an unreadable printer holds it back; after a failed attempt it waits an hour; it never sends a second check while an earlier one (sent in the last 6 hours) may still be printing; and an app-sent check whose page never appeared on the counter doesn't restart the idle clock.
+4. It is **off by default**. Turn it on with the switch in the **Automation** card, per printer. `NOZZLE_AUTO=1` makes new printers start with it on.
+
+The time is the server's clock, so set `TZ` (for example `TZ=Europe/London`) in the container; the image defaults to UTC.
+
+The card's settings (all per printer, defaults from the environment so a new printer starts exactly as configured there):
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Print the nozzle check automatically | off | The switch (`NOZZLE_AUTO`) |
+| Idle days before a check is due | 7 | Drives the automatic check and the "Next check" badge |
+| Don't print before | 10:00 | Quiet hours, in the container's time zone: `TZ` if set, else the container's default (UTC in the image) (`NOZZLE_CHECK_TIME`) |
+| Read the page counter every | 5 minutes | How often prints are noticed |
+| A new page counts as the check if it prints within | 30 minutes | After a check is sent the page total rises by one; a rise within this time is credited to the check, a later one is treated as someone else's print |
+| Also recognise checks whose job name has | `nozzle-check` | Spots nozzle-check pages sent to CUPS by another timer, so they aren't mistaken for someone printing |
+
+Only values you change are stored; the rest keep following the defaults. **Save settings** is only enabled when something changed, and **Reset to defaults** puts the settings back (it leaves the on/off switch as it is, because the switch isn't one of the settings). Times on the card, including the "Next check" badge, are shown in the container's time zone.
+The logic is in `app/tools/maintenance/schedule.py` (pure rules, with tests) and `Service.run_schedule`.
+
+## Useful pages instead of a test pattern
+
+An idle print that only shows colour bars wastes a sheet. Instead the app can rotate through pages you choose, for
+example colouring pages, so the print is worth having.
+
+- **Page to print**, on the Automation card: *Standard test page* (the colour bars) or *Rotate my pages*. **Manage pages…** opens the library.
+- **The library** is shared by every printer. Add PDF, PNG or JPEG files (a picker or drag and drop; up to `MAX_PAGE_MB` each, `MAX_PAGES` files and `MAX_LIBRARY_MB` in total). Files are checked by their contents, not their names, and PostScript is refused. They are stored in `/data/pages`, so they live in the same volume as the history; include it in backups.
+- **Preview and download:** every row shows a real picture of the page (the standard page is drawn as an exact replica of the colour bars). Click it, or the eye icon, to see the page the way it will be sent; PDFs show their pages (the first 12). Uploaded pages also have a **Download** button for the original file. The standard page is built in, so its Download and Delete are greyed out, and nothing can be uploaded over it. Thumbnails are small PNGs your browser draws when you upload (kept in `/data/pages` next to the file); a page without one falls back to the picture itself or a PDF icon.
+- **Per printer:** the order, and a switch for each page (the standard test page is one of the items, so you can drop it). Each automatic print, and **Print now**, takes the next enabled page and then loops. Deleted or switched-off pages are skipped; with nothing switched on, the standard page is used.
+- **Print a chosen page** (the Print button on a page, with a confirm) sends exactly that page without moving the rotation, which is also how to test a page you just added.
+- **Both sides:** for a printer that can flip the paper **by itself**, the Pages dialog offers *Multi-page files print on both sides* (flip on the long edge or the short edge), which saves paper. It applies to files with more than one page, for automatic prints, **Print now** and each page's Print button; one-page files and pictures print as they are. Printing here is unattended, so the option only appears when both the printer and its CUPS queue report two-sided printing (a printer without an automatic duplexer doesn't list it) and is never sent otherwise. If the printer is off when asked, its last confirmed ability is used, and a printer never confirmed counts as not capable. Reset to defaults keeps the choice.
+- **Ink:** a page only moves the inks it uses; a black-and-white page does not exercise cyan, magenta or yellow. The dialog says so, and you decide what to include. To be safe, set *Also print the standard test page every N prints* (0 = never) and every Nth print is the colour-bar page on top of the rotation.
+- **Printing:** the file goes to the printer's CUPS queue as it is (`print-scaling=fit`, so a picture isn't cropped) and the host's CUPS converts it for the printer. If a page fails to print, the History row shows CUPS's reason; try that page with the Print button, and check that CUPS can print a PDF or picture from the command line (`lp -d <queue> file.pdf`).
+- **Page counts:** a print records how many sheets it should make (PDFs are counted; pictures are one). The page counter is credited to the print page by page, so a 2-page PDF isn't mistaken for someone else's print. If a PDF's page count can't be read it is assumed to be one page.
+
+PDFs are drawn in the browser with [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0), bundled in `app/static/vendor/pdfjs`, so nothing is loaded from a CDN. It is fetched only when a PDF needs drawing, and runs with script evaluation off.
+
+## Print Utilities tab
+
+A tab of cards that open free online tools for things worth printing (passport photos, student worksheets, colouring pages, calendars and ruled paper, a PDF toolbox, posters, labels and crafts), grouped by category with at most four cards in a row. Each card is a drawing of the kind of page, the tool's name, a one-line description and its site; it opens in a new tab. The cards are drawings made by the app, so opening the tab loads nothing from those sites.
+
+Every button and tab in the app shows what it does when you hover over it (a test fails if a new button has no hover text).
+
+## When a printer is off
+
+A printer that is switched off or off the network is a normal case, not a crash. The Overview keeps the last known ink levels, model and page count on screen, dimmed, with a note ("The printer isn't answering… from 2 hours ago") and a Try again button; the badge says Offline. The last good answer is stored in the database, so it survives a restart. Nozzle Care says it can't read the page count. The automatic print waits (it only prints when it can tell the printer is idle) and goes ahead by itself when the printer returns. **Print now** warns first: the page would wait in the CUPS queue and print when the printer is back. A printer that has never answered shows just the reason. Everything recovers on its own, and one printer being off never affects another.
+
+## Several printers
+
+Add as many printers as you like (**Manage printers…** in the header menu). The rules the code and `tests/test_multi_printer.py` hold to:
+
+- **Everything per printer stays per printer:** status, history, automatic-print settings, rotation order and switches, rate limits, locks. Changing one printer never changes another.
+- **Shared on purpose:** the library of pages (a new page appears in every printer's list; deleting one removes it from every list) and the launcher links file (a link can be limited to some printers with `printers:`).
+- **One printer's trouble stays its own:** an unreachable address, a slow CUPS or a failing queue shows as that printer's error card. The background poller gives each printer its own worker, never runs one printer twice at once, and a hung printer doesn't delay the others.
+- **Removing a printer** deletes its history and settings (not the shared pages) and, if it was selected, the header falls back to the first one. Removing the last one returns to the welcome wizard. A new printer that reuses a removed printer's name starts clean.
+- **Editing** keeps the printer's id, so renaming keeps its history; changing its address or queue rebuilds its connection, and the print lock survives the rebuild so two copies can't print at once.
+- **Names and ids:** any name works (symbols, other alphabets, near-identical names). Ids are made from the name, made unique, and never clash with the app's own words (`pages`, `probe`, `discover`, ...).
+- Two CUPS queues on one physical printer are fine; each keeps its own books.
+
+The tests use fakes only. `test_a_removed_printer_leaves_nothing_in_any_table` fails if a new tool adds a `printer_id` table and forgets `on_delete`, and `test_every_printer_route_answers_404_for_an_unknown_printer_and_never_500` walks the URL map, so a new per-printer route is covered automatically.

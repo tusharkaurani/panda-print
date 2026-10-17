@@ -1,6 +1,6 @@
 """Tool: Printer Maintenance (status, ink, queue, nozzle checks) for every printer.
 
-This package is the reference example of a tool module; see the README.
+This package is the reference example of a tool module; see docs/development.md.
 """
 from __future__ import annotations
 

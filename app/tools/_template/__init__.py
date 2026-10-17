@@ -1,4 +1,4 @@
-"""Starter for a new tool. See "Adding a tool" in the README.
+"""Starter for a new tool. See "Adding a tool" in docs/development.md.
 
     cp -r app/tools/_template app/tools/<your-id>
 
@@ -37,5 +37,5 @@ def create(ctx: AppContext) -> Tool:
         ui_dir=Path(__file__).parent / "ui",
         order=100,  # tab order when there are several tools
         # tabs=[ToolTab("overview", "Overview"), ToolTab("history", "History")],  # optional: several tabs; kit.tabId tells the UI which
-        needs_printer=False,  # True: hidden until a printer exists, and the UI gets kit.printer (see README)
+        needs_printer=False,  # True: hidden until a printer exists, and the UI gets kit.printer (see docs/development.md)
     )

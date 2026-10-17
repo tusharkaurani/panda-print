@@ -4,7 +4,7 @@ A tool is a package under app/tools/<id>/ whose __init__.py defines
 
     def create(ctx: AppContext) -> Tool
 
-See the README ("Adding a tool") for a walkthrough.
+See docs/development.md ("Adding a tool") for a walkthrough.
 """
 from __future__ import annotations
 

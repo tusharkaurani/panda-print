@@ -284,3 +284,19 @@ def test_the_repository_has_what_an_open_source_project_needs():
     assert "pdf.js" in (root / "THIRD-PARTY.md").read_text()
     for secret in (".env", "secret.key"):
         assert secret in (root / ".gitignore").read_text()
+
+
+def test_the_readme_is_a_short_landing_page_whose_links_and_screenshots_exist():
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    readme = (root / "README.md").read_text()
+    assert len(readme.splitlines()) <= 120, "keep the README a landing page; put detail in docs/"
+    shots = re.findall(r"!\[[^\]]*\]\((docs/screenshots/[^)]+)\)", readme)
+    assert [Path(s).name.split("-")[0] for s in shots] == ["1", "2", "3", "4"]  # shown in sequence
+    problems = []
+    for f in [root / "README.md", root / "CONTRIBUTING.md", *sorted((root / "docs").glob("*.md"))]:
+        for m in re.finditer(r"\]\((?!https?://|#|mailto:)([^)#]+)(#[^)]*)?\)", f.read_text()):
+            if not (f.parent / m.group(1)).resolve().exists():
+                problems.append(f"{f.name}: {m.group(1)}")
+    assert not problems, problems
