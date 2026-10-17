@@ -257,8 +257,9 @@ export async function mount(root, kit) {
   function syncArea() {
     const part = S.area !== 'full';
     if (inputs.orientation) { inputs.orientation.disabled = part; inputs.orientation.value = S.orientation; }
-    const other = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[S.area];
     areaNote.hidden = !part;
+    if (!part) { areaNote.replaceChildren(); return; }
+    const other = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[S.area];
     areaNote.replaceChildren(icon('info', 18), h('div', {}, `Only the ${S.area} half is printed; the rest stays blank. To use the ${other} half later, choose “${other[0].toUpperCase()}${other.slice(1)} half only” and put the sheet back in the tray the same way it went in (let the ink dry first). The sheet is not turned, so “Sheet direction” is fixed.`));
   }
   function syncMode() {
