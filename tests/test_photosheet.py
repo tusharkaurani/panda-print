@@ -950,7 +950,7 @@ def test_the_page_has_crop_and_fit_in_each_photo_and_not_in_finishing():
 
 # ------------------------------------------------------------------ printing on only part of the page
 
-@pytest.mark.parametrize("area", ["top", "bottom", "left", "right"])
+@pytest.mark.parametrize("area", ["top", "bottom"])
 def test_photos_stay_inside_the_part_of_the_page_in_use(area):
     r = L.compute(req(area=area))
     R = r.region
@@ -976,10 +976,11 @@ def test_the_bottom_half_is_the_mirror_so_the_two_halves_make_one_full_sheet():
     assert top.count + bottom.count >= 2 * top.count
 
 
-def test_left_and_right_halves():
-    left, right = L.compute(req(area="left")), L.compute(req(area="right"))
-    assert max(c["x"] + c["w"] for c in left.cells) <= 105 and min(c["x"] for c in right.cells) >= 105
-    assert left.count == right.count == 12
+def test_only_the_top_and_bottom_halves_are_offered():
+    assert L.AREAS == ("full", "top", "bottom")
+    for gone in ("left", "right"):
+        with pytest.raises(L.LayoutError, match="top or bottom half"):
+            L.compute(req(area=gone))
 
 
 def test_the_sheet_is_never_turned_when_only_part_of_it_is_used():
@@ -1015,7 +1016,7 @@ def test_only_the_margins_on_the_papers_own_edge_are_checked_against_the_printer
 
 
 @pytest.mark.parametrize("area,photo,margin,gap", list(itertools.product(
-    ["top", "bottom", "left", "right"], [(35, 45), (50.8, 50.8), (20, 25)], [3, 8], [0, 3])))
+    ["top", "bottom"], [(35, 45), (50.8, 50.8), (20, 25)], [3, 8], [0, 3])))
 def test_every_half_page_layout_stays_in_its_half_and_never_overlaps(area, photo, margin, gap):
     try:
         r = L.compute(req(area=area, photo_w=photo[0], photo_h=photo[1], margin=(margin,) * 4, gap=gap, min_margin=0.0))
@@ -1056,7 +1057,7 @@ def test_the_layout_api_reports_the_area_in_use(rig):
     d = rig.client.post("/api/photosheet/layout", json=rig.settings(area="top"), headers=rig.h).get_json()["data"]
     assert d["area"] == "top" and d["region"]["h"] == 148.5 and d["count"] == 10
     assert rig.client.post("/api/photosheet/layout", json=rig.settings(), headers=rig.h).get_json()["data"]["area"] == "full"
-    for bad in ({"area": "diagonal"}, {"area": "top", "orientation": "landscape"}, {"area": 3}):
+    for bad in ({"area": "diagonal"}, {"area": "left"}, {"area": "right"}, {"area": "top", "orientation": "landscape"}, {"area": 3}):
         r = rig.client.post("/api/photosheet/layout", json=rig.settings(**bad), headers=rig.h)
         assert r.status_code == 400 and r.get_json()["error"]["message"], bad
 
@@ -1073,14 +1074,15 @@ def test_printing_a_half_page_sends_a_full_page_with_the_rest_blank(rig):
 def test_presets_remember_the_part_of_the_page():
     assert pre.clean_settings(good_settings(area="top"))["area"] == "top"
     assert pre.clean_settings(good_settings())["area"] == "full"
-    for bad in ({"area": "middle"}, {"area": "top", "orientation": "landscape"}):
+    for bad in ({"area": "middle"}, {"area": "left"}, {"area": "right"}, {"area": "top", "orientation": "landscape"}):
         with pytest.raises(pre.PresetError):
             pre.clean_settings(good_settings(**bad))
 
 
 def test_the_page_has_the_print_on_control():
     js = (Path(__file__).resolve().parent.parent / "app/tools/photosheet/ui/ui.js").read_text()
-    assert "'Print on'" in js and "Top half only" in js and "stays blank" in js
+    assert "'Print on'" in js and "Top half only" in js and "Bottom half only" in js and "stays blank" in js
+    assert "Left half" not in js and "Right half" not in js
 
 
 def test_the_two_shipped_presets_differ_in_the_part_of_the_page_they_use():

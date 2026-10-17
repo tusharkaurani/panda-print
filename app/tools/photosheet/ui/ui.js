@@ -266,7 +266,7 @@ export async function mount(root, kit) {
     if (inputs.orientation) { inputs.orientation.disabled = part; inputs.orientation.value = S.orientation; }
     areaNote.hidden = !part;
     if (!part) { areaNote.replaceChildren(); return; }
-    const other = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[S.area];
+    const other = { top: 'bottom', bottom: 'top' }[S.area];
     areaNote.replaceChildren(icon('info', 18), h('div', {}, `Only the ${S.area} half is printed; the rest stays blank. To use the ${other} half later, choose “${other[0].toUpperCase()}${other.slice(1)} half only” and put the sheet back in the tray the same way it went in (let the ink dry first). The sheet is not turned, so “Sheet direction” is fixed.`));
   }
   function syncMode() {
@@ -359,7 +359,7 @@ export async function mount(root, kit) {
   function applyPreset(p) {
     const x = p.settings;
     const before = controlState();
-    Object.assign(S, { photoW: x.photo.width, photoH: x.photo.height, unit: x.unit || 'mm', orientation: x.orientation || 'auto', area: x.area || 'full', margin: x.margin ?? 5, gap: x.gap ?? 2,
+    Object.assign(S, { photoW: x.photo.width, photoH: x.photo.height, unit: x.unit || 'mm', orientation: x.orientation || 'auto', area: ['top', 'bottom'].includes(x.area) ? x.area : 'full', margin: x.margin ?? 5, gap: x.gap ?? 2,
       mode: x.mode || 'fill', align: x.align || 'center', fit: x.fit || 'fill', marks: x.marks !== false, outline: Boolean(x.outline), copies: x.copies || 1 });
     if (x.cols) S.cols = x.cols;
     if (x.rows) S.rows = x.rows;
@@ -437,7 +437,7 @@ export async function mount(root, kit) {
       customRow,
       h('div', { class: 'two' }, select('orientation', 'Sheet direction', [['auto', 'Automatic (fits the most)'], ['portrait', 'Portrait'], ['landscape', 'Landscape']]),
         select('align', 'Placed', [['center', 'Centred on the paper'], ['start', 'Top left']])),
-      select('area', 'Print on', [['full', 'The whole page'], ['top', 'Top half only'], ['bottom', 'Bottom half only'], ['left', 'Left half only'], ['right', 'Right half only']],
+      select('area', 'Print on', [['full', 'The whole page'], ['top', 'Top half only'], ['bottom', 'Bottom half only']],
         { onchange: (v) => { S.area = v; if (v !== 'full') S.orientation = 'auto'; syncArea(); }, id: 'ps-area',
           hint: 'A half leaves the rest of the sheet blank, so you can use it later (the top half of A4 is an A5 area).' }),
       areaNote,
@@ -494,7 +494,7 @@ export async function mount(root, kit) {
     if (L && L.area !== 'full' && L.region) {  // the part left blank (only in this preview; the PDF has nothing there)
       const R = L.region;
       ctx.fillStyle = 'rgba(100, 116, 139, 0.10)';
-      const rects = { top: [0, R.h, L.page_w, L.page_h - R.h], bottom: [0, 0, L.page_w, R.y], left: [R.w, 0, L.page_w - R.w, L.page_h], right: [0, 0, R.x, L.page_h] }[L.area];
+      const rects = { top: [0, R.h, L.page_w, L.page_h - R.h], bottom: [0, 0, L.page_w, R.y] }[L.area];
       ctx.fillRect(...rects);
       ctx.save(); ctx.setLineDash([2, 1.5]); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 0.4; ctx.strokeRect(R.x, R.y, R.w, R.h); ctx.restore();
       ctx.fillStyle = '#64748b'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';

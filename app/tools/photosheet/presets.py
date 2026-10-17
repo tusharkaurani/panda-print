@@ -70,7 +70,7 @@ def clean_settings(raw) -> dict:
     if out["orientation"] not in ("auto", "portrait", "landscape"):
         raise PresetError("The sheet direction must be automatic, portrait or landscape.")
     if out["area"] not in lay.AREAS:
-        raise PresetError("The part of the page must be full, top, bottom, left or right.")
+        raise PresetError("The part of the page must be full, top or bottom.")
     if out["area"] != "full" and out["orientation"] == "landscape":
         raise PresetError("A half page can't be combined with a landscape sheet.")
     if out["mode"] not in ("fill", "grid", "count"):

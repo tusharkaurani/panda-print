@@ -93,7 +93,7 @@ async function photoScenario() {
   adjust.open = true; adjust.dispatchEvent(new FakeEvent('toggle')); await settle();
   const fitSel = $('.adjust select'); change(fitSel, 'fit'); await settle();
   const useAll = $$('.adjust-body .btn').find((b) => /Use for all/.test(b.textContent)); if (useAll) useAll.click(); await settle();
-  for (const area of ['top', 'bottom', 'left', 'right', 'full']) { change(document.getElementById('ps-area'), area); await settle(); }
+  for (const area of ['top', 'bottom', 'full']) { change(document.getElementById('ps-area'), area); await settle(); }
   const unit = $('.unit-pick'); change(unit, 'in'); await settle(); change(unit, 'cm'); await settle(); change(unit, 'mm'); await settle();
   for (const mode of ['grid', 'count', 'fill']) { change(document.getElementById('ps-mode'), mode); await settle(); }
   const chips = $$('.chip'); if (!chips.length) problems.push('no preset chips');

@@ -12,10 +12,9 @@ from dataclasses import dataclass, field
 MM_PER_INCH = 25.4
 MAX_COPIES = 600  # a sanity cap: a 5 mm photo on A4 would otherwise ask for thousands
 MAX_PHOTOS = 20  # different photos on one sheet
-AREAS = ("full", "top", "bottom", "left", "right")  # which part of the paper to use; the rest stays blank
+AREAS = ("full", "top", "bottom")  # which part of the paper to use (the top or bottom half); the rest stays blank
 # the sides of the used area that lie on the paper's own edge (the printer can't reach the very edge there)
-EDGE_SIDES = {"full": ("top", "right", "bottom", "left"), "top": ("top", "right", "left"), "bottom": ("right", "bottom", "left"),
-              "left": ("top", "bottom", "left"), "right": ("top", "right", "bottom")}
+EDGE_SIDES = {"full": ("top", "right", "bottom", "left"), "top": ("top", "right", "left"), "bottom": ("right", "bottom", "left")}
 MIN_PHOTO_MM, MAX_PHOTO_MM = 5.0, 300.0
 MIN_PAPER_MM, MAX_PAPER_MM = 40.0, 500.0
 MAX_MARGIN_MM, MAX_GAP_MM = 100.0, 50.0
@@ -147,7 +146,7 @@ def _check(req: Request) -> None:
     if req.align not in ("center", "start"):
         raise LayoutError("Choose centred or top-left.")
     if req.area not in AREAS:
-        raise LayoutError("Choose the whole page, or its top, bottom, left or right half.")
+        raise LayoutError("Choose the whole page, or its top or bottom half.")
     if req.area != "full" and req.orientation == "landscape":
         raise LayoutError("A half page is laid out the way the paper is fed. Choose portrait or automatic, or use the whole page.")
 
@@ -155,8 +154,7 @@ def _check(req: Request) -> None:
 def _region(area: str, w: float, h: float) -> dict:
     """The part of a page of w x h in use. Halves are exact, so an A4 sheet's top half is an A5 area."""
     return {"full": {"x": 0.0, "y": 0.0, "w": w, "h": h},
-            "top": {"x": 0.0, "y": 0.0, "w": w, "h": h / 2}, "bottom": {"x": 0.0, "y": h / 2, "w": w, "h": h / 2},
-            "left": {"x": 0.0, "y": 0.0, "w": w / 2, "h": h}, "right": {"x": w / 2, "y": 0.0, "w": w / 2, "h": h}}[area]
+            "top": {"x": 0.0, "y": 0.0, "w": w, "h": h / 2}, "bottom": {"x": 0.0, "y": h / 2, "w": w, "h": h / 2}}[area]
 
 
 def _lay(req: Request, landscape: bool) -> Layout:
