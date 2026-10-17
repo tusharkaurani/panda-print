@@ -1,6 +1,8 @@
 """Turn raw IPP attributes into the shapes the UI wants. Pure functions."""
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from app.printer import Attrs
 
 PRINTER_STATES = {3: ("idle", "Idle"), 4: ("processing", "Printing"), 5: ("stopped", "Stopped")}
@@ -103,13 +105,24 @@ def _media(v: str) -> str:
     return v.replace("iso_", "").replace("na_", "").split("_")[0].upper() if v else v
 
 
-def printer_details(attrs: Attrs) -> list[dict]:
+def landing_page(more_info, ip: str | None) -> str | None:
+    """The printer's own front page. printer-more-info often points deeper (Brother gives its AirPrint
+    help page), so keep only the address part; with none, fall back to http://<ip>/."""
+    parts = urlsplit(str(more_info or ""))
+    if parts.scheme in ("http", "https") and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}/"
+    if ip:
+        return f"http://[{ip}]/" if ":" in ip else f"http://{ip}/"
+    return None
+
+
+def printer_details(attrs: Attrs, ip: str | None = None) -> list[dict]:
     """Extra facts, only those the printer provided. `key` is stable for the UI; `label` is for people."""
     rows = [
         ("model", "Model", first(attrs, "printer-make-and-model")),
         ("firmware", "Firmware", first(attrs, "printer-firmware-string-version")),
         ("uptime", "Uptime", _uptime(first(attrs, "printer-up-time"))),
-        ("web", "Web interface", first(attrs, "printer-more-info")),
+        ("web", "Web interface", landing_page(first(attrs, "printer-more-info"), ip)),
         ("location", "Location", first(attrs, "printer-location")),
         ("paper", "Paper loaded", ", ".join(_media(str(m)) for m in attrs.get("media-ready", [])) or None),
         ("sides", "Default sides", first(attrs, "sides-default")),
@@ -118,14 +131,14 @@ def printer_details(attrs: Attrs) -> list[dict]:
     return [{"key": k, "label": label, "value": str(v)} for k, label, v in rows if v not in (None, "")]
 
 
-def printer(attrs: Attrs) -> dict:
+def printer(attrs: Attrs, ip: str | None = None) -> dict:
     state = queue_state(attrs)
     return {
         "name": first(attrs, "printer-info") or first(attrs, "printer-name") or "Printer",
         "model": first(attrs, "printer-make-and-model"),
         "state": state,
         "inks": inks(attrs),
-        "details": printer_details(attrs),
+        "details": printer_details(attrs, ip),
     }
 
 

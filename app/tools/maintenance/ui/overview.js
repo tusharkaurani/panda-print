@@ -46,7 +46,7 @@ export function mount(root, kit) {
   // Addresses become links, kept to one line (the full text is the tooltip)
   function factValue(v) {
     return /^https?:\/\//.test(v)
-      ? h('a', { class: 'fact-link', href: v, target: '_blank', rel: 'noopener noreferrer', title: v }, v.replace(/^https?:\/\//, ''))
+      ? h('a', { class: 'fact-link', href: v, target: '_blank', rel: 'noopener noreferrer', title: v }, v.replace(/^https?:\/\//, '').replace(/\/$/, ''))
       : v;
   }
 

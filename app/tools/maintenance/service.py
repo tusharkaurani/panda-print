@@ -26,8 +26,9 @@ class RateLimited(Exception):
 
 
 class Service:
-    def __init__(self, ctx: AppContext, backend, store: Store, tracker: Tracker):
+    def __init__(self, ctx: AppContext, printer, backend, store: Store, tracker: Tracker):
         self.ctx, self.s, self.store, self.tracker = ctx, ctx.settings, store, tracker
+        self.config = printer  # this printer's saved settings (address, queue, ...)
         self.printer = backend  # IPP/SNMP/CUPS access for this one printer
         self.clock = ctx.clock
         self._print_lock = threading.Lock()
@@ -38,7 +39,7 @@ class Service:
 
     # ------------------------------------------------------------ printer card
     def printer_status(self) -> dict:
-        info = normalize.printer(self._printer_cache.get(self.printer.printer_info))
+        info = normalize.printer(self._printer_cache.get(self.printer.printer_info), self.config.ip)
         info["counter"] = self._counter()
         return info
 

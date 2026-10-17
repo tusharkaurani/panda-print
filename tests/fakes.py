@@ -115,7 +115,7 @@ class FakePrinter:
             "printer-state": [4 if busy else 3], "printer-state-reasons": ["none"],
             "printer-is-accepting-jobs": [True],
             "printer-firmware-string-version": ["Ver.U"], "printer-up-time": [int(self.clock() % 10_000_000) + 3600],
-            "printer-more-info": [f"http://{self.p.ip}/"],
+            "printer-more-info": [f"http://{self.p.ip}/net/net/airprint.html"],
             "marker-names": ["M", "C", "Y", "BK"], "marker-levels": [94, 95, 94, 95],
             "marker-colors": ["#FF00FF", "#00FFFF", "#FFFF00", "#000000"],
             "marker-types": ["ink-cartridge"] * 4, "marker-low-levels": [10] * 4, "marker-high-levels": [100] * 4,

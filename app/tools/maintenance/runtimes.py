@@ -43,7 +43,7 @@ class Runtimes:
         backend = ctx.backend_for(printer)
         store = Store(ctx.db, printer.id)
         tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file)
-        return Runtime(printer, store, tracker, Service(ctx, backend, store, tracker))
+        return Runtime(printer, store, tracker, Service(ctx, printer, backend, store, tracker))
 
     def all(self) -> list[Runtime]:
         return [rt for p in self.ctx.printers.list() if (rt := self.get(p.id))]

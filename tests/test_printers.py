@@ -308,3 +308,16 @@ def test_printer_details_have_stable_keys(client):
     details = client.get(f"/api/maintenance/{PID}/printer").get_json()["data"]["details"]
     keys = [d["key"] for d in details]
     assert keys[:4] == ["model", "firmware", "uptime", "web"] and "paper" in keys
+
+
+def test_web_interface_is_the_printers_front_page_not_a_help_page(client):
+    web = {d["key"]: d["value"] for d in client.get(f"/api/maintenance/{PID}/printer").get_json()["data"]["details"]}["web"]
+    assert web == "http://192.168.1.18/"  # the printer reported .../net/net/airprint.html
+
+
+def test_landing_page_rules():
+    from app.tools.maintenance.normalize import landing_page
+    assert landing_page("https://printer.lan:8443/help/page.html?x=1", "10.0.0.5") == "https://printer.lan:8443/"
+    assert landing_page(None, "192.168.1.50") == "http://192.168.1.50/"      # nothing reported: the address
+    assert landing_page("ftp://x/y", "2001:db8::5") == "http://[2001:db8::5]/"  # unusable value: the address
+    assert landing_page(None, None) is None

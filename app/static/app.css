@@ -165,7 +165,8 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .gauge svg { width: 100%; max-width: var(--ring, 132px); height: auto; }
 .gauge .track { stroke: var(--track); }
 .gauge .fill { stroke: var(--gauge); transition: stroke-dasharray .9s cubic-bezier(.2, .8, .2, 1); }
-.gauge text { fill: var(--text); font: 700 19px var(--font); }
+.gauge text { fill: var(--text); font: 700 21px var(--font); }
+.gauge svg { cursor: help; }  /* hover explains that the level is the printer's own estimate */
 .gauge .name { font-size: 14px; font-weight: 650; }
 .gauge.C { --gauge: var(--ink-c); } .gauge.M { --gauge: var(--ink-m); }
 .gauge.Y { --gauge: var(--ink-y); } .gauge.K { --gauge: var(--ink-k); }
