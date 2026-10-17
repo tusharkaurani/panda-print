@@ -44,7 +44,9 @@ export function createPagesDialog(kit, { base, onChange }) {
   async function upload(files) {
     problems = [];
     let added = 0;
+    const limit = data.limits.max_file_mb * 2 ** 20;
     for (const file of files) {
+      if (file.size > limit) { problems.push(`${file.name}: larger than ${data.limits.max_file_mb} MB.`); continue; }  // no point sending it
       const form = new FormData();
       form.append('file', file);
       const res = await api('/maintenance/pages', { method: 'POST', body: form });

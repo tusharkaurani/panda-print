@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Callable
 
 from flask import Blueprint, jsonify, request, send_file
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from app.core.errors import SourceError
 from app.tools.maintenance.automation import ValidationError
@@ -74,7 +75,10 @@ def build_blueprint(runtimes: Runtimes, clock: Callable[[], float], library: Lib
     @bp.post("/pages")
     def pages_add():
         request.max_content_length = library.max_file + 64 * 1024  # uploads get their own, larger, size limit
-        upload = request.files.get("file")
+        try:
+            upload = request.files.get("file")
+        except RequestEntityTooLarge:
+            return page_error(PageError(f"That file is larger than {library.max_file // 2**20} MB.", 413))
         if upload is None:
             return page_error(PageError("Choose a file to add."))
         try:

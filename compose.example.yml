@@ -32,7 +32,7 @@ services:
       # TRUSTED_ORIGINS: "https://print.example.lan"   # only if the proxy rewrites Host
 
     volumes:
-      - panda-print-data:/data                          # SQLite history (small)
+      - panda-print-data:/data                          # SQLite history and the pages you upload to print (back this up)
       - ./config:/config:ro                              # links.yml and logos/
       # The host timer's state file, read-only. Mount the folder, not the file, so a
       # missing file doesn't make Docker create a directory in its place.

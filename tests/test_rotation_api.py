@@ -70,8 +70,9 @@ def test_oversized_upload_is_refused_and_a_normal_one_is_not_stopped_by_the_glob
     c = app.test_client()
     h = csrf_headers(c)
     big = b"\x89PNG\r\n\x1a\n" + b"x" * (1024 * 1024 + 10)
-    assert c.post("/api/maintenance/pages", data={"file": (io.BytesIO(big), "big.png")}, headers=h,
-                  content_type="multipart/form-data").status_code == 413
+    r = c.post("/api/maintenance/pages", data={"file": (io.BytesIO(big), "big.png")}, headers=h,
+               content_type="multipart/form-data")
+    assert r.status_code == 413 and r.get_json()["error"]["message"] == "That file is larger than 1 MB."
     mid = b"\x89PNG\r\n\x1a\n" + b"y" * 300_000  # far above Flask's 64 KB default, below this route's limit
     assert c.post("/api/maintenance/pages", data={"file": (io.BytesIO(mid), "mid.png")}, headers=h,
                   content_type="multipart/form-data").status_code == 201

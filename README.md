@@ -89,6 +89,7 @@ All settings are environment variables; see [.env.example](.env.example) for the
 | `HOST_STATE_FILE` | `/host-state/state` | The host timer's `"<count> <epoch>"` file; offered in the wizard (as that printer's timer state file) if it exists and no printer uses it yet |
 | `NOZZLE_JOB_PATTERN`, `ATTRIBUTION_WINDOW` | `nozzle-check`, `1800` | **Defaults** for how the timer's check pages are recognised and matched to the counter; overridable per printer |
 | `PRINT_COOLDOWN`, `PRINT_MAX_PER_HOUR` | `120`, `5` | Rate limit of the manual-print endpoint (see below) |
+| `MAX_PAGE_MB`, `MAX_PAGES`, `MAX_LIBRARY_MB` | `10`, `50`, `100` | Limits of the library of pages to print |
 | `DATA_DIR`, `CONFIG_DIR` | `./data`, `./config` (image: `/data`, `/config`) | SQLite history, and `links.yml` + `logos/` |
 | `SECRET_KEY` | generated | CSRF signing key; if unset a random key is stored in `DATA_DIR/secret.key` (mode 0600) |
 
@@ -167,6 +168,19 @@ The card's settings (all per printer, defaults from the environment so a new pri
 
 Only values you change are stored; the rest keep following the defaults. **Save settings** is only enabled when something changed, and **Reset to defaults** puts the settings back (it leaves the on/off switch as it is, because the switch isn't one of the settings). Times on the card, including the "Next check" badge, are shown in the container's time zone.
 The logic is in `app/tools/maintenance/schedule.py` (pure rules, with tests) and `Service.run_schedule`.
+
+### Useful pages instead of a test pattern
+
+An idle print that only shows colour bars wastes a sheet. Instead the app can rotate through pages you choose, for
+example colouring pages, so the print is worth having.
+
+- **Page to print**, on the Automation card: *Standard test page* (the colour bars) or *Rotate my pages*. **Manage pages…** opens the library.
+- **The library** is shared by every printer. Add PDF, PNG or JPEG files (a picker or drag and drop; up to `MAX_PAGE_MB` each, `MAX_PAGES` files and `MAX_LIBRARY_MB` in total). Files are checked by their contents, not their names, and PostScript is refused. They are stored in `/data/pages`, so they live in the same volume as the history; include it in backups.
+- **Per printer:** the order, and a switch for each page (the standard test page is one of the items, so you can drop it). Each automatic print, and **Print now**, takes the next enabled page and then loops. Deleted or switched-off pages are skipped; with nothing switched on, the standard page is used.
+- **Print a chosen page** (the Print button on a page, with a confirm) sends exactly that page without moving the rotation, which is also how to test a page you just added.
+- **Ink:** a page only moves the inks it uses; a black-and-white page does not exercise cyan, magenta or yellow. The dialog says so, and you decide what to include. To be safe, set *Also print the standard test page every N prints* (0 = never) and every Nth print is the colour-bar page on top of the rotation.
+- **Printing:** the file goes to the printer's CUPS queue as it is (`print-scaling=fit`, so a picture isn't cropped) and the host's CUPS converts it for the printer. If a page fails to print, the History row shows CUPS's reason; try that page with the Print button, and check that CUPS can print a PDF or picture from the command line (`lp -d <queue> file.pdf`).
+- **Page counts:** a print records how many sheets it should make (PDFs are counted; pictures are one). The page counter is credited to the print page by page, so a 2-page PDF isn't mistaken for someone else's print. If a PDF's page count can't be read it is assumed to be one page.
 
 ## Security model
 
@@ -252,7 +266,7 @@ app/
   core/                 db, csrf, rate-limit rule, links.yml loader, tool registry, printer registry + API, errors
   printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, discovery.py (wizard: find + probe)
   static/               index.html, app.css, app.js, printers.js (wizard + admin), lib/ (dom, api, ui kit, icons)
-  tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/ (overview.js, nozzle.js, shared.js)
+  tools/maintenance/    idle.py, schedule.py, pages.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/ (overview.js, nozzle.js, pages.js, shared.js)
   tools/_template/      copy me
 config/                 links.yml (starter) and logos/
 tests/                  fakes.py (fake printer/CUPS/network) and pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)
