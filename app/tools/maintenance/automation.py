@@ -1,7 +1,7 @@
 """Per-printer automation settings for nozzle checks.
 
 These used to be fixed values (environment variables, applied to every printer). Now each printer can
-override them from the Nozzle Check tab; anything it does not override follows the defaults, which are
+override them from the Nozzle Care tab; anything it does not override follows the defaults, which are
 those same environment values (7 idle days, a counter read every 5 minutes, ...). So a newly added
 printer starts with exactly today's behaviour.
 

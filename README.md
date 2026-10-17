@@ -138,7 +138,7 @@ keeps its own history in SQLite, separately for each printer:
 
 The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's logic, with no I/O) and the scheduler in `schedule.py`. **Print now** (inside the Automation card, with a confirm dialog) prints one check on demand through `POST /api/maintenance/<printer id>/nozzle/print`: CSRF-protected and rate-limited. It is recorded as a manual check and restarts the idle clock.
 
-## Automatic nozzle check (Nozzle Check tab)
+## Automatic nozzle check (Nozzle Care tab)
 
 Two words to keep apart: a **print** is something that came out of the printer, and a **nozzle check** is the test page; **reading** the page total prints nothing and is how the app notices prints (every 5 minutes by default). The tab's cards: *Last print* (anything, from any device), *Idle for* (time since then), *Last auto print* (a nozzle check printed automatically, by this app or by another timer found in the CUPS history) and *Last manual print* (one you started with **Print now**). *Recent nozzle prints* lists them with where each came from.
 
@@ -234,11 +234,11 @@ app/tools/scan/
 
 **Each utility is a tab.** The dashboard shows a tab bar (the address becomes `#<tool>` or `#<tool>/<tab>`). A new tool
 is a new tab with no other change. A tool can also declare several tabs of its own, as Printer Maintenance does with
-**Overview** (printer, ink, queue, recent prints) and **Nozzle Check**:
+**Overview** (printer, ink, queue, recent prints) and **Nozzle Care**:
 
 ```python
 from app.core.tool import Tool, ToolTab
-Tool(id="maintenance", ..., tabs=[ToolTab("overview", "Overview", "printer"), ToolTab("nozzle", "Nozzle Check", "droplet")])
+Tool(id="maintenance", ..., tabs=[ToolTab("overview", "Overview", "printer"), ToolTab("nozzle", "Nozzle Care", "droplet")])
 ```
 
 The shell calls `mount(root, kit)` once per tab, the first time it is opened, and `kit.tabId` says which one. Keep

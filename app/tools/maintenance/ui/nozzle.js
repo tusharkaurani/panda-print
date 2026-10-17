@@ -1,4 +1,4 @@
-// Nozzle Check tab: when the printer last printed, the history of checks, and the Automation settings that
+// Nozzle Care tab: when the printer last printed, the history of checks, and the Automation settings that
 // drive how checks are tracked. This is the file to extend with more nozzle-check features.
 import { createPagesDialog } from './pages.js';
 import { cardLoader } from './shared.js';
