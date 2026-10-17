@@ -332,7 +332,6 @@ select.input { appearance: auto; }
 .fact { background: var(--surface-2); border-radius: 12px; padding: 10px 14px; min-width: 0; }
 .fact dt { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .fact dd { font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
-.fact-note { font-weight: 400; font-size: 12.5px; color: var(--muted); }
 .fact-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); text-decoration: none; }
 .fact-link:hover { text-decoration: underline; }
 /* recent prints: a list, one card per line */

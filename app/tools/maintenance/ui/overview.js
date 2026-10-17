@@ -21,9 +21,9 @@ export function mount(root, kit) {
     const rest = d.details.filter((r) => !BESIDE.includes(r.key));
     // lifetime page counter: a card like the rest, first in the row below
     const counter = h('div', { class: 'fact' }, h('dt', {}, 'Lifetime pages printed'),
-      h('dd', {}, c.value != null ? fmt.num(c.value) : '\u2013',
-        c.value != null && c.as_of && !c.error && h('span', { class: 'fact-note' }, ` read ${fmt.ago(c.as_of)}`)),
-      c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`));
+      h('dd', {}, c.value != null ? fmt.num(c.value) : '\u2013'),
+      // the card's own "Updated" time covers a normal read; the age only matters when the printer can't be reached
+      c.error && h('p', { class: 'msg' }, `${c.value != null ? `Showing the last known value${c.as_of ? ` (read ${fmt.ago(c.as_of)})` : ''}. ` : ''}${c.error}`));
     printerCard.set(
       // The badge already says Idle/Printing; only add words when there is something to flag
       (d.state.reasons.length || (d.state.message && d.state.health !== 'ok'))
