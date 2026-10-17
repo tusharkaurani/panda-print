@@ -12,7 +12,7 @@ export function mount(root, kit) {
   const { h, icon, fmt, ui, api, toast } = kit;
   const { base, load } = cardLoader(kit);
 
-  const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', wide: true, onRefresh: () => refresh() });
+  const nozzleCard = ui.card({ title: 'Nozzle care', iconName: 'droplet', wide: true, onRefresh: () => refresh() });
   const autoCard = ui.card({ title: 'Automation', iconName: 'clock', wide: true, onRefresh: () => refreshAuto() });
   root.append(h('div', { class: 'grid' }, nozzleCard.el, autoCard.el));
   const refresh = () => load(nozzleCard, 'nozzle', renderNozzle);
