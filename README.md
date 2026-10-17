@@ -150,7 +150,7 @@ How it decides, per printer:
 
 1. The idle clock is the printer's last print of any kind: a document from any device, or a nozzle check (which counts, so one check restarts the clock).
 2. When the printer has been idle for the set number of days **and** the time of day is past the *don't print before* time, it sends one check to the printer's CUPS queue (IPP `Print-Job`; no `lp` needed in the container).
-3. Guards: it only acts when the page counter can be read (so "idle" is known, not guessed); after a failed attempt it waits an hour; it never sends a second check while an earlier one (sent in the last 6 hours) may still be printing; and an app-sent check whose page never appeared on the counter doesn't restart the idle clock.
+3. Guards: it only acts when the page counter can be read (so "idle" is known, not guessed). When a check comes due, the app reads the counter once more right before sending, so a page printed a minute ago cancels it, and an unreadable printer holds it back; after a failed attempt it waits an hour; it never sends a second check while an earlier one (sent in the last 6 hours) may still be printing; and an app-sent check whose page never appeared on the counter doesn't restart the idle clock.
 4. It is **off by default**. Turn it on with the switch in the **Automation** card, per printer. `NOZZLE_AUTO=1` makes new printers start with it on.
 
 The time is the server's clock, so set `TZ` (for example `TZ=Europe/London`) in the container; the image defaults to UTC.

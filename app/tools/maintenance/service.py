@@ -116,6 +116,13 @@ class Service:
             plan = self._plan(now, cfg, self._last_print(now, cfg))
             if plan.action != "print":
                 return plan
+            # Due. The stored counter reading can be minutes old, so look at the printer once more: if someone has
+            # printed since, the idle clock restarts; if it can't be read, "idle" isn't known and we wait.
+            self.tracker.poll()
+            now = self.clock()
+            plan = self._plan(now, cfg, self._last_print(now, cfg))
+            if plan.action != "print":
+                return plan
             try:
                 self._submit("auto", now)
             except SourceError as e:

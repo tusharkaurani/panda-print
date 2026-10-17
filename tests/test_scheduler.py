@@ -100,6 +100,23 @@ def test_nothing_is_printed_when_the_page_counter_cannot_be_read(rig):
     assert p.action == "blocked" and "counter" in p.reason and rig.auto_jobs() == []
 
 
+def test_someone_printing_just_before_the_check_is_due_cancels_it(rig):
+    """The stored reading can be minutes old: the printer is looked at again at the moment of printing."""
+    rig.configure(enabled=True, idle_days=2, run_at="00:00")  # due now, as far as the last reading knows
+    rig.clock.advance(60)
+    rig.printer.counter += 1  # a page came out of the printer after the last poll (no CUPS job: printed directly)
+    p = rig.service.run_schedule()
+    assert p.action == "wait" and rig.auto_jobs() == [] and rig.rows() == []
+    assert rig.client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["last_print"]["kind"] != "nozzle"
+
+
+def test_a_printer_that_stops_answering_just_before_the_check_is_not_printed_to(rig):
+    rig.configure(enabled=True, idle_days=2, run_at="00:00")
+    rig.printer.fail = ("snmp",)  # the last reading is recent, but now the counter can't be read
+    p = rig.service.run_schedule()
+    assert p.action == "blocked" and "counter" in p.reason and rig.auto_jobs() == [] and rig.rows() == []
+
+
 def test_a_stuck_check_does_not_restart_the_idle_clock_or_pile_up(rig):
     """The page of a sent check never reached the counter (printer off?): it doesn't count as a print."""
     rig.configure(enabled=True, idle_days=2, run_at="00:00")
