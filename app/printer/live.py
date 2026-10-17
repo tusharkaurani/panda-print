@@ -103,14 +103,16 @@ class LivePrinter:
             jobs.extend(resp.of(ipp.JOB_ATTRS))
         return jobs
 
-    def submit_nozzle(self, job_name: str, document: bytes, user: str) -> int:
+    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript") -> int:
         self._need_queue()
+        # PDFs and pictures are scaled to fit the paper (CUPS converts them for the printer); PostScript is left alone
+        job_attrs = [(ipp.KEYWORD, "print-scaling", "fit")] if mime != "application/postscript" else None
         try:
             resp = self.ipp.request(self._queue_url, ipp.PRINT_JOB, self._queue_uri, [
                 (ipp.NAME, "requesting-user-name", user),
-                (ipp.NAME, "job-name", job_name),
-                (ipp.MIME_TYPE, "document-format", "application/postscript"),
-            ], data=document)
+                (ipp.NAME, "job-name", job_name[:120]),
+                (ipp.MIME_TYPE, "document-format", mime),
+            ], data=document, job_attrs=job_attrs)
         except Exception as e:
             raise self._wrap("cups", f"CUPS ({self.p.cups_url})", e) from e
         for g in resp.of(ipp.JOB_ATTRS):

@@ -15,6 +15,7 @@ from app.core.errors import SourceError
 from app.core.printers import Printer, validate
 from app.printer import Attrs
 from app.settings import Settings
+from app.tools.maintenance.pages import count_pdf_pages
 from app.tools.maintenance.store import Store
 
 DAY = 86400.0
@@ -67,7 +68,8 @@ class FakePrinter:
         for ev in history_events(now):
             self.jobs.append(self._job(ev["job_id"], ev["name"], ev["user"], ev["ts"] - 5, ev["ts"] + 20, ev["pages"]))
         self._next_job = FIRST_JOB_ID + len(HISTORY)
-        self._pending: list[tuple[float, int]] = []  # (done at, job id)
+        self._pending: list[tuple[float, int, int]] = []  # (done at, job id, pages)
+        self.submitted: list[dict] = []  # every document sent through submit_document, for the tests
 
     # ---- helpers
     @staticmethod
@@ -95,13 +97,13 @@ class FakePrinter:
 
     def _tick(self) -> None:
         now = self.clock()
-        for done, job_id in [p for p in self._pending if p[0] <= now]:
-            self._pending.remove((done, job_id))
-            self.counter += 1
+        for done, job_id, pages in [p for p in self._pending if p[0] <= now]:
+            self._pending.remove((done, job_id, pages))
+            self.counter += pages
             for j in self.jobs:
                 if j["job-id"][0] == job_id:
                     j.update({"job-state": [9], "job-state-reasons": ["job-completed-successfully"],
-                              "time-at-completed": [int(done)], "job-media-sheets-completed": [1]})
+                              "time-at-completed": [int(done)], "job-media-sheets-completed": [pages]})
 
     # ---- PrinterBackend
     def printer_info(self) -> Attrs:
@@ -151,16 +153,20 @@ class FakePrinter:
             self._tick()
             return [dict(j) for j in self.jobs]
 
-    def submit_nozzle(self, job_name: str, document: bytes, user: str) -> int:
+    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript") -> int:
         self._need_queue()
         self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
-        if not document.startswith(b"%!PS"):
+        if mime == "application/postscript" and not document.startswith(b"%!PS"):
             raise SourceError("cups", "The document is not PostScript.")
+        if mime not in ("application/postscript", "application/pdf", "image/png", "image/jpeg"):
+            raise SourceError("cups", f"CUPS can't print {mime}.")
+        pages = count_pdf_pages(document) if mime == "application/pdf" else 1
         with self._lock:
             now = self.clock()
             job_id, self._next_job = self._next_job, self._next_job + 1
             self.jobs.append(self._job(job_id, job_name, user, now, None, 0))
-            self._pending.append((now + PRINT_SECONDS, job_id))
+            self.submitted.append({"job_id": job_id, "name": job_name, "mime": mime, "size": len(document), "pages": pages})
+            self._pending.append((now + PRINT_SECONDS, job_id, pages))
             return job_id
 
 

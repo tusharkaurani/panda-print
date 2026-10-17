@@ -1,7 +1,7 @@
 from app.core.db import Database
 from app.tools.maintenance import store as store_mod
 from app.tools.maintenance.store import Store
-from app.tools.maintenance.tracker import Tracker, split_delta
+from app.tools.maintenance.tracker import Tracker, allocate
 from app.settings import Settings
 from conftest import Clock, T0
 
@@ -22,11 +22,14 @@ def make(tmp_path, **kw):
     return Tracker(settings, store, NoPrinter(), clock, host_state), store, clock
 
 
-def test_split_delta():
-    assert split_delta(1, 1) == (1, 0)
-    assert split_delta(3, 1) == (1, 2)
-    assert split_delta(1, 0) == (0, 1)
-    assert split_delta(1, 5) == (1, 0)
+def test_allocate_shares_a_rise_out_to_waiting_prints():
+    assert allocate(1, [1]) == ([1], 0)
+    assert allocate(3, [1]) == ([1], 2)          # one check, two other pages
+    assert allocate(1, []) == ([], 1)             # nothing was waiting: someone printed
+    assert allocate(1, [1, 1, 1]) == ([1, 0, 0], 0)
+    assert allocate(2, [2]) == ([2], 0)           # a 2-page print is fully credited
+    assert allocate(1, [2]) == ([1], 0)           # half of it so far: the rest stays reserved
+    assert allocate(5, [2, 2]) == ([2, 2], 1)
 
 
 def test_first_sample_starts_the_clock_now(tmp_path):
@@ -181,3 +184,26 @@ def test_documents_active_since(tmp_path):
     jobs = [_doc(1, "old.pdf", 500), _doc(2, "recent.pdf", 1100), _doc(3, "nozzle-check.ps", 1200),
             _doc(4, "printing.pdf", 1300, state=5), _doc(5, "queued.pdf", 1400, state=3)]
     assert tr.documents_active_since(jobs, since) == 2  # recent + printing; not old, nozzle or merely queued
+
+
+def test_a_two_page_print_is_credited_in_full_even_across_two_reads(tmp_path):
+    tr, store, clock = make(tmp_path)
+    tr.record_counter(174, clock())
+    store.add_check(clock(), "manual", "submitted", job_id=1, pages=2)
+    clock.advance(60)
+    tr.record_counter(175, clock())  # the first sheet is out
+    assert store.last_activity("external") is None and store.last_activity()["kind"] == "nozzle"
+    assert [r["pages_left"] for r in store.unclaimed_checks(0)] == [1]  # still waiting for the second
+    assert store.last_confirmed_check(clock() + 99999) is not None       # but it counts as printed already
+    clock.advance(60)
+    tr.record_counter(176, clock())
+    assert store.unclaimed_checks(0) == [] and store.last_activity("external") is None  # nobody else "printed"
+
+
+def test_extra_pages_beyond_the_expected_ones_are_someone_elses(tmp_path):
+    tr, store, clock = make(tmp_path)
+    tr.record_counter(174, clock())
+    store.add_check(clock(), "manual", "submitted", job_id=1, pages=2)
+    clock.advance(60)
+    tr.record_counter(177, clock())  # two sheets of ours plus one more
+    assert store.last_activity("nozzle")["delta"] == 2 and store.last_activity("external")["delta"] == 1

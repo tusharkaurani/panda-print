@@ -224,13 +224,16 @@ class IppClient:
             conn.close()
 
     def request(self, url: str, op: int, printer_uri: str | None, op_attrs: list[tuple[int, str, Any]],
-                data: bytes = b"") -> IppResponse:
+                data: bytes = b"", job_attrs: list[tuple[int, str, Any]] | None = None) -> IppResponse:
         with _request_lock:
             rid = next(_request_ids)
         base = [(CHARSET, "attributes-charset", "utf-8"), (LANGUAGE, "attributes-natural-language", "en")]
         if printer_uri:
             base.append((URI, "printer-uri", printer_uri))
-        body = encode_request(op, [(OPERATION_ATTRS, base + op_attrs)], rid, data)
+        groups = [(OPERATION_ATTRS, base + op_attrs)]
+        if job_attrs:
+            groups.append((JOB_ATTRS, job_attrs))
+        body = encode_request(op, groups, rid, data)
         resp = decode_response(self.post(url, body))
         if resp.status >= 0x0100:
             label = STATUS_NAMES.get(resp.status, f"status 0x{resp.status:04x}")

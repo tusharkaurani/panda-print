@@ -27,8 +27,8 @@ class PrinterBackend(Protocol):
     def list_jobs(self) -> list[Attrs]:
         """CUPS jobs, queued and completed."""
 
-    def submit_nozzle(self, job_name: str, document: bytes, user: str) -> int:
-        """IPP Print-Job of a PostScript document to the CUPS queue; returns the job id."""
+    def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript") -> int:
+        """IPP Print-Job of a document (PostScript, PDF, PNG or JPEG) to the CUPS queue; returns the job id."""
 
 
 class PrinterAccess(Protocol):

@@ -67,7 +67,7 @@ def test_live_printer_reads_attributes_queue_and_jobs(cups):
 
 def test_live_printer_submits_postscript_via_print_job(cups):
     p = live(cups)
-    assert p.submit_nozzle("panda-print nozzle check (manual)", NOZZLE_PS, "panda-print") == 77
+    assert p.submit_document("panda-print nozzle check (manual)", NOZZLE_PS, "panda-print") == 77
     path, op, attrs, raw = FakeCups.seen[-1]
     assert path == "/printers/T730" and op == ipp.PRINT_JOB
     assert attrs["document-format"] == ["application/postscript"]
@@ -83,7 +83,7 @@ def test_missing_queue_is_a_friendly_error(cups):
 
 def test_ipp_error_status_is_explained(cups):
     with pytest.raises(SourceError, match="not found"):
-        live(cups, cups_queue="MISSING").submit_nozzle("x", NOZZLE_PS, "u")
+        live(cups, cups_queue="MISSING").submit_document("x", NOZZLE_PS, "u")
 
 
 def test_unreachable_printer_is_a_friendly_error():
@@ -91,3 +91,19 @@ def test_unreachable_printer_is_a_friendly_error():
     with pytest.raises(SourceError) as e:
         p.printer_info()
     assert e.value.source == "printer" and "refused" in e.value.message
+
+
+def test_a_pdf_is_sent_with_its_own_type_and_scaled_to_fit(cups):
+    p = live(cups)
+    pdf = b"%PDF-1.4\n%fake\n"
+    assert p.submit_document("panda-print nozzle check (auto) - Bunny", pdf, "panda-print", "application/pdf") == 77
+    path, op, attrs, raw = FakeCups.seen[-1]
+    assert op == ipp.PRINT_JOB and attrs["document-format"] == ["application/pdf"]
+    job = ipp.decode_response(raw).of(ipp.JOB_ATTRS)
+    assert job and job[0]["print-scaling"] == ["fit"]  # a picture must not be cropped by the paper size
+    assert raw.endswith(pdf)
+
+
+def test_postscript_is_sent_without_scaling_attributes(cups):
+    live(cups).submit_document("x", NOZZLE_PS, "u")
+    assert ipp.decode_response(FakeCups.seen[-1][3]).of(ipp.JOB_ATTRS) == []

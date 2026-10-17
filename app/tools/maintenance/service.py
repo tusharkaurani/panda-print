@@ -215,7 +215,7 @@ class Service:
     def _submit(self, source: str, now: float) -> int:
         """Send one nozzle check to CUPS and record it (as a failed row if CUPS says no). Caller holds the lock."""
         try:
-            job_id = self.printer.submit_nozzle(f"{JOB_NAME} ({source})", NOZZLE_PS, APP_USER)
+            job_id = self.printer.submit_document(f"{JOB_NAME} ({source})", NOZZLE_PS, APP_USER, "application/postscript")
         except SourceError as e:
             self.store.add_check(now, source, "failed", message=e.message)
             raise

@@ -31,10 +31,15 @@ JOB_PROCESSING, JOB_COMPLETED, JOB_CANCELED, JOB_ABORTED = 5, 9, 7, 8
 DIRECT_SLACK = 180.0  # seconds: CUPS marks a job done a little before the counter finishes moving
 
 
-def split_delta(delta: int, unclaimed_checks: int) -> tuple[int, int]:
-    """A counter rise of `delta` pages -> (pages that were nozzle checks, pages from others)."""
-    nozzle = max(0, min(delta, unclaimed_checks))
-    return nozzle, delta - nozzle
+def allocate(delta: int, pages_left: list[int]) -> tuple[list[int], int]:
+    """A counter rise of `delta` pages, shared out to the prints we are waiting for (oldest first, each
+    expecting `pages_left` pages) -> (pages credited to each, pages left over for other printing)."""
+    credited, remaining = [], delta
+    for want in pages_left:
+        take = max(0, min(remaining, want))
+        credited.append(take)
+        remaining -= take
+    return credited, remaining
 
 
 class Tracker:
@@ -161,9 +166,12 @@ class Tracker:
                                     note=f"Counter went backwards ({last} to {count}); tracking restarted")
             return
         unclaimed = self.store.unclaimed_checks(now - self.automation().attribution_seconds)
-        nozzle, other = split_delta(count - last, len(unclaimed))
+        credited, other = allocate(count - last, [r["pages_left"] for r in unclaimed])
+        nozzle = sum(credited)
+        for row, take in zip(unclaimed, credited):
+            if take:
+                self.store.consume(row["id"], take, now)
         if nozzle:
-            self.store.claim([r["id"] for r in unclaimed[:nozzle]], now)
             self.store.add_activity(now, nozzle, count, "nozzle", prev)
         if other:
             # pages with no CUPS job behind them came straight to the printer

@@ -45,6 +45,13 @@ MIGRATIONS.append("""
 from app.tools.maintenance import pages as _pages  # noqa: E402
 
 MIGRATIONS.append(_pages.MIGRATION)  # the shared page library and each printer's rotation
+MIGRATIONS.append("""
+    ALTER TABLE mt_checks ADD COLUMN page_id TEXT;               -- which page was printed (NULL: the standard test page)
+    ALTER TABLE mt_checks ADD COLUMN page_name TEXT;
+    ALTER TABLE mt_checks ADD COLUMN pages INTEGER NOT NULL DEFAULT 1;       -- sheets the print will produce
+    ALTER TABLE mt_checks ADD COLUMN pages_left INTEGER NOT NULL DEFAULT 1;  -- not yet seen on the page counter
+    UPDATE mt_checks SET pages_left = 0 WHERE claimed_ts IS NOT NULL;
+""")
 
 OK_STATES = ("submitted", "completed")
 
@@ -119,24 +126,27 @@ class Store:
     # --- nozzle checks
     def add_check(self, ts: float, source: str, state: str, job_id: int | None = None,
                   message: str | None = None, cups_key: str | None = None,
-                  claimed_ts: float | None = None) -> bool:
+                  claimed_ts: float | None = None, page_id: str | None = None, page_name: str | None = None,
+                  pages: int = 1) -> bool:
         """Insert a check; returns False if a row with this cups_key already exists."""
         with self.db.tx() as c:
             cur = c.execute(
-                "INSERT OR IGNORE INTO mt_checks(printer_id,ts,source,state,job_id,cups_key,message,claimed_ts) "
-                "VALUES(?,?,?,?,?,?,?,?)", (self.pid, ts, source, state, job_id, cups_key, message, claimed_ts))
+                "INSERT OR IGNORE INTO mt_checks(printer_id,ts,source,state,job_id,cups_key,message,claimed_ts,"
+                "page_id,page_name,pages,pages_left) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (self.pid, ts, source, state, job_id, cups_key, message, claimed_ts, page_id, page_name, pages,
+                 0 if claimed_ts is not None or state == "failed" else pages))
             return cur.rowcount > 0
 
     def unclaimed_checks(self, since_ts: float) -> list[sqlite3.Row]:
         marks = ",".join("?" * len(OK_STATES))
         return self.db.query(
-            f"SELECT * FROM mt_checks WHERE printer_id=? AND claimed_ts IS NULL AND ts>=? AND state IN ({marks}) "
+            f"SELECT * FROM mt_checks WHERE printer_id=? AND pages_left>0 AND ts>=? AND state IN ({marks}) "
             "ORDER BY ts", (self.pid, since_ts, *OK_STATES))
 
-    def claim(self, ids: list[int], when: float) -> None:
-        if ids:
-            with self.db.tx() as c:
-                c.executemany("UPDATE mt_checks SET claimed_ts=? WHERE id=?", [(when, i) for i in ids])
+    def consume(self, check_id: int, pages: int, when: float) -> None:
+        """`pages` of this print have shown up on the page counter. It counts as confirmed from the first one."""
+        self.db.execute("UPDATE mt_checks SET pages_left = MAX(pages_left - ?, 0), "
+                        "claimed_ts = COALESCE(claimed_ts, ?) WHERE id=?", (pages, when, check_id))
 
     def last_check(self, sources: tuple[str, ...], include_failed: bool = False) -> sqlite3.Row | None:
         marks = ",".join("?" * len(sources))
