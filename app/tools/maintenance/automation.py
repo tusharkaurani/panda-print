@@ -9,9 +9,12 @@ Pure functions only; storage lives in store.py.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, fields
 
 from app.settings import Settings
+
+_HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
 class ValidationError(Exception):
@@ -26,6 +29,8 @@ class Automation:
     check_minutes: float  # how often the page counter is read
     job_pattern: str  # CUPS job names containing this are the timer's nozzle checks
     attribution_minutes: float  # how long a check can wait for the counter to move
+    enabled: bool  # print the nozzle check automatically (off unless asked for)
+    run_at: str  # "HH:MM": never print before this time of day
 
     @property
     def attribution_seconds(self) -> float:
@@ -54,6 +59,8 @@ def defaults(settings: Settings) -> Automation:
         check_minutes=settings.poll_interval / 60,
         job_pattern=settings.nozzle_job_pattern,
         attribution_minutes=settings.attribution_window / 60,
+        enabled=settings.auto_check,
+        run_at=settings.check_time if _HHMM.match(settings.check_time) else "10:00",
     )
 
 
@@ -69,6 +76,23 @@ def validate(payload: dict) -> tuple[dict, dict[str, str]]:
         if key not in payload:
             continue
         raw = payload[key]
+        if key == "enabled":
+            if isinstance(raw, bool):
+                clean[key] = raw
+            elif str(raw).strip().lower() in ("true", "1", "on", "yes"):
+                clean[key] = True
+            elif str(raw).strip().lower() in ("false", "0", "off", "no"):
+                clean[key] = False
+            else:
+                errors[key] = "Choose on or off."
+            continue
+        if key == "run_at":
+            text = str(raw if raw is not None else "").strip()
+            if _HHMM.match(text):
+                clean[key] = text
+            else:
+                errors[key] = "Enter a time such as 10:00."
+            continue
         if key == "job_pattern":
             text = str(raw if raw is not None else "").strip()
             if not text:

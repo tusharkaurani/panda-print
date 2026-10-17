@@ -1,6 +1,7 @@
 """Orchestration for the maintenance tool: what each API endpoint returns."""
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
@@ -9,9 +10,11 @@ from app.core.context import AppContext
 from app.core.errors import SourceError
 from app.core.ttlcache import TTLCache
 from app.tools.maintenance import automation as auto
-from app.tools.maintenance import idle, normalize
+from app.tools.maintenance import idle, normalize, schedule
 from app.tools.maintenance.store import Store
 from app.tools.maintenance.tracker import APP_USER, Tracker
+
+log = logging.getLogger(__name__)
 
 NOZZLE_PS = (Path(__file__).with_name("nozzle-check.ps")).read_bytes()
 JOB_NAME = "panda-print nozzle check"
@@ -73,6 +76,51 @@ class Service:
             data["jobs_error"] = e.to_dict()
         return data
 
+    # ------------------------------------------------------------ when did it last print, and what is next
+    def _last_print(self, now: float, cfg: auto.Automation) -> dict | None:
+        """The latest print of any kind: a counter change, or a check that counts (see store.last_confirmed_check)."""
+        activity = self.store.last_activity()
+        check = self.store.last_confirmed_check(now - cfg.attribution_seconds)
+        candidates = []
+        if activity:
+            candidates.append((activity["ts"], activity["kind"]))
+        if check:
+            candidates.append((check["ts"], "nozzle"))
+        if not candidates:
+            return None
+        ts, kind = max(candidates)
+        # a baseline only says "nothing since then", so it is a lower bound
+        return {"ts": ts, "kind": kind, "approximate": kind == "baseline"}
+
+    def _plan(self, now: float, cfg: auto.Automation, last_print: dict | None) -> schedule.Plan:
+        last_poll = self.store.get("last_count_ts")
+        counter_ok = (self.store.get("counter_error") is None and last_poll is not None
+                      and now - float(last_poll) < max(3 * cfg.check_seconds, 900))
+        failed = self.store.last_check(("auto",), include_failed=True)
+        failure = failed if failed and failed["state"] == "failed" else None
+        sent = self.store.last_check(("auto", "manual"))  # only checks that really went to CUPS; failures have their own back-off
+        return schedule.plan(
+            enabled=cfg.enabled, now=now, last_print_ts=last_print["ts"] if last_print else None,
+            idle_days=cfg.idle_days, run_at=cfg.run_at, tz=schedule.tz_for(self.s.timezone), counter_ok=counter_ok,
+            last_app_check_ts=sent["ts"] if sent else None, last_failure_ts=failure["ts"] if failure else None)
+
+    def run_schedule(self) -> schedule.Plan:
+        """One look at whether this printer's automatic check is due; prints it if so. Called every few seconds
+        by the poller. Everything is decided again under the lock, so two callers can't both print."""
+        with self._print_lock:
+            now = self.clock()
+            cfg = self.tracker.automation()
+            plan = self._plan(now, cfg, self._last_print(now, cfg))
+            if plan.action != "print":
+                return plan
+            try:
+                self._submit("auto", now)
+            except SourceError as e:
+                log.warning("automatic nozzle check for %s failed: %s", self.config.name, e.message)
+                return schedule.Plan("blocked", e.message, now + schedule.RETRY_AFTER_FAILURE)
+            log.info("automatic nozzle check sent for %s", self.config.name)
+            return plan
+
     # ------------------------------------------------------------ nozzle card
     def nozzle_status(self) -> dict:
         try:
@@ -82,19 +130,8 @@ class Service:
         now = self.clock()
         settings = self.tracker.automation()
         threshold = settings.idle_days
-        activity = self.store.last_activity()
-        check = self.store.last_check(("manual", "auto", "host"))
-        # The latest print of any kind: a counter change, or a check we know was submitted.
-        candidates = []
-        if activity:
-            candidates.append((activity["ts"], activity["kind"]))
-        if check:
-            candidates.append((check["ts"], "nozzle"))
-        last_print = None
-        if candidates:
-            ts, kind = max(candidates)
-            # a baseline only says "nothing since then", so it is a lower bound
-            last_print = {"ts": ts, "kind": kind, "approximate": kind == "baseline"}
+        last_print = self._last_print(now, settings)
+        plan = self._plan(now, settings, last_print)
         external = self.store.last_activity(("external", "direct"))
         auto = self.store.last_check(("auto", "host"))
         manual = self.store.last_check(("manual",), include_failed=True)
@@ -126,6 +163,12 @@ class Service:
                 "error": host_err,
             },
             "print": self._allowance(now),
+            # the automatic check: whether it is on, when it will next print, and what is in its way
+            "automation": {
+                "enabled": settings.enabled, "run_at": settings.run_at, "state": plan.action,
+                "reason": plan.reason, "next_run_at": plan.next_run_at,
+                "timezone": str(schedule.tz_for(self.s.timezone)),
+            },
         }
 
     @staticmethod
@@ -140,7 +183,7 @@ class Service:
         base = auto.defaults(self.s)
         overrides = self.store.automation_overrides()
         return {"values": auto.effective(base, overrides).to_dict(), "defaults": base.to_dict(),
-                "customised": sorted(overrides)}
+                "customised": sorted(overrides), "timezone": str(schedule.tz_for(self.s.timezone))}
 
     def save_automation(self, payload: dict) -> dict:
         """Set this printer's automation settings. Raises ValidationError(fields) for bad input.
@@ -163,20 +206,24 @@ class Service:
         v = ratelimit.check(self.rule, times, now)
         return {"allowed": v.allowed, "retry_after": v.retry_after, "reason": v.reason}
 
+    def _submit(self, source: str, now: float) -> int:
+        """Send one nozzle check to CUPS and record it (as a failed row if CUPS says no). Caller holds the lock."""
+        try:
+            job_id = self.printer.submit_nozzle(f"{JOB_NAME} ({source})", NOZZLE_PS, APP_USER)
+        except SourceError as e:
+            self.store.add_check(now, source, "failed", message=e.message)
+            raise
+        self.store.add_check(now, source, "submitted", job_id)
+        self._queue_cache.clear()
+        self._jobs_cache.clear()
+        self._printer_cache.clear()
+        return job_id
+
     def request_print(self) -> dict:
-        """Print one nozzle check now. Raises RateLimited or SourceError."""
+        """Print one nozzle check now (the API's manual print). Raises RateLimited or SourceError."""
         with self._print_lock:  # serialise: check + submit + record is one step
             now = self.clock()
             verdict = ratelimit.check(self.rule, self.store.manual_attempt_times(now - self.rule.window), now)
             if not verdict.allowed:
                 raise RateLimited(verdict)
-            try:
-                job_id = self.printer.submit_nozzle(JOB_NAME + " (manual)", NOZZLE_PS, APP_USER)
-            except SourceError as e:
-                self.store.add_check(now, "manual", "failed", message=e.message)
-                raise
-            self.store.add_check(now, "manual", "submitted", job_id)
-            self._queue_cache.clear()
-            self._jobs_cache.clear()
-            self._printer_cache.clear()
-            return {"job_id": job_id, "submitted_at": now}
+            return {"job_id": self._submit("manual", now), "submitted_at": now}

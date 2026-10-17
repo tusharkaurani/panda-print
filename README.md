@@ -2,7 +2,7 @@
 
 A small, self-hosted dashboard that is the front door for everything printer-related at home.
 It ships with one tool, **Printer Maintenance** (status, ink gauges, lifetime page counter, CUPS queue,
-recent prints, and a nozzle-check tracker with per-printer automation settings), plus a **launcher** grid for
+recent prints, and a nozzle-check tracker that can also print the nozzle check for you when a printer has sat idle), plus a **launcher** grid for
 external tools. More tools plug in as self-contained modules.
 
 Built for a Brother DCP-T730DW behind CUPS on a Raspberry Pi, but no printer is hard-wired: the first visit opens
@@ -28,7 +28,8 @@ DATA_DIR=.local/data CONFIG_DIR=config .venv/bin/python -m app
 ```
 
 It talks to your real network: the wizard discovers printers on the LAN and the cards read live data. Opening the
-dashboard, the wizard and the Printers page only ever *read* from printers, and nothing in the UI prints. To start over,
+dashboard, the wizard and the Printers page only ever *read* from printers. The one thing that can print is the automatic nozzle check, and only for a printer where
+you switched it on (it is off by default). To start over,
 delete `.local/data`.
 
 The tests never touch a real device or print anything: they use fakes in `tests/fakes.py` (a fake printer, CUPS
@@ -63,7 +64,7 @@ docker compose up -d
 
 `compose.example.yml` is the whole hosting recipe: host networking (so `127.0.0.1:631` is CUPS and the printer is
 reachable on the LAN), non-root uid 1000, read-only root filesystem, dropped capabilities, a 128 MB memory cap, a
-named volume for `/data`, `./config` mounted read-only, and the host timer's state folder mounted read-only.
+named volume for `/data`, `./config` mounted read-only, and, optionally, an old timer's state folder mounted read-only.
 The image has its own healthcheck (`python -m app.healthcheck`).
 
 Notes:
@@ -134,22 +135,36 @@ keeps its own history in SQLite, separately for each printer:
 4. **Idle clock.** Like the host script, a nozzle check counts as a print and restarts the idle clock, so *next automated check due* is `last print of any kind + idle days` (7 by default).
 5. **First run.** If the printer has a timer state file set and its count equals the printer's current count, the idle clock starts from its timestamp (it can lag the real print by up to a day). Otherwise it starts from the newest finished non-nozzle job in CUPS, and failing that from the first reading, in which case the card says "at least".
 
-The idle rule lives in `app/tools/maintenance/idle.py` with no I/O: `decide()` is the host script's `main()` minus side effects, and `parse_host_state()` reads its state format. That is the piece to reuse if you later move the scheduler into the app. **The app never prints automatically**; the host timer remains the only scheduler. The API can print one check (`POST /api/maintenance/<printer id>/nozzle/print`: IPP `Print-Job` straight to CUPS, CSRF-protected and rate-limited), but there is no button for it in the UI.
+The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's logic, with no I/O) and the scheduler in `schedule.py`. The app also exposes `POST /api/maintenance/<printer id>/nozzle/print` (one check now: CSRF-protected and rate-limited), but there is no button for it in the UI.
 
-## Automation settings (Nozzle Check tab)
+## Automatic nozzle check (Nozzle Check tab)
 
-The **Automation** card holds what used to be fixed values, separately for each printer:
+Inkjet nozzles clog when a printer sits unused. panda-print can print one small test page (four colour bars) when a
+printer has gone a set number of days without printing anything. It replaces a cron or systemd timer on the host: if
+you used one, retire it once you switch this on (otherwise both would print).
+
+How it decides, per printer:
+
+1. The idle clock is the printer's last print of any kind: a document from any device, or a nozzle check (which counts, so one check restarts the clock).
+2. When the printer has been idle for the set number of days **and** the time of day is past the *don't print before* time, it sends one check to the printer's CUPS queue (IPP `Print-Job`; no `lp` needed in the container).
+3. Guards: it only acts when the page counter can be read (so "idle" is known, not guessed); after a failed attempt it waits an hour; it never sends a second check while an earlier one (sent in the last 6 hours) may still be printing; and an app-sent check whose page never appeared on the counter doesn't restart the idle clock.
+4. It is **off by default**. Turn it on with the switch in the **Automation** card, per printer. `NOZZLE_AUTO=1` makes new printers start with it on.
+
+The time is the server's clock, so set `TZ` (for example `TZ=Europe/London`) in the container; the image defaults to UTC.
+
+The card's settings (all per printer, defaults from the environment so a new printer starts exactly as configured there):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Idle days before a check is due | 7 | Drives "Next in ..." / "Check due" |
+| Print the nozzle check automatically | off | The switch (`NOZZLE_AUTO`) |
+| Idle days before a check is due | 7 | Drives the automatic check and the "Next check" badge |
+| Don't print before | 10:00 | Quiet hours, in the server's time zone (`NOZZLE_CHECK_TIME`, `TZ`) |
 | Read the page counter every | 5 minutes | How often prints are noticed |
-| Timer's check page name contains | `nozzle-check` | Recognises the host timer's pages in the CUPS job list |
 | Match a check to the counter within | 30 minutes | How long a check may wait for the counter to move |
+| Recognise older checks by name | `nozzle-check` | Spots nozzle-check pages printed by another timer in the CUPS job list |
 
-The defaults are the environment values above, so a newly added printer starts exactly as before. Only values you
-change are stored; the rest keep following the defaults, and **Reset to defaults** clears the overrides. The card is
-about *tracking*: printing the automatic check is still the host timer's job.
+Only values you change are stored; the rest keep following the defaults, and **Reset to defaults** clears the overrides.
+The logic is in `app/tools/maintenance/schedule.py` (pure rules, with tests) and `Service.run_schedule`.
 
 ## Security model
 
@@ -245,8 +260,8 @@ Dockerfile  compose.example.yml  .github/workflows/build.yml
 ## Known limits
 
 - Verified read-only against the real DCP-T730DW from a Mac on the same LAN: mDNS discovery, the IPP attributes (ink levels, state, model) and the SNMP page counter all work. Not yet exercised against a real CUPS server: the queue list, job list, host-job import and printing are covered by in-process fakes only, so on the Pi check that the print queue card loads before pressing "Print nozzle check now".
-- The nozzle-check timer's state file is per printer, and the host script only serves one printer. Other printers still get full tracking from the page counter and CUPS.
-- If CUPS is unreachable while the host timer prints a check, that page is counted as "someone printed" (the counter can't tell the difference).
+- An old host timer's state file is optional and per printer; it only helps the very first reading. Nothing else depends on it.
+- If CUPS is unreachable while another timer prints a check, that page is counted as "someone printed" (the counter can't tell the difference).
 - "Printed without CUPS" needs no real CUPS job at all in the window. If a CUPS print and a direct print land between two reads, both are attributed to CUPS.
-- The page counter is shared by all prints, so a manual check that never prints (for example the printer is offline) can be mistaken for a later print within the matching window (30 minutes by default).
+- The page counter is shared by all prints, so a check that never prints (for example the printer is offline) can be mistaken for a later print within the matching window (30 minutes by default).
 - Ink levels are the printer's own estimates.

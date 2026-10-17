@@ -11,8 +11,12 @@ from test_tracker import DAY, T0, make
 def test_defaults_are_todays_environment_values():
     d = auto.defaults(Settings())
     assert (d.idle_days, d.check_minutes, d.job_pattern, d.attribution_minutes) == (7.0, 5.0, "nozzle-check", 30.0)
-    custom = auto.defaults(Settings(idle_days=10, poll_interval=600, nozzle_job_pattern="ncheck", attribution_window=900))
+    assert (d.enabled, d.run_at) == (False, "10:00")  # printing is opt-in; quiet until 10:00
+    custom = auto.defaults(Settings(idle_days=10, poll_interval=600, nozzle_job_pattern="ncheck", attribution_window=900,
+                                    auto_check=True, check_time="08:30"))
     assert (custom.idle_days, custom.check_minutes, custom.job_pattern, custom.attribution_minutes) == (10, 10, "ncheck", 15)
+    assert (custom.enabled, custom.run_at) == (True, "08:30")
+    assert auto.defaults(Settings(check_time="soon")).run_at == "10:00"  # a bad environment value can't break the UI
 
 
 def test_validate_accepts_good_values_and_reports_each_bad_one():
@@ -25,6 +29,19 @@ def test_validate_accepts_good_values_and_reports_each_bad_one():
     assert "between" in errors["check_minutes"] and "number" in errors["idle_days"]
     assert auto.validate({"idle_days": float("nan")})[1]["idle_days"]  # NaN is not a number you can use
     assert auto.validate({}) == ({}, {})  # only the fields sent are checked
+
+
+@pytest.mark.parametrize("raw,expected", [(True, True), ("true", True), ("on", True), ("1", True),
+                                          (False, False), ("off", False), ("false", False), ("0", False)])
+def test_enabled_accepts_the_usual_spellings(raw, expected):
+    assert auto.validate({"enabled": raw}) == ({"enabled": expected}, {})
+
+
+def test_enabled_and_time_are_validated():
+    assert "on or off" in auto.validate({"enabled": "maybe"})[1]["enabled"]
+    assert auto.validate({"run_at": "07:05"}) == ({"run_at": "07:05"}, {})
+    for bad in ("7:05", "24:00", "10:60", "ten", "", None):
+        assert "time" in auto.validate({"run_at": bad})[1]["run_at"], bad
 
 
 def test_only_differences_from_the_defaults_are_kept():
@@ -78,7 +95,7 @@ def url(pid=PID):
 def test_new_printer_starts_on_the_defaults(client):
     d = client.get(url()).get_json()["data"]
     assert d["values"] == d["defaults"] == {"idle_days": 7.0, "check_minutes": 5.0, "job_pattern": "nozzle-check",
-                                            "attribution_minutes": 30.0}
+                                            "attribution_minutes": 30.0, "enabled": False, "run_at": "10:00"}
     assert d["customised"] == []
 
 

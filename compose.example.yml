@@ -15,6 +15,7 @@ services:
     user: "1000:1000"
     environment:
       PORT: "8095"
+      # TZ: "Europe/London"        # your time zone: the automatic check never prints before its set time of day (10:00 default)
       # HOST: "127.0.0.1"          # listen on loopback only if your proxy runs on this Pi (host network)
       # Printers are added in the browser: the first visit opens a setup wizard that finds your
       # printer (from CUPS and the network) or asks for its IP. These only prefill / seed it:
@@ -22,6 +23,8 @@ services:
       # PRINTER_IP: "192.168.1.18"   # optional: add this printer automatically on first start
       # CUPS_QUEUE: "T730"
       # SNMP_COMMUNITY: "public"
+      # NOZZLE_AUTO: "1"           # new printers start with the automatic nozzle check switched on (default: off)
+      # NOZZLE_CHECK_TIME: "10:00" # ... and never print before this time
       # IDLE_DAYS: "7"            # defaults only; each printer can override its own in the Automation card
       # POLL_INTERVAL: "300"       # seconds between page-counter reads
       # PRINT_COOLDOWN: "120"      # rate limit of the manual-print API endpoint

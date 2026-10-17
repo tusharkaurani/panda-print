@@ -13,6 +13,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# tzdata: so TZ=Europe/London (and friends) works; the automatic check's quiet hours follow it
+RUN apk add --no-cache tzdata
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 

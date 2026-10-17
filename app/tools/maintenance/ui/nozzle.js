@@ -27,19 +27,24 @@ export function mount(root, kit) {
   }
 
   function renderNozzle(d) {
-    const lp = d.last_print, nx = d.next_check;
+    const lp = d.last_print, nx = d.next_check, a = d.automation;
     // the next check is summarised by this badge, so it has no card of its own
-    nozzleCard.setBadge(nx ? (nx.overdue ? ui.badge('Check due', 'warn') : ui.badge(`Next in ${fmt.days(nx.days_until)}`, 'ok')) : null);
+    nozzleCard.setBadge(!a.enabled
+      ? (nx?.overdue ? ui.badge('Check due · auto off', 'warn') : ui.badge('Auto check off'))
+      : a.state === 'blocked' ? ui.badge('Auto check waiting', 'warn')
+      : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Check starting' : `Next check ${fmt.when(a.next_run_at)}`, 'ok') : null);
 
     const t = d.tracking;
-    const problems = [t.counter_error && `Can’t read the page counter: ${t.counter_error}`, t.cups_error && `Can’t read CUPS: ${t.cups_error}`].filter(Boolean);
+    const problems = [t.counter_error && `Can’t read the page counter: ${t.counter_error}`, t.cups_error && `Can’t read CUPS: ${t.cups_error}`,
+      a.enabled && a.state === 'blocked' && `The automatic check is waiting: ${a.reason}`].filter(Boolean);
 
     nozzleCard.set(
       problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
       h('div', { class: 'stats four' },
         ui.stat('Last print (any device)', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
           lp && `${fmt.abs(lp.ts)} · ${KIND[lp.kind] || ''}`),
-        ui.stat('Days since last print', fmt.days(d.days_since_last_print), `Check fires after ${d.idle_days_threshold} idle days`),
+        ui.stat('Days since last print', fmt.days(d.days_since_last_print),
+          a.enabled ? `Automatic check after ${d.idle_days_threshold} idle days` : 'Automatic check is off'),
         ui.stat('Last automated check', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet', d.last_auto ? fmt.abs(d.last_auto.ts) : 'Not seen since tracking began'),
         ui.stat('Last manual run', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
           d.last_manual ? (d.last_manual.state === 'failed' ? 'Failed: ' + (d.last_manual.message || '') : fmt.abs(d.last_manual.ts)) : null)),
@@ -51,31 +56,45 @@ export function mount(root, kit) {
           h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list. Pages that appear on the counter with no CUPS job behind them are shown as printed straight to the printer.'),
           t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter check ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
           d.host_state.configured && (d.host_state.error
-            ? h('p', {}, `Host timer state file: ${d.host_state.error}`)
-            : h('p', {}, `Host timer last noticed the counter at ${d.host_state.count} on ${fmt.abs(d.host_state.noticed_at)} (it only checks once a day).`)))));
+            ? h('p', {}, `Timer state file: ${d.host_state.error}`)
+            : h('p', {}, `An older timer last noticed the counter at ${d.host_state.count} on ${fmt.abs(d.host_state.noticed_at)}.`)))));
   }
 
   // ------------------------------------------------------------ automation settings
   // [key, label, input type, unit text, hint]. Every value falls back to the default shown in its hint.
   const FIELDS = [
-    ['idle_days', 'Idle days before a check is due', 'number', 'days', 'How long the printer can sit unused before its nozzle check is due.'],
+    ['idle_days', 'Idle days before a check is due', 'number', 'days', 'How long the printer can sit unused before a nozzle check is printed.'],
+    ['run_at', 'Don’t print before', 'time', '', 'Quiet hours: a check that falls due earlier waits until this time of day.'],
     ['check_minutes', 'Read the page counter every', 'number', 'minutes', 'How often the dashboard looks for new prints.'],
-    ['job_pattern', 'Timer’s check page name contains', 'text', '', 'CUPS jobs whose name contains this text are the timer’s nozzle-check pages.'],
     ['attribution_minutes', 'Match a check to the counter within', 'number', 'minutes', 'How long after a check is sent the page counter may rise and still count as that check.'],
+    ['job_pattern', 'Recognise older checks by name', 'text', '', 'CUPS jobs whose name contains this text are nozzle-check pages printed by another timer.'],
   ];
 
   function renderAutomation(d) {
     const custom = d.customised.length > 0;
-    autoCard.setBadge(ui.badge(custom ? 'Customised' : 'Using defaults', custom ? 'info' : ''));
+    autoCard.setBadge(ui.badge(d.values.enabled ? 'On' : 'Off', d.values.enabled ? 'ok' : ''));
     const inputs = {}, errors = {};
+
+    // The switch saves at once, like any switch; it only ever prints when a check is really due.
+    const toggle = h('input', { id: 'auto-enabled', type: 'checkbox', role: 'switch', checked: d.values.enabled ? true : null,
+      onchange: async (e) => {
+        const res = await api(`${base()}/automation`, { method: 'PUT', body: { enabled: e.target.checked } });
+        if (!res.ok) { e.target.checked = !e.target.checked; toast(res.error?.message || 'Could not save.', 'bad'); return; }
+        toast(res.data.values.enabled ? 'Automatic nozzle check is on.' : 'Automatic nozzle check is off.');
+        renderAutomation(res.data);
+        refresh();
+      } });
+
     const field = ([key, label, type, unit, hint]) => {
+      const shown = d.defaults[key];
       inputs[key] = h('input', { id: `auto-${key}`, class: 'input', type, value: d.values[key], step: type === 'number' ? 'any' : null,
         autocomplete: 'off', spellcheck: 'false', oninput: () => { errors[key].textContent = ''; inputs[key].removeAttribute('aria-invalid'); } });
       errors[key] = h('p', { class: 'msg', role: 'alert' });
+      const extra = key === 'run_at' ? ` Clock: ${d.timezone}.` : '';
       return h('div', { class: 'field' },
         h('label', { for: `auto-${key}` }, label),
         h('div', { class: 'input-unit' }, inputs[key], unit && h('span', { class: 'unit' }, unit)),
-        h('p', { class: 'hint' }, `${hint} Default: ${d.defaults[key]}${unit ? ` ${unit}` : ''}.`),
+        h('p', { class: 'hint' }, `${hint}${extra} Default: ${shown}${unit ? ` ${unit}` : ''}.`),
         errors[key]);
     };
 
@@ -92,7 +111,7 @@ export function mount(root, kit) {
       }
       toast('Automation settings saved.');
       renderAutomation(res.data);
-      refresh();  // the "next check" badge and the idle-day wording follow the new values
+      refresh();  // the badge and the idle-day wording follow the new values
     }
 
     async function reset() {
@@ -104,12 +123,15 @@ export function mount(root, kit) {
     }
 
     autoCard.set(
-      h('p', { class: 'sub' }, 'The host timer prints the automatic nozzle check. These settings tell the dashboard how to track it and when the next one counts as due. A printer you add later starts with the defaults shown here.'),
+      h('label', { class: 'switch', for: 'auto-enabled' }, toggle, h('span', { class: 'track', 'aria-hidden': 'true' }),
+        h('span', { class: 'switch-text' }, h('strong', {}, 'Print the nozzle check automatically'),
+          h('span', { class: 'sub' }, `When the printer has been idle for ${d.values.idle_days} day${d.values.idle_days === 1 ? '' : 's'}, a small test page is sent to its CUPS queue. Leave this off if another timer already does it. Default for new printers: ${d.defaults.enabled ? 'on' : 'off'}.`))),
       h('form', { class: 'autoform', onsubmit: save },
         h('div', { class: 'autogrid' }, FIELDS.map(field)),
         h('div', { class: 'actions left' },
           h('button', { class: 'btn primary', type: 'submit' }, 'Save settings'),
-          h('button', { class: 'btn', type: 'button', disabled: !custom, onclick: reset }, 'Reset to defaults'))));
+          h('button', { class: 'btn', type: 'button', disabled: !custom, onclick: reset }, 'Reset to defaults'),
+          custom && h('span', { class: 'sub' }, `Changed from the defaults: ${d.customised.length} setting${d.customised.length === 1 ? '' : 's'}.`))));
   }
 
   // another printer was chosen (or this one's settings were edited): start over

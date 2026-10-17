@@ -44,3 +44,8 @@ export function minutes(n) {
   const h = n / 60;
   return h === 1 ? 'hour' : `${trim(h)} hours`;
 }
+
+// "Sat 24 Oct, 10:00" (viewer's time zone)
+export function when(ts) {
+  return new Date(ts * 1000).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}

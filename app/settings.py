@@ -48,7 +48,10 @@ class Settings:
     cups_url: str = "http://127.0.0.1:631"
     cups_queue: str = ""
 
-    # --- nozzle check policy
+    # --- nozzle check policy (defaults for each printer; the Automation card overrides them per printer)
+    auto_check: bool = False  # NOZZLE_AUTO: print the check automatically for newly added printers
+    check_time: str = "10:00"  # NOZZLE_CHECK_TIME: never print before this time of day
+    timezone: str = ""  # TZ: time zone of that clock ("" = the machine's)
     idle_days: float = 7.0
     poll_interval: float = 300.0
     host_state_file: Path = Path("/host-state/state")
@@ -97,6 +100,9 @@ class Settings:
             net_timeout=_num(e.get("NET_TIMEOUT"), d.net_timeout),
             cups_url=e.get("CUPS_URL", d.cups_url).rstrip("/"),
             cups_queue=e.get("CUPS_QUEUE", "").strip(),
+            auto_check=_bool(e.get("NOZZLE_AUTO")),
+            check_time=e.get("NOZZLE_CHECK_TIME", d.check_time).strip() or d.check_time,
+            timezone=e.get("TZ", "").strip(),
             idle_days=_num(e.get("IDLE_DAYS"), d.idle_days),
             poll_interval=_num(e.get("POLL_INTERVAL"), d.poll_interval),
             host_state_file=Path(e.get("HOST_STATE_FILE", str(d.host_state_file))),

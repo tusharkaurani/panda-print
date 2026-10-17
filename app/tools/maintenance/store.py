@@ -140,6 +140,15 @@ class Store:
         return self.db.one(f"SELECT * FROM mt_checks WHERE printer_id=? AND source IN ({marks}){extra} "
                            "ORDER BY ts DESC LIMIT 1", (self.pid, *sources))
 
+    def last_confirmed_check(self, unconfirmed_since: float) -> sqlite3.Row | None:
+        """The newest check that really counts as a print: one the host timer printed, one the counter
+        confirmed, or one still within its matching window. An app-sent check whose page never showed up
+        on the counter doesn't restart the idle clock."""
+        return self.db.one(
+            "SELECT * FROM mt_checks WHERE printer_id=? AND state!='failed' "
+            "AND (source='host' OR claimed_ts IS NOT NULL OR ts>=?) ORDER BY ts DESC LIMIT 1",
+            (self.pid, unconfirmed_since))
+
     def recent_checks(self, limit: int) -> list[sqlite3.Row]:
         return self.db.query("SELECT * FROM mt_checks WHERE printer_id=? ORDER BY ts DESC LIMIT ?", (self.pid, limit))
 

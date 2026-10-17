@@ -33,6 +33,10 @@ def create(ctx: AppContext) -> Tool:
                         rt.tracker.poll()
                 except Exception:
                     log.exception("counter poll failed for %s", rt.printer.name)
+                try:
+                    rt.service.run_schedule()  # prints the automatic check when it is due (only if switched on)
+                except Exception:
+                    log.exception("automatic nozzle check failed for %s", rt.printer.name)
             stop.wait(15)  # each printer has its own interval (Automation card), so look often and poll when due
 
     def start() -> None:
