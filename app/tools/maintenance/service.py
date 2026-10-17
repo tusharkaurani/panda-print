@@ -247,7 +247,8 @@ class Service:
             items.append({"id": pid, "enabled": on, "standard": pid == pages.STANDARD,
                           "name": pages.STANDARD_NAME if p is None else p["name"],
                           "mime": "application/postscript" if p is None else p["mime"],
-                          "pages": 1 if p is None else p["pages"], "size": None if p is None else p["size"]})
+                          "pages": 1 if p is None else p["pages"], "size": None if p is None else p["size"],
+                          "thumb": False if p is None else p["thumb"]})
         nxt = self._next(cfg)
         names = {i["id"]: i["name"] for i in items}
         return {"rotate": cfg.rotate, "plain_every": cfg.plain_every, "items": items,

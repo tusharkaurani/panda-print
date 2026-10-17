@@ -53,6 +53,8 @@ MIGRATIONS.append("""
     UPDATE mt_checks SET pages_left = 0 WHERE claimed_ts IS NOT NULL;
 """)
 
+MIGRATIONS.append("ALTER TABLE mt_pages ADD COLUMN has_thumb INTEGER NOT NULL DEFAULT 0;")  # a page's thumbnail exists
+
 OK_STATES = ("submitted", "completed")
 
 

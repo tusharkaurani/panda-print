@@ -81,3 +81,20 @@ def test_deleting_removes_the_file_and_its_place_in_every_rotation(library, tmp_
     assert not list((tmp_path / "pages").glob("*.png"))
     assert library.db.one("SELECT COUNT(*) AS n FROM mt_rotation")["n"] == 0
     assert library.read(page["id"]) is None
+
+
+def test_a_thumbnail_is_kept_only_if_it_really_is_a_small_png(library, tmp_path):
+    thumb = PNG + b"t" * 50
+    page = library.add(PNG, "A.png", thumb)
+    assert page["thumb"] is True and library.get(page["id"])["thumb"] is True
+    assert library.thumb_path(page).read_bytes() == thumb
+    for bad in (b"not a png at all", PNG + b"x" * (pages.MAX_THUMB_BYTES + 1), b""):
+        other = library.add(JPG + bad[:5], f"b{len(bad)}.jpg", bad)
+        assert other["thumb"] is False and not library.thumb_path(other).exists()  # the page is added; the thumbnail is ignored
+        library.delete(other["id"])
+
+
+def test_deleting_a_page_removes_its_thumbnail_too(library, tmp_path):
+    page = library.add(PNG, "A.png", PNG + b"t")
+    library.delete(page["id"])
+    assert not list((tmp_path / "pages").glob("*"))

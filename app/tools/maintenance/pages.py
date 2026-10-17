@@ -17,6 +17,7 @@ from pathlib import Path
 
 from app.core.db import Database
 
+MAX_THUMB_BYTES = 200 * 1024  # a thumbnail is a small picture; anything bigger is not one
 STANDARD = "standard"  # the built-in nozzle-check test page (four colour bars)
 STANDARD_NAME = "Standard test page"
 KINDS = {  # what we accept, by what the file really is (not by its name)
@@ -143,7 +144,7 @@ class Library:
     @staticmethod
     def _row(r) -> dict:
         return {"id": r["id"], "name": r["name"], "mime": r["mime"], "size": r["size"], "pages": r["pages"],
-                "created_at": r["created_at"]}
+                "created_at": r["created_at"], "thumb": bool(r["has_thumb"])}
 
     def list(self) -> list[dict]:
         return [self._row(r) for r in self.db.query("SELECT * FROM mt_pages ORDER BY created_at, rowid")]
@@ -155,6 +156,9 @@ class Library:
     def path(self, page: dict) -> Path:
         return self.dir / f"{page['id']}{KINDS[page['mime']]}"
 
+    def thumb_path(self, page: dict) -> Path:
+        return self.dir / f"{page['id']}.thumb.png"
+
     def read(self, page_id: str) -> tuple[dict, bytes] | None:
         page = self.get(page_id)
         if not page:
@@ -164,7 +168,7 @@ class Library:
         except OSError:
             return None  # the file was removed behind our back
 
-    def add(self, data: bytes, filename: str) -> dict:
+    def add(self, data: bytes, filename: str, thumb: bytes | None = None) -> dict:
         if not data:
             raise PageError("That file is empty.")
         if len(data) > self.max_file:
@@ -188,9 +192,14 @@ class Library:
         tmp = target.with_suffix(target.suffix + ".part")
         tmp.write_bytes(data)
         os.replace(tmp, target)  # never leave a half-written file under its real name
-        self.db.execute("INSERT INTO mt_pages(id,name,mime,size,pages,sha256,created_at) VALUES(?,?,?,?,?,?,?)",
-                        (page["id"], page["name"], page["mime"], page["size"], page["pages"], digest, page["created_at"]))
-        return page
+        # a small picture of the page, drawn by the browser that uploaded it; optional, and ignored unless it really is a PNG
+        has_thumb = bool(thumb) and thumb[:8] == b"\x89PNG\r\n\x1a\n" and len(thumb) <= MAX_THUMB_BYTES
+        if has_thumb:
+            self.thumb_path(page).write_bytes(thumb)
+        self.db.execute("INSERT INTO mt_pages(id,name,mime,size,pages,sha256,created_at,has_thumb) VALUES(?,?,?,?,?,?,?,?)",
+                        (page["id"], page["name"], page["mime"], page["size"], page["pages"], digest, page["created_at"],
+                         int(has_thumb)))
+        return {**page, "thumb": has_thumb}
 
     def rename(self, page_id: str, name: str) -> dict:
         name = clean_name(name)
@@ -206,8 +215,9 @@ class Library:
         with self.db.tx() as c:
             c.execute("DELETE FROM mt_pages WHERE id=?", (page_id,))
             c.execute("DELETE FROM mt_rotation WHERE page_id=?", (page_id,))
-        try:
-            self.path(page).unlink()
-        except OSError:
-            pass
+        for path in (self.path(page), self.thumb_path(page)):
+            try:
+                path.unlink()
+            except OSError:
+                pass
         return True

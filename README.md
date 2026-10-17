@@ -176,11 +176,14 @@ example colouring pages, so the print is worth having.
 
 - **Page to print**, on the Automation card: *Standard test page* (the colour bars) or *Rotate my pages*. **Manage pages…** opens the library.
 - **The library** is shared by every printer. Add PDF, PNG or JPEG files (a picker or drag and drop; up to `MAX_PAGE_MB` each, `MAX_PAGES` files and `MAX_LIBRARY_MB` in total). Files are checked by their contents, not their names, and PostScript is refused. They are stored in `/data/pages`, so they live in the same volume as the history; include it in backups.
+- **Preview and download:** every row shows a real picture of the page (the standard page is drawn as an exact replica of the colour bars). Click it, or the eye icon, to see the page the way it will be sent; PDFs show their pages (the first 12). Uploaded pages also have a **Download** button for the original file. The standard page is built in, so its Download and Delete are greyed out, and nothing can be uploaded over it. Thumbnails are small PNGs your browser draws when you upload (kept in `/data/pages` next to the file); a page without one falls back to the picture itself or a PDF icon.
 - **Per printer:** the order, and a switch for each page (the standard test page is one of the items, so you can drop it). Each automatic print, and **Print now**, takes the next enabled page and then loops. Deleted or switched-off pages are skipped; with nothing switched on, the standard page is used.
 - **Print a chosen page** (the Print button on a page, with a confirm) sends exactly that page without moving the rotation, which is also how to test a page you just added.
 - **Ink:** a page only moves the inks it uses; a black-and-white page does not exercise cyan, magenta or yellow. The dialog says so, and you decide what to include. To be safe, set *Also print the standard test page every N prints* (0 = never) and every Nth print is the colour-bar page on top of the rotation.
 - **Printing:** the file goes to the printer's CUPS queue as it is (`print-scaling=fit`, so a picture isn't cropped) and the host's CUPS converts it for the printer. If a page fails to print, the History row shows CUPS's reason; try that page with the Print button, and check that CUPS can print a PDF or picture from the command line (`lp -d <queue> file.pdf`).
 - **Page counts:** a print records how many sheets it should make (PDFs are counted; pictures are one). The page counter is credited to the print page by page, so a 2-page PDF isn't mistaken for someone else's print. If a PDF's page count can't be read it is assumed to be one page.
+
+PDFs are drawn in the browser with [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0), bundled in `app/static/vendor/pdfjs`, so nothing is loaded from a CDN. It is fetched only when a PDF needs drawing, and runs with script evaluation off.
 
 ## Security model
 

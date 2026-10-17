@@ -231,3 +231,50 @@ def test_a_two_page_pdf_is_credited_in_full_not_called_someone_elses_print(rig):
     assert d["last_print"]["kind"] == "nozzle" and d["last_external_print"] == before
     last = rig.ctx.db.one("SELECT delta, kind FROM mt_activity WHERE printer_id=? ORDER BY id DESC", (PID,))
     assert (last["kind"], last["delta"]) == ("nozzle", 2)
+
+
+# ------------------------------------------------------------------ thumbnails and downloads
+
+THUMB = b"\x89PNG\r\n\x1a\n" + b"thumbnail" * 20
+
+
+def upload_with_thumb(rig, data, name, thumb=THUMB):
+    form = {"file": (io.BytesIO(data), name)}
+    if thumb is not None:
+        form["thumb"] = (io.BytesIO(thumb), "thumb.png")
+    r = rig.client.post("/api/maintenance/pages", data=form, headers=rig.h, content_type="multipart/form-data")
+    assert r.status_code == 201, r.get_json()
+    return r.get_json()["data"]
+
+
+def test_a_thumbnail_uploaded_with_the_page_is_served(rig):
+    page = upload_with_thumb(rig, PNG, "Bunny.png")
+    assert page["thumb"] is True
+    t = rig.client.get(f"/api/maintenance/pages/{page['id']}/thumb")
+    assert t.status_code == 200 and t.data == THUMB and t.headers["Content-Type"] == "image/png"
+    assert rig.client.get("/api/maintenance/pages").get_json()["data"]["pages"][0]["thumb"] is True
+    items = {i["id"]: i for i in rig.client.get(f"/api/maintenance/{PID}/rotation").get_json()["data"]["items"]}
+    assert items[page["id"]]["thumb"] is True and items["standard"]["thumb"] is False  # the dialog lists these
+
+
+def test_a_page_without_a_thumbnail_says_so(rig):
+    page = rig.upload(PNG, "Plain.png")["data"]
+    assert page["thumb"] is False
+    assert rig.client.get(f"/api/maintenance/pages/{page['id']}/thumb").status_code == 404
+
+
+def test_a_fake_thumbnail_is_ignored_not_an_error(rig):
+    page = upload_with_thumb(rig, PNG, "A.png", thumb=b"<script>alert(1)</script>")
+    assert page["thumb"] is False and rig.client.get(f"/api/maintenance/pages/{page['id']}/thumb").status_code == 404
+
+
+def test_download_gives_the_file_under_a_clean_name_and_the_default_is_inline(rig):
+    page = rig.upload(PNG, "Bunny colouring.png")["data"]
+    inline = rig.client.get(f"/api/maintenance/pages/{page['id']}/file")
+    assert "attachment" not in inline.headers.get("Content-Disposition", "")
+    d = rig.client.get(f"/api/maintenance/pages/{page['id']}/file?download=1")
+    assert d.status_code == 200 and d.data == PNG
+    assert "attachment" in d.headers["Content-Disposition"] and "Bunny colouring.png" in d.headers["Content-Disposition"]
+    assert d.headers["X-Content-Type-Options"] == "nosniff" and d.headers["Content-Security-Policy"] == "sandbox"
+    pdf = rig.upload(PDF2, "Book.pdf")["data"]
+    assert "Book.pdf" in rig.client.get(f"/api/maintenance/pages/{pdf['id']}/file?download=1").headers["Content-Disposition"]

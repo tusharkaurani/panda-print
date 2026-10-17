@@ -74,7 +74,7 @@ def build_blueprint(runtimes: Runtimes, clock: Callable[[], float], library: Lib
 
     @bp.post("/pages")
     def pages_add():
-        request.max_content_length = library.max_file + 64 * 1024  # uploads get their own, larger, size limit
+        request.max_content_length = library.max_file + 512 * 1024  # uploads get their own, larger limit (file + thumbnail)
         try:
             upload = request.files.get("file")
         except RequestEntityTooLarge:
@@ -82,7 +82,8 @@ def build_blueprint(runtimes: Runtimes, clock: Callable[[], float], library: Lib
         if upload is None:
             return page_error(PageError("Choose a file to add."))
         try:
-            page = library.add(upload.read(), upload.filename or "")
+            thumb = request.files.get("thumb")  # optional small PNG picture of the page, made by the uploading browser
+            page = library.add(upload.read(), upload.filename or "", thumb.read() if thumb else None)
         except PageError as e:
             return page_error(e)
         return jsonify(ok=True, data=page), 201
@@ -103,11 +104,23 @@ def build_blueprint(runtimes: Runtimes, clock: Callable[[], float], library: Lib
 
     @bp.get("/pages/<page_id>/file")
     def pages_file(page_id):
+        """The page as uploaded. With ?download=1 it is sent as a download under a clean file name."""
         page = library.get(page_id)
         if page is None or not library.path(page).is_file():
             return page_error(PageError("That page doesn't exist (any more).", 404))
-        resp = send_file(library.path(page), mimetype=page["mime"], conditional=True, max_age=86400)
+        download = request.args.get("download") == "1"
+        resp = send_file(library.path(page), mimetype=page["mime"], conditional=True, max_age=86400,
+                         as_attachment=download, download_name=f"{page['name']}{library.path(page).suffix}")
         resp.headers["Content-Security-Policy"] = "sandbox"  # an uploaded file must never run anything
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
+
+    @bp.get("/pages/<page_id>/thumb")
+    def pages_thumb(page_id):
+        page = library.get(page_id)
+        if page is None or not page["thumb"] or not library.thumb_path(page).is_file():
+            return page_error(PageError("No thumbnail.", 404))
+        resp = send_file(library.thumb_path(page), mimetype="image/png", conditional=True, max_age=86400)
         resp.headers["X-Content-Type-Options"] = "nosniff"
         return resp
 

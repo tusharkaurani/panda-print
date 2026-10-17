@@ -1,6 +1,8 @@
 // "Manage pages" dialog: the shared library of pages (upload, delete, preview) and this printer's order,
 // on/off switches and rotation. Everything saves as you go; closing the dialog just refreshes the card behind it.
 
+import { createPreview, makeThumb, standardSvg } from './preview.js';
+
 const bytes = (n) => (n >= 2 ** 20 ? `${(n / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const KIND = { 'application/pdf': 'PDF', 'image/png': 'PNG', 'image/jpeg': 'JPEG' };
 
@@ -10,10 +12,12 @@ export function createPagesDialog(kit, { base, onChange }) {
   let armed = null;     // {id, kind: 'print' | 'delete'}: a row waiting for its "are you sure"
   let problems = [];    // upload messages to show under the Add button
 
+  const preview = createPreview(kit);  // opens on top of this dialog
   const body = h('div', { class: 'dlg-body' });
   const dialog = h('dialog', { class: 'wide pages-dialog', 'aria-labelledby': 'pg-title' },
     h('h3', { id: 'pg-title' }, 'Pages to print'), body,
-    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => dialog.close() }, 'Done')));
+    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => dialog.close() }, 'Done')),
+    preview.dialog);
   dialog.addEventListener('close', () => onChange());
   dialog.addEventListener('dragover', (e) => { e.preventDefault(); dialog.classList.add('drag'); });
   dialog.addEventListener('dragleave', () => dialog.classList.remove('drag'));
@@ -49,6 +53,8 @@ export function createPagesDialog(kit, { base, onChange }) {
       if (file.size > limit) { problems.push(`${file.name}: larger than ${data.limits.max_file_mb} MB.`); continue; }  // no point sending it
       const form = new FormData();
       form.append('file', file);
+      const picture = await makeThumb(file);  // a small picture of the page, drawn here, so the list shows what will print
+      if (picture) form.append('thumb', picture, 'thumb.png');
       const res = await api('/maintenance/pages', { method: 'POST', body: form });
       if (res.ok) added += 1; else problems.push(`${file.name}: ${res.error?.message || 'could not be added.'}`);
     }
@@ -79,12 +85,15 @@ export function createPagesDialog(kit, { base, onChange }) {
     await load();
   }
 
+  // A real picture of the page on a sheet of paper: the standard page replica, the thumbnail made at upload time,
+  // or (for a picture uploaded without one) the picture itself. Click it to preview.
   function thumb(item) {
-    if (item.standard) return h('span', { class: 'thumb bars', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'));
-    if (item.mime.startsWith('image/')) {
-      return h('img', { class: 'thumb', src: `/api/maintenance/pages/${item.id}/file`, alt: '', loading: 'lazy', decoding: 'async' });
-    }
-    return h('span', { class: 'thumb doc', 'aria-hidden': 'true' }, icon('file', 22), h('b', {}, 'PDF'));
+    const file = `/api/maintenance/pages/${item.id}`;
+    const inner = item.standard ? standardSvg(kit)
+      : item.thumb ? h('img', { src: `${file}/thumb`, alt: '', loading: 'lazy', decoding: 'async' })
+      : item.mime.startsWith('image/') ? h('img', { src: `${file}/file`, alt: '', loading: 'lazy', decoding: 'async' })
+      : h('span', { class: 'docicon' }, icon('file', 22), h('b', {}, 'PDF'));
+    return h('button', { class: 'paper', type: 'button', title: 'Preview', 'aria-label': `Preview ${item.name}`, onclick: () => preview.open(item) }, inner);
   }
 
   function row(item, index) {
@@ -103,13 +112,18 @@ export function createPagesDialog(kit, { base, onChange }) {
       ask === 'print' ? confirm('print', 'Print it now?', () => printPage(item))
         : ask === 'delete' ? confirm('delete', 'Delete this page?', () => deletePage(item))
         : h('div', { class: 'pageactions' },
+          h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Preview ${item.name}`, title: 'Preview', onclick: () => preview.open(item) }, icon('eye', 16)),
+          item.standard
+            ? h('button', { class: 'icon-mini', type: 'button', disabled: true, 'aria-label': 'The standard test page is built in, so there is no file to download', title: 'Built in: nothing to download' }, icon('download', 16))
+            : h('a', { class: 'icon-mini', 'aria-label': `Download ${item.name}`, title: 'Download', download: '', href: `/api/maintenance/pages/${item.id}/file?download=1` }, icon('download', 16)),
           h('button', { class: 'icon-mini up', type: 'button', 'aria-label': `Move ${item.name} up`, disabled: index === 0, onclick: () => move(index, -1) }, icon('chevron', 16)),
           h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Move ${item.name} down`, disabled: last, onclick: () => move(index, 1) }, icon('chevron', 16)),
           h('label', { class: 'switch compact', title: item.enabled ? 'In the rotation' : 'Left out of the rotation' },
             h('input', { type: 'checkbox', role: 'switch', 'aria-label': `Include ${item.name}`, checked: item.enabled ? true : null, onchange: (e) => toggle(item, e.target.checked) }),
             h('span', { class: 'track', 'aria-hidden': 'true' })),
           h('button', { class: 'btn small', type: 'button', onclick: () => { armed = { id: item.id, kind: 'print' }; render(); } }, 'Print'),
-          !item.standard && h('button', { class: 'btn small danger', type: 'button', onclick: () => { armed = { id: item.id, kind: 'delete' }; render(); } }, 'Delete')));
+          h('button', { class: 'btn small danger', type: 'button', disabled: item.standard ? true : null, title: item.standard ? 'Built in: it can’t be deleted' : null,
+            onclick: () => { armed = { id: item.id, kind: 'delete' }; render(); } }, 'Delete')));
   }
 
   function render() {
