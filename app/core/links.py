@@ -11,9 +11,10 @@ restart or rebuild. Problems never raise out of `LinksConfig.get()`:
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import yaml
 
@@ -21,7 +22,13 @@ log = logging.getLogger(__name__)
 
 BUILTIN_ICONS = {"link", "printer", "server", "globe"}
 LOGO_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".avif"}
-KNOWN_KEYS = {"name", "url", "description", "logo", "new_tab"}
+KNOWN_KEYS = {"name", "url", "description", "logo", "new_tab", "printers"}
+
+# Placeholders usable in name, url and description. An entry that uses any of them is a
+# *printer link*: it is shown for the selected printer, filled in with that printer's values.
+PLACEHOLDERS = {"ip", "name", "id", "queue", "cups_url"}
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+_LOOPBACK = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
 
 class LinksError(Exception):
@@ -97,7 +104,7 @@ def parse_links(text: str, logos_dir: Path) -> tuple[list[dict], list[str]]:
         if url is None:
             warnings.append(f"{label} skipped: 'url' is required.")
             continue
-        if not isinstance(url, str) or not _valid_url(url.strip()):
+        if not isinstance(url, str) or not _valid_url(_sample(url.strip())):
             warnings.append(f"{label} skipped: 'url' must start with http:// or https:// (got {url!r}).")
             continue
         for key in raw.keys() - KNOWN_KEYS:
@@ -106,6 +113,17 @@ def parse_links(text: str, logos_dir: Path) -> tuple[list[dict], list[str]]:
         if desc is not None and not isinstance(desc, str):
             warnings.append(f"{label}: 'description' should be text; ignored.")
             desc = None
+        used = set(_PLACEHOLDER.findall(f"{name}\n{url}\n{desc or ''}"))
+        if used - PLACEHOLDERS:
+            warnings.append(f"{label} skipped: unknown placeholder {{{sorted(used - PLACEHOLDERS)[0]}}} "
+                            f"(available: {', '.join('{' + p + '}' for p in sorted(PLACEHOLDERS))}).")
+            continue
+        only = raw.get("printers")
+        if isinstance(only, str):
+            only = [only]
+        if only is not None and not (isinstance(only, list) and all(isinstance(x, str) for x in only)):
+            warnings.append(f"{label}: 'printers' should be a list of printer names; showing it for every printer.")
+            only = None
         new_tab = raw.get("new_tab", True)
         if not isinstance(new_tab, bool):
             warnings.append(f"{label}: 'new_tab' should be true or false; using true.")
@@ -119,10 +137,61 @@ def parse_links(text: str, logos_dir: Path) -> tuple[list[dict], list[str]]:
             "description": (desc or "").strip(),
             "logo": logo,
             "new_tab": new_tab,
-            "letter": next((ch.upper() for ch in name if ch.isalnum()), "?"),
-            "hue": sum(map(ord, name)) % 360,
+            "needs": sorted(used),  # printer values this entry uses; empty means a global link
+            "printers": [x.strip().lower() for x in only] if only is not None else None,
+            **_look(name),
         })
     return links, warnings
+
+
+def _look(name: str) -> dict:
+    return {"letter": next((ch.upper() for ch in name if ch.isalnum()), "?"), "hue": sum(map(ord, name)) % 360}
+
+
+def _sample(url: str) -> str:
+    """The URL with placeholders replaced by plausible values, to check its shape before a printer is known."""
+    return _PLACEHOLDER.sub(lambda m: "http://example" if m.group(1) == "cups_url" else "example", url)
+
+
+def public_cups_url(cups_url: str, request_host: str) -> str:
+    """A CUPS address the *browser* can open. CUPS is often 127.0.0.1 from the app's point of view,
+    which would point the viewer at their own machine, so use the host they reached us on."""
+    parts = urlsplit(cups_url)
+    if (parts.hostname or "") not in _LOOPBACK or not request_host:
+        return cups_url
+    host = f"[{request_host}]" if ":" in request_host else request_host
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{host}{port}{parts.path}".rstrip("/")
+
+
+def printer_vars(printer, public_cups: str) -> dict:
+    """Values for placeholders. The ip is bracketed for IPv6 so it can sit in a URL."""
+    ip = f"[{printer.ip}]" if ":" in printer.ip else printer.ip
+    return {"ip": ip, "name": printer.name, "id": printer.id, "queue": printer.cups_queue, "cups_url": public_cups}
+
+
+def _fill(template: str, v: dict, in_url: bool) -> str:
+    def sub(m):
+        val = str(v[m.group(1)])
+        # ip and cups_url are validated addresses; the rest is free text and must be escaped in a URL
+        return quote(val, safe="") if in_url and m.group(1) in ("name", "id", "queue") else val
+    return _PLACEHOLDER.sub(sub, template)
+
+
+def render_entry(e: dict, v: dict | None) -> dict | None:
+    """One entry for one printer (v=None: no printer in context). None means "not shown here"."""
+    if v is None and (e["needs"] or e["printers"] is not None):
+        return None
+    if e["printers"] is not None and not ({v["id"].lower(), v["name"].lower()} & set(e["printers"])):
+        return None
+    if v is not None and any(not v.get(k) for k in e["needs"]):
+        return None  # e.g. {queue} for a printer with no CUPS queue
+    url = _fill(e["url"], v, True) if v else e["url"]
+    if not _valid_url(url):
+        return None
+    name = _fill(e["name"], v, False) if v else e["name"]
+    return {**{k: e[k] for k in ("logo", "new_tab")}, "name": name, "url": url,
+            "description": _fill(e["description"], v, False) if v else e["description"], **_look(name)}
 
 
 class LinksConfig:
@@ -160,6 +229,13 @@ class LinksConfig:
             self._sig = sig
             self._result = self._load(src)
             return self._result
+
+    def render(self, printer=None, request_host: str = "") -> dict:
+        """The tiles for one printer (global links plus that printer's), ready for the UI."""
+        cfg = self.get()
+        v = printer_vars(printer, public_cups_url(printer.cups_url, request_host)) if printer else None
+        shown = [r for e in cfg["links"] if (r := render_entry(e, v))]
+        return {**cfg, "links": shown}
 
     def _load(self, src: Path | None) -> dict:
         if src is None:

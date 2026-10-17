@@ -165,15 +165,41 @@ def test_own_print_is_attributed_to_the_nozzle_check_not_to_a_person(client, clo
     assert after["days_since_last_print"] < 0.01  # a nozzle check restarts the idle clock
 
 
-def test_someone_elses_print_moves_last_external(make_app, clock):
+def test_print_straight_to_the_printer_is_shown_as_direct(make_app, clock):
     app, printer = make_app()
     c = app.test_client()
     first = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["last_external_print"]
-    printer.counter += 3  # a phone prints three pages
+    printer.counter += 3  # a phone prints three pages directly: CUPS never hears about it
     clock.advance(120)
     d = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]
-    assert d["last_external_print"] > first and d["last_print"]["kind"] == "external"
+    assert d["last_external_print"] > first and d["last_print"]["kind"] == "direct"
     assert d["days_since_last_print"] < 0.01
+    q = c.get(f"/api/maintenance/{PID}/queue").get_json()["data"]
+    assert [x["pages"] for x in q["direct"]] == [3]
+    assert q["jobs"][0]["id"] == 38  # the CUPS list itself is unchanged
+
+
+def test_print_that_went_through_cups_is_not_called_direct(make_app, clock):
+    app, printer = make_app()
+    c = app.test_client()
+    c.get(f"/api/maintenance/{PID}/nozzle")
+    now = clock()
+    printer.jobs.append(printer._job(60, "Invoice.pdf", "tushar", now + 5, now + 30, 2))
+    printer.counter += 2
+    clock.advance(120)
+    d = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]
+    assert d["last_print"]["kind"] == "external"
+    assert c.get(f"/api/maintenance/{PID}/queue").get_json()["data"]["direct"] == []
+
+
+def test_when_cups_cannot_be_asked_pages_are_not_called_direct(make_app, clock):
+    app, printer = make_app()
+    c = app.test_client()
+    c.get(f"/api/maintenance/{PID}/nozzle")
+    printer.fail = ("cups",)  # CUPS is down, so we can't tell where the pages came from
+    printer.counter += 2
+    clock.advance(120)
+    assert c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["last_print"]["kind"] == "external"
 
 
 # ------------------------------------------------------------------ launcher links

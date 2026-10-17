@@ -1,7 +1,7 @@
 // Printer Maintenance UI. mount(root, kit) is the whole contract between a tool and the shell.
 
 const SOURCE = { manual: 'Manual check', auto: 'Automated check', host: 'Automated check (host timer)' };
-const KIND = { external: 'A document was printed', nozzle: 'A nozzle check', baseline: 'Earliest known activity' };
+const KIND = { external: 'A document was printed', direct: 'Printed straight to the printer', nozzle: 'A nozzle check', baseline: 'Earliest known activity' };
 const JOB_BADGE = { completed: 'ok', printing: 'info', pending: 'warn', held: 'warn', stopped: 'warn', canceled: 'bad', aborted: 'bad' };
 
 export function mount(root, kit) {
@@ -67,20 +67,37 @@ export function mount(root, kit) {
       h('div', { class: 'side' }, ui.badge(j.state, JOB_BADGE[j.state] || '')));
   }
 
+  // A print that never went through CUPS (a phone talking straight to the printer, or a copy),
+  // known only from the page counter: a page count and an approximate time.
+  function directRow(r) {
+    const bits = [`${r.pages} page${r.pages === 1 ? '' : 's'}`, 'sent straight to the printer', fmt.ago(r.ts)];
+    return h('li', { class: 'row' },
+      h('span', { class: 'ic' }, icon('phone', 18)),
+      h('div', { class: 'main' }, h('div', { class: 'title' }, 'Printed without CUPS'),
+        h('div', { class: 'meta' }, bits.join(' \u00b7 '))),
+      h('div', { class: 'side' }, ui.badge('direct', 'info')));
+  }
+
   function renderQueue(d) {
     queueCard.setBadge(ui.badge(d.state.label, ui.healthKind(d.state.health)));
     const waiting = d.queued_jobs?.length ?? d.queued;
+    // one timeline: CUPS jobs and direct prints, newest first
+    const recent = [
+      ...d.jobs.map((j) => ({ t: j.completed || j.created || 0, row: jobRow(j) })),
+      ...(d.direct || []).map((r) => ({ t: r.ts, row: directRow(r) })),
+    ].sort((a, b) => b.t - a.t).slice(0, 10);
     queueCard.set(
       h('dl', { class: 'kv' },
-        h('dt', {}, 'Queue'), h('dd', {}, `${d.name}${d.info ? ` – ${d.info}` : ''}`),
+        h('dt', {}, 'Queue'), h('dd', {}, `${d.name}${d.info && d.info !== d.name ? ` \u2013 ${d.info}` : ''}`),
         h('dt', {}, 'Accepting jobs'), h('dd', {}, d.state.accepting == null ? 'Unknown' : d.state.accepting ? 'Yes' : 'No'),
         h('dt', {}, 'Waiting'), h('dd', {}, waiting ? `${waiting} job${waiting === 1 ? '' : 's'}` : 'Nothing waiting'),
         d.device && h('dt', {}, 'Connection'), d.device && h('dd', {}, d.device)),
       d.state.reasons.length ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, r.severity === 'error' ? 'bad' : r.severity === 'warning' ? 'warn' : 'info'))) : null,
-      h('div', {}, h('h4', {}, 'Recent jobs'),
-        d.jobs_error ? ui.errorBox(d.jobs_error)
-          : d.jobs.length ? h('ul', { class: 'rows' }, d.jobs.map(jobRow))
-          : h('p', { class: 'empty' }, 'No jobs yet.')));
+      h('div', {}, h('h4', {}, 'Recent prints'),
+        d.jobs_error && ui.errorBox(d.jobs_error),
+        recent.length ? h('ul', { class: 'rows' }, recent.map((r) => r.row))
+          : !d.jobs_error && h('p', { class: 'empty' }, 'Nothing printed yet.'),
+        h('p', { class: 'ink-note' }, 'CUPS only knows about prints that go through it. Prints sent straight to the printer (from a phone, or copies made on the printer) are spotted from its page counter, so they show a page count and an approximate time.')));
   }
 
   // ------------------------------------------------------------ nozzle check
@@ -138,7 +155,7 @@ export function mount(root, kit) {
       h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'How this is tracked'),
         h('div', { class: 'footnote', style: { 'margin-top': '10px' } },
           h('p', {}, `The dashboard reads the printer’s lifetime page counter every ${Math.round(t.poll_interval / 60)} minutes and notes when it changes, so prints from any device are counted and times are accurate to about that interval.`),
-          h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list.'),
+          h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list. Pages that appear on the counter with no CUPS job behind them are shown as printed straight to the printer.'),
           t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter check ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
           d.host_state.configured && (d.host_state.error
             ? h('p', {}, `Host timer state file: ${d.host_state.error}`)

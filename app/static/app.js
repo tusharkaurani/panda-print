@@ -1,6 +1,6 @@
 // The shell: theme, launcher tiles, and a registry-driven set of tools.
 import { api } from './lib/api.js';
-import { h, clear } from './lib/dom.js';
+import { h, clear, fill } from './lib/dom.js';
 import { icon } from './lib/icons.js';
 import { makeKit } from './lib/kit.js';
 import { errorBox } from './lib/ui.js';
@@ -8,6 +8,7 @@ import { store } from './lib/printer-store.js';
 import { admin, wizard } from './printers.js';
 
 const $ = (id) => document.getElementById(id);
+const MANAGE = '__manage';
 
 // ---------------------------------------------------------------- theme
 const THEMES = ['auto', 'light', 'dark'];
@@ -54,7 +55,9 @@ function tile(link) {
 
 let lastLinks = '';
 async function loadLinks() {
-  const res = await api('/links');
+  // links follow the selected printer: {ip}, {queue}... are filled in for it by the server
+  const id = store.current?.id;
+  const res = await api('/links' + (id ? `?printer=${encodeURIComponent(id)}` : ''));
   if (!res.data) return;  // server unreachable: keep what is on screen
   const cfg = res.data;
   const sig = JSON.stringify(cfg);
@@ -129,14 +132,16 @@ function paintTabs() {
   });
 }
 
-function paintPrinterBar() {
-  const bar = $('printer-bar');
-  const t = activeTool();
-  bar.hidden = !(t?.needs_printer && store.list.length > 1 && shown?.startsWith('tool:'));
-  if (bar.hidden) return;
-  const select = h('select', { id: 'printer-select', class: 'input', onchange: (e) => store.select(e.target.value) },
-    store.list.map((p) => h('option', { value: p.id, selected: p.id === store.currentId }, p.name)));
-  clear(bar).append(icon('printer', 18), h('label', { for: 'printer-select' }, 'Printer'), select);
+// Header dropdown: every printer, then "Manage printers..." which opens the admin page
+function paintPrinterSelect() {
+  const wrap = $('printer-pick'), select = $('printer-select');
+  wrap.hidden = store.list.length === 0;
+  if (wrap.hidden) return;
+  const managing = location.hash.slice(1) === 'printers';
+  fill(select,
+    store.list.map((p) => h('option', { value: p.id, selected: !managing && p.id === store.currentId }, p.name)),
+    h('hr'),
+    h('option', { value: MANAGE, selected: managing }, 'Manage printers\u2026'));
 }
 
 function show(view) {
@@ -147,16 +152,13 @@ function show(view) {
   if (view !== 'setup') clear($('view-setup'));  // don't keep a finished wizard around
   $('view-printers').hidden = view !== 'printers';
   $('view-tools').hidden = !view.startsWith('tool:');
-  $('launcher').classList.toggle('compact', view === 'setup');
   return changed;
 }
 
 async function render() {
   const route = location.hash.slice(1);
   const has = store.list.length > 0;
-  const link = $('printers-link');
-  link.hidden = !has;
-  link.toggleAttribute('aria-current', has && route === 'printers');
+  paintPrinterSelect();
 
   if (!has) {  // nothing to show without a printer: walk the user through adding one
     if (show('setup')) {
@@ -181,7 +183,6 @@ async function render() {
   show(`tool:${t.id}`);
   for (const [id, { root }] of mounted) root.hidden = id !== t.id;
   paintTabs();
-  paintPrinterBar();
   window.dispatchEvent(new Event('pp:tool-shown'));
 }
 
@@ -193,13 +194,18 @@ async function init() {
   }
   tools = toolsRes.data.tools;
   $('version').textContent = `panda-print ${toolsRes.data.version}`;
-  $('printers-link').append(icon('printer', 18), h('span', {}, 'Printers'));
-  store.subscribe(() => { paintPrinterBar(); });
+  $('printer-pick').prepend(icon('printer', 18));
+  $('printer-select').addEventListener('change', (e) => {
+    if (e.target.value === MANAGE) { location.hash = 'printers'; return; }
+    store.select(e.target.value);
+    if (location.hash.slice(1) === 'printers') location.hash = '';
+  });
+  store.subscribe(() => { paintPrinterSelect(); loadLinks(); });
   window.addEventListener('hashchange', render);
   await render();
+  loadLinks();
 }
 
-loadLinks();
 setInterval(() => { if (!document.hidden) loadLinks(); }, 60_000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadLinks(); });
 init();

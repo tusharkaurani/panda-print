@@ -57,6 +57,9 @@ class Service:
     def queue_status(self) -> dict:
         data = normalize.queue(self._queue_cache.get(self.printer.queue_info))
         data["jobs"], data["jobs_error"] = [], None
+        # prints that never went through CUPS (phone straight to the printer, copies), seen on the page counter
+        data["direct"] = [{"ts": r["ts"], "since_ts": r["since_ts"], "pages": r["delta"]}
+                          for r in self.store.recent_activity("direct", self.s.recent_jobs)]
         try:
             raw = self._jobs_cache.get(self.printer.list_jobs)
             jobs = [normalize.job(j, self.s.nozzle_job_pattern) for j in raw]
@@ -88,7 +91,7 @@ class Service:
             ts, kind = max(candidates)
             # a baseline only says "nothing since then", so it is a lower bound
             last_print = {"ts": ts, "kind": kind, "approximate": kind == "baseline"}
-        external = self.store.last_activity("external")
+        external = self.store.last_activity(("external", "direct"))
         auto = self.store.last_check(("auto", "host"))
         manual = self.store.last_check(("manual",), include_failed=True)
 

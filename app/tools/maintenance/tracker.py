@@ -26,7 +26,8 @@ log = logging.getLogger(__name__)
 
 APP_USER = "panda-print"
 APP_JOB_MARKER = "panda-print"  # appears in the job name of checks we submit
-JOB_COMPLETED, JOB_CANCELED, JOB_ABORTED = 9, 7, 8
+JOB_PROCESSING, JOB_COMPLETED, JOB_CANCELED, JOB_ABORTED = 5, 9, 7, 8
+DIRECT_SLACK = 180.0  # seconds: CUPS marks a job done a little before the counter finishes moving
 
 
 def split_delta(delta: int, unclaimed_checks: int) -> tuple[int, int]:
@@ -40,6 +41,10 @@ class Tracker:
         self.s, self.store, self.printer, self.clock = settings, store, printer, clock
         self.host_state_file = Path(host_state_file) if host_state_file else None
         self._newest_document: float | None = None  # newest finished non-nozzle job seen in CUPS
+        # How many real (non-nozzle) CUPS jobs were active since the previous counter read, or None
+        # when CUPS couldn't be asked. Zero while the counter moves means the pages came from
+        # somewhere else: a phone printing straight to the printer, or a copy made on its glass.
+        self._cups_active: int | None = None
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ polling
@@ -47,10 +52,13 @@ class Tracker:
         with self._lock:
             now = self.clock()
             self.store.put("last_poll_ts", now)
+            self._cups_active = None
             try:
                 jobs = self.printer.list_jobs()
                 self.import_host_checks(jobs)
                 self._newest_document = self.newest_document_ts(jobs)
+                prev = self.store.get("last_count_ts")
+                self._cups_active = self.documents_active_since(jobs, (float(prev) if prev else now) - DIRECT_SLACK)
                 self.store.put("cups_error", None)
             except SourceError as e:
                 self.store.put("cups_error", e.message)
@@ -105,6 +113,18 @@ class Tracker:
         times = [float(t) for t in times if t]
         return max(times) if times else None
 
+    def documents_active_since(self, jobs: list[Attrs], since: float) -> int:
+        """Real (non-nozzle) CUPS jobs that are printing now or finished at/after `since`."""
+        n = 0
+        for j in jobs:
+            if self.is_nozzle_job(j):
+                continue
+            state = first(j, "job-state")
+            done = first(j, "time-at-completed") or first(j, "time-at-creation") or 0
+            if state == JOB_PROCESSING or (state == JOB_COMPLETED and done >= since):
+                n += 1
+        return n
+
     # ------------------------------------------------------------ counter
     def host_state(self) -> tuple[idle.HostState | None, str | None]:
         """The host timer's state file, if mounted: (state, error)."""
@@ -141,7 +161,9 @@ class Tracker:
             self.store.claim([r["id"] for r in unclaimed[:nozzle]], now)
             self.store.add_activity(now, nozzle, count, "nozzle", prev)
         if other:
-            self.store.add_activity(now, other, count, "external", prev)
+            # pages with no CUPS job behind them came straight to the printer
+            kind = "direct" if self._cups_active == 0 else "external"
+            self.store.add_activity(now, other, count, kind, prev)
         log.info("counter %s -> %s (%s nozzle, %s other)", last, count, nozzle, other)
 
     def _first_sample(self, count: int, now: float) -> None:

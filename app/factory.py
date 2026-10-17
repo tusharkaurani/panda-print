@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Callable
 
 from flask import Flask, abort, jsonify, make_response, request, send_from_directory
@@ -122,7 +123,10 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
 
     @app.get("/api/links")
     def get_links():
-        return jsonify(links.get())
+        """Launcher tiles. With ?printer=<id>, entries using {ip}, {queue}... are filled in for that printer."""
+        host = (request.headers.get("X-Forwarded-Host", "").split(",")[0].strip() or request.host)
+        hostname = urlsplit(f"//{host}").hostname or ""
+        return jsonify(links.render(registry.get(request.args.get("printer", "")), hostname))
 
     @app.get("/logos/<path:name>")
     def logo(name: str):

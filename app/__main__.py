@@ -13,7 +13,8 @@ def main() -> None:
     app = create_app(settings)
     log = logging.getLogger("panda-print")
     log.info("panda-print listening on %s:%s", settings.host, settings.port)
-    serve(app, host=settings.host, port=settings.port, threads=4, ident="panda-print",
+    # 8 threads: a page load fires several slow device calls at once
+    serve(app, host=settings.host, port=settings.port, threads=8, ident="panda-print",
           max_request_body_size=64 * 1024, connection_limit=50, channel_timeout=30, _quiet=True)
 
 

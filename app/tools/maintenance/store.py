@@ -14,7 +14,7 @@ MIGRATIONS = [
         since_ts REAL,             -- previous successful read (the change happened in between)
         delta INTEGER NOT NULL,    -- pages
         count INTEGER,             -- counter after the change
-        kind TEXT NOT NULL,        -- external | nozzle | baseline
+        kind TEXT NOT NULL,        -- external (via CUPS or unknown) | direct (not via CUPS) | nozzle | baseline
         note TEXT
     );
     CREATE INDEX IF NOT EXISTS mt_activity_ts ON mt_activity(printer_id, ts);
@@ -71,11 +71,17 @@ class Store:
         self.db.execute("INSERT INTO mt_activity(printer_id,ts,since_ts,delta,count,kind,note) VALUES(?,?,?,?,?,?,?)",
                         (self.pid, ts, since_ts, delta, count, kind, note))
 
-    def last_activity(self, kind: str | None = None) -> sqlite3.Row | None:
+    def last_activity(self, kind: str | tuple[str, ...] | None = None) -> sqlite3.Row | None:
         if kind:
-            return self.db.one("SELECT * FROM mt_activity WHERE printer_id=? AND kind=? ORDER BY ts DESC LIMIT 1",
-                               (self.pid, kind))
+            kinds = (kind,) if isinstance(kind, str) else kind
+            marks = ",".join("?" * len(kinds))
+            return self.db.one(f"SELECT * FROM mt_activity WHERE printer_id=? AND kind IN ({marks}) "
+                               "ORDER BY ts DESC LIMIT 1", (self.pid, *kinds))
         return self.db.one("SELECT * FROM mt_activity WHERE printer_id=? ORDER BY ts DESC LIMIT 1", (self.pid,))
+
+    def recent_activity(self, kind: str, limit: int) -> list[sqlite3.Row]:
+        return self.db.query("SELECT * FROM mt_activity WHERE printer_id=? AND kind=? AND delta>0 "
+                             "ORDER BY ts DESC LIMIT ?", (self.pid, kind, limit))
 
     def activity_count(self) -> int:
         return self.db.one("SELECT COUNT(*) AS n FROM mt_activity WHERE printer_id=?", (self.pid,))["n"]

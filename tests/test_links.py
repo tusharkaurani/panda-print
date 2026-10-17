@@ -100,3 +100,79 @@ def test_falls_back_to_bundled_default(tmp_path):
     default.write_text("links:\n  - {name: Bundled, url: 'http://b/'}\n")
     result = LinksConfig(tmp_path / "nope.yml", tmp_path / "logos", default).get()
     assert result["links"][0]["name"] == "Bundled" and result["error"] is None
+
+
+# ------------------------------------------------------------------ per-printer links (placeholders)
+
+from app.core.links import public_cups_url, render_entry  # noqa: E402
+
+PRINTER = {"ip": "192.168.1.18", "name": "Study printer", "id": "study-printer", "queue": "T730",
+           "cups_url": "http://192.168.1.10:631"}
+
+
+def entry(text, tmp_path):
+    links, warnings = parse_links(text, tmp_path)
+    assert warnings == [], warnings
+    return links[0]
+
+
+def test_placeholders_are_recorded_and_unknown_ones_are_skipped(tmp_path):
+    links, warnings = parse_links("""
+links:
+  - {name: "Panel", url: "http://{ip}/"}
+  - {name: "Plain", url: "http://router/"}
+  - {name: "CUPS", url: "{cups_url}/printers/{queue}"}
+  - {name: "Typo", url: "http://{address}/"}
+""", tmp_path)
+    assert [(l["name"], l["needs"]) for l in links] == [("Panel", ["ip"]), ("Plain", []), ("CUPS", ["cups_url", "queue"])]
+    assert len(warnings) == 1 and "{address}" in warnings[0] and "available" in warnings[0]
+
+
+def test_printer_links_are_filled_in_for_the_selected_printer(tmp_path):
+    panel = entry('links: [{name: "{name} panel", url: "http://{ip}/", description: "for {name}"}]', tmp_path)
+    r = render_entry(panel, PRINTER)
+    assert (r["name"], r["url"], r["description"]) == ("Study printer panel", "http://192.168.1.18/", "for Study printer")
+    assert r["letter"] == "S"
+    # a different printer gives a different URL: nothing is hard-coded to one brand or address
+    other = render_entry(panel, {**PRINTER, "ip": "10.0.0.7", "name": "Hall"})
+    assert other["url"] == "http://10.0.0.7/" and other["name"] == "Hall panel"
+
+
+def test_global_and_printer_links_with_and_without_a_printer(tmp_path):
+    glob = entry('links: [{name: Router, url: "http://192.168.1.1/"}]', tmp_path)
+    mine = entry('links: [{name: Panel, url: "http://{ip}/"}]', tmp_path)
+    assert render_entry(glob, None)["url"] == "http://192.168.1.1/" and render_entry(glob, PRINTER)
+    assert render_entry(mine, None) is None  # nothing to fill in without a printer
+
+
+def test_link_is_hidden_when_the_printer_lacks_a_value(tmp_path):
+    cups = entry('links: [{name: CUPS, url: "{cups_url}/printers/{queue}"}]', tmp_path)
+    assert render_entry(cups, PRINTER)["url"] == "http://192.168.1.10:631/printers/T730"
+    assert render_entry(cups, {**PRINTER, "queue": ""}) is None
+
+
+def test_values_are_escaped_in_urls_but_not_in_text(tmp_path):
+    e = entry('links: [{name: "{name}", url: "http://x/?q={name}"}]', tmp_path)
+    r = render_entry(e, {**PRINTER, "name": "A&B printer"})
+    assert r["name"] == "A&B printer" and r["url"] == "http://x/?q=A%26B%20printer"
+
+
+def test_ipv6_address_is_bracketed(tmp_path):
+    from app.core.links import printer_vars
+    from app.core.printers import Printer
+    v = printer_vars(Printer(id="p", name="P", ip="2001:db8::5"), "http://c:631")
+    assert render_entry(entry('links: [{name: Panel, url: "http://{ip}/"}]', tmp_path), v)["url"] == "http://[2001:db8::5]/"
+
+
+def test_printers_filter_matches_name_or_id_case_insensitively(tmp_path):
+    e = entry('links: [{name: Inks, url: "http://shop/", printers: [STUDY PRINTER, hall]}]', tmp_path)
+    assert render_entry(e, PRINTER) and render_entry(e, {**PRINTER, "name": "Other", "id": "hall"})
+    assert render_entry(e, {**PRINTER, "name": "Other", "id": "other"}) is None
+    assert render_entry(e, None) is None
+
+
+def test_loopback_cups_is_shown_as_the_host_the_viewer_used():
+    assert public_cups_url("http://127.0.0.1:631", "pi.local") == "http://pi.local:631"
+    assert public_cups_url("http://localhost:631/", "192.168.1.10") == "http://192.168.1.10:631"
+    assert public_cups_url("https://127.0.0.1", "pi.local") == "https://pi.local"
+    assert public_cups_url("http://192.168.1.10:631", "laptop.local") == "http://192.168.1.10:631"  # already reachable

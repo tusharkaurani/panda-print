@@ -1,9 +1,24 @@
 # panda-print launcher links
 #
-# Each entry becomes a tile on the home page. Edit this file any time: the page
+# Each entry becomes a tile in the "Quick links" strip. Edit this file any time: the page
 # picks up changes within a minute (or on reload) with no restart or rebuild.
 # If the file has a mistake, the page shows a friendly message and keeps the last
 # working version of the tiles.
+#
+# Links follow the printer you have selected (the dropdown in the header), so they work
+# for any brand and any number of printers. Put a placeholder in name, url or
+# description and the link is filled in from the selected printer:
+#
+#   {ip}        the printer's address            http://{ip}/   ->  http://192.168.1.50/
+#   {name}      the name you gave it             "Control panel for {name}"
+#   {id}        its short id (used in URLs)
+#   {queue}     its CUPS queue name              (links using it are hidden if it has none)
+#   {cups_url}  its CUPS server address          {cups_url}/printers/{queue}
+#               (a 127.0.0.1 CUPS is shown as the host you opened this page on,
+#                so the link works from your laptop)
+#
+# A link with no placeholder is global and shows for every printer.
+# Quote a value that starts with a placeholder, e.g.  url: "{cups_url}/printers/{queue}"
 #
 # Fields
 #   name         required  the tile title
@@ -18,16 +33,30 @@
 #                          Leave it out (or if the file is missing) and a coloured
 #                          letter tile is shown instead.
 #   new_tab      optional  true (default) opens in a new tab, false in the same tab
+#   printers     optional  show only for these printers, by name or id, e.g.
+#                            printers: [Study printer, hall-printer]
 
 links:
+  # Every printer has a web page of its own (HP, Epson, Canon, Brother and others).
+  # If yours is HTTPS only, change http to https.
   - name: Printer Control Panel
-    url: http://192.168.1.18/
-    description: The printer's own web interface
+    url: http://{ip}/
+    description: "{name}'s own web interface"
     logo: builtin:printer
     new_tab: true
 
   - name: CUPS Dashboard
-    url: http://192.168.1.10:631/
-    description: Print queues and job administration
+    url: "{cups_url}/printers/{queue}"
+    description: Queue and job administration
     logo: builtin:server
     new_tab: true
+
+  # More ideas (remove the leading # to use them):
+  #
+  # - name: Router
+  #   url: http://192.168.1.1/         # no placeholder: shown for every printer
+  #   logo: builtin:globe
+  #
+  # - name: Ink order page
+  #   url: https://example.com/inks
+  #   printers: [Study printer]        # only for this printer

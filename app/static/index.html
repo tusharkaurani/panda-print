@@ -17,7 +17,10 @@
         <img src="/static/favicon.svg" alt="" width="32" height="32">
         <span>panda-print</span>
       </a>
-      <a id="printers-link" class="nav-btn" href="#printers"></a>
+      <label id="printer-pick" class="printer-pick" hidden>
+        <span class="sr-only">Printer</span>
+        <select id="printer-select"></select>
+      </label>
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Theme"></button>
     </div>
   </header>
@@ -25,17 +28,15 @@
   <main class="wrap">
     <noscript><p class="notice bad">panda-print needs JavaScript to show the dashboard.</p></noscript>
 
-    <section id="launcher" aria-labelledby="links-title" hidden>
-      <h2 id="links-title" class="eyebrow">Quick links</h2>
-      <div id="links-notice"></div>
-      <ul id="links-grid" class="tiles"></ul>
-    </section>
-
     <div id="view-setup" hidden></div>
     <div id="view-printers" hidden></div>
     <div id="view-tools">
       <nav id="tool-tabs" class="tabs" aria-label="Tools" hidden></nav>
-      <div id="printer-bar" class="printer-bar" hidden></div>
+      <section id="launcher" aria-labelledby="links-title" hidden>
+        <h2 id="links-title" class="eyebrow">Quick links</h2>
+        <div id="links-notice"></div>
+        <ul id="links-grid" class="tiles"></ul>
+      </section>
       <div id="tools"></div>
     </div>
   </main>

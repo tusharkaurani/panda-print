@@ -240,3 +240,29 @@ def test_probe_of_a_dead_address_fails_fast_and_cleanly():
 def test_generic_cups_driver_text_is_not_used_as_a_model():
     assert discovery._generic("Printer - IPP Everywhere") and discovery._generic("Generic PostScript Printer")
     assert discovery._generic("") and not discovery._generic("Brother DCP-T730DW")
+
+
+# ------------------------------------------------------------------ links follow the selected printer
+
+def test_links_endpoint_fills_in_the_selected_printer(client, settings):
+    (settings.config_dir / "links.yml").write_text("""
+links:
+  - {name: Router, url: "http://192.168.1.1/"}
+  - {name: Panel, url: "http://{ip}/", description: "{name}'s page"}
+  - {name: CUPS, url: "{cups_url}/printers/{queue}"}
+""")
+    h = csrf_headers(client)
+    client.post("/api/printers", json={"name": "Hall", "ip": "192.168.1.23", "cups_queue": "HP_ENVY",
+                                      "cups_url": "http://127.0.0.1:631"}, headers=h)
+
+    def tiles(query):
+        return {l["name"]: l["url"] for l in client.get(f"/api/links{query}").get_json()["links"]}
+
+    assert tiles("") == {"Router": "http://192.168.1.1/"}  # no printer in context: global links only
+    assert tiles("?printer=ghost") == {"Router": "http://192.168.1.1/"}
+    assert tiles(f"?printer={PID}") == {"Router": "http://192.168.1.1/", "Panel": "http://192.168.1.18/",
+                                         "CUPS": "http://localhost:631/printers/T730"}
+    hall = tiles("?printer=hall")
+    assert hall["Panel"] == "http://192.168.1.23/"
+    # Hall's CUPS is on 127.0.0.1, which means "the Pi": the viewer is told the host they used
+    assert hall["CUPS"] == "http://localhost:631/printers/HP_ENVY"

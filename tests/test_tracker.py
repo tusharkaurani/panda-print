@@ -159,3 +159,25 @@ def test_no_documents_in_cups_means_no_newest(tmp_path):
     tr, _, _ = make(tmp_path)
     assert tr.newest_document_ts([]) is None
     assert tr.newest_document_ts([_doc(1, "nozzle-check.ps", 1000)]) is None
+
+
+def test_direct_prints_are_those_with_no_cups_job_behind_them(tmp_path):
+    tr, store, clock = make(tmp_path)
+    tr.record_counter(174, clock())
+    clock.advance(300)
+    tr._cups_active = 0  # CUPS answered and had nothing active since the last read
+    tr.record_counter(176, clock())
+    assert (store.last_activity()["kind"], store.last_activity()["delta"]) == ("direct", 2)
+    clock.advance(300)
+    tr._cups_active = 1
+    tr.record_counter(177, clock())
+    assert store.last_activity()["kind"] == "external"
+    assert [r["delta"] for r in store.recent_activity("direct", 10)] == [2]
+
+
+def test_documents_active_since(tmp_path):
+    tr, _, _ = make(tmp_path)
+    since = 1000.0
+    jobs = [_doc(1, "old.pdf", 500), _doc(2, "recent.pdf", 1100), _doc(3, "nozzle-check.ps", 1200),
+            _doc(4, "printing.pdf", 1300, state=5), _doc(5, "queued.pdf", 1400, state=3)]
+    assert tr.documents_active_since(jobs, since) == 2  # recent + printing; not old, nozzle or merely queued
