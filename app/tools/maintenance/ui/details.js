@@ -14,24 +14,35 @@ export function mount(root, kit) {
     printerCard.setBadge(ui.badge(d.state.label, ui.healthKind(d.state.health)));
     const c = d.counter;
     printerCard.set(
-      h('div', { class: 'sub' }, d.name),
-      d.state.reasons.length || d.state.message
+      (d.state.reasons.length || d.state.message)
         ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity))),
             d.state.message && h('span', { class: 'sub' }, d.state.message))
         : null,
-      d.inks.length
-        ? h('div', {}, h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge)),
-            h('p', { class: 'ink-note' }, 'Levels are the printer’s own estimate.'))
-        : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
-      h('div', { class: 'stat' },
-        h('div', { class: 'k' }, 'Lifetime pages printed'),
-        h('div', { class: 'counter' }, h('span', { class: 'big' }, fmt.num(c.value)),
-          c.value != null && c.as_of && !c.error && h('span', { class: 's' }, `read ${fmt.ago(c.as_of)}`)),
-        c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`)),
-      d.details.length
-        ? h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'More details'),
-            h('dl', { class: 'kv' }, d.details.flatMap((r) => [h('dt', {}, r.label), h('dd', {}, r.value)])))
-        : null);
+      // rings on the left, the page counter beside them (stacked on a phone)
+      h('div', { class: 'printer-top' },
+        d.inks.length
+          ? h('div', {}, h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge)),
+              h('p', { class: 'ink-note' }, 'Levels are the printer’s own estimate.'))
+          : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
+        h('div', { class: 'stat counter-stat' },
+          h('div', { class: 'k' }, 'Lifetime pages printed'),
+          h('div', { class: 'counter' }, h('span', { class: 'big' }, fmt.num(c.value)),
+            c.value != null && c.as_of && !c.error && h('span', { class: 's' }, `read ${fmt.ago(c.as_of)}`)),
+          c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`))),
+      d.details.length ? facts('Printer details', d.details) : null);
+  }
+
+  // Addresses become links, kept to one line (the full text is the tooltip)
+  function factValue(v) {
+    return /^https?:\/\//.test(v)
+      ? h('a', { class: 'fact-link', href: v, target: '_blank', rel: 'noopener noreferrer', title: v }, v.replace(/^https?:\/\//, ''))
+      : v;
+  }
+
+  // Label-over-value facts in as many columns as fit, so wide screens aren't a long thin list
+  function facts(title, rows) {
+    return h('div', {}, h('h4', {}, title),
+      h('dl', { class: 'facts' }, rows.map((r) => h('div', { class: 'fact' }, h('dt', {}, r.label), h('dd', {}, factValue(r.value))))));
   }
 
   // ------------------------------------------------------------ queue
@@ -64,15 +75,16 @@ export function mount(root, kit) {
       ...(d.direct || []).map((r) => ({ t: r.ts, row: directRow(r) })),
     ].sort((a, b) => b.t - a.t).slice(0, 10);
     queueCard.set(
-      h('dl', { class: 'kv' },
-        h('dt', {}, 'Queue'), h('dd', {}, `${d.name}${d.info && d.info !== d.name ? ` \u2013 ${d.info}` : ''}`),
-        h('dt', {}, 'Accepting jobs'), h('dd', {}, d.state.accepting == null ? 'Unknown' : d.state.accepting ? 'Yes' : 'No'),
-        h('dt', {}, 'Waiting'), h('dd', {}, waiting ? `${waiting} job${waiting === 1 ? '' : 's'}` : 'Nothing waiting'),
-        d.device && h('dt', {}, 'Connection'), d.device && h('dd', {}, d.device)),
+      facts('Queue', [
+        { label: 'Queue', value: `${d.name}${d.info && d.info !== d.name ? ` \u2013 ${d.info}` : ''}` },
+        { label: 'Accepting jobs', value: d.state.accepting == null ? 'Unknown' : d.state.accepting ? 'Yes' : 'No' },
+        { label: 'Waiting', value: waiting ? `${waiting} job${waiting === 1 ? '' : 's'}` : 'Nothing waiting' },
+        ...(d.device ? [{ label: 'Connection', value: d.device }] : []),
+      ]),
       d.state.reasons.length ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity)))) : null,
       h('div', {}, h('h4', {}, 'Recent prints'),
         d.jobs_error && ui.errorBox(d.jobs_error),
-        recent.length ? h('ul', { class: 'rows' }, recent.map((r) => r.row))
+        recent.length ? h('ul', { class: 'rows tiled' }, recent.map((r) => r.row))
           : !d.jobs_error && h('p', { class: 'empty' }, 'Nothing printed yet.'),
         h('p', { class: 'ink-note' }, 'CUPS only knows about prints that go through it. Prints sent straight to the printer (from a phone, or copies made on the printer) are spotted from its page counter, so they show a page count and an approximate time.')));
   }
