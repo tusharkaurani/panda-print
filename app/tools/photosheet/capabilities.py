@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from app.tools.photosheet.layout import PAPERS, parse_media
 
+_COMMON = [(w, h) for _label, w, h in PAPERS.values()]  # the sizes people print photos and documents on
+
 MEDIA_TYPE_LABELS = {
     "stationery": "Plain paper",
     "stationery-inkjet": "Inkjet paper",
@@ -51,11 +53,15 @@ def from_attrs(attrs: dict) -> dict:
     default = _first(attrs, "media-default")
     seen, media = set(), []
     for k in attrs.get("media-supported", []):
+        if str(k).startswith(("custom_min_", "custom_max_")):  # the ends of the custom-size range, not papers
+            continue
         info = parse_media(str(k))
         if info and k not in seen:
             seen.add(k)
             media.append(info)
-    media.sort(key=lambda m: (m["keyword"] != default, m["borderless"], m["width"] * m["height"]))
+    common = lambda m: any(abs(m["width"] - w) < 0.6 and abs(m["height"] - h) < 0.6 for w, h in _COMMON)
+    # the printer's default, then everyday sizes, then the rest (envelopes and so on); borderless after plain in each
+    media.sort(key=lambda m: (m["keyword"] != default, m["borderless"], not common(m), m["width"] * m["height"]))
 
     types = [{"value": str(t), "label": media_type_label(str(t))} for t in attrs.get("media-type-supported", [])]
     qualities = [{"value": int(q), "label": QUALITY_LABELS.get(int(q), str(q))} for q in attrs.get("print-quality-supported", [])

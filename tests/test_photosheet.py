@@ -257,6 +257,13 @@ def test_the_title_is_made_safe():
 
 # ------------------------------------------------------------------ what the printer offers
 
+def test_the_ends_of_the_custom_range_and_odd_sizes_are_handled():
+    attrs = {"media-supported": ["custom_min_3.5x5in", "custom_max_8.5x14in", "na_monarch_3.875x7.5in", "iso_a4_210x297mm", "na_letter_8.5x11in", "na_index-4x6_4x6in"],
+             "media-default": ["iso_a4_210x297mm"]}
+    keys = [m["keyword"] for m in capabilities.from_attrs(attrs)["media"]]
+    assert keys == ["iso_a4_210x297mm", "na_index-4x6_4x6in", "na_letter_8.5x11in", "na_monarch_3.875x7.5in"]  # no range ends; envelopes last
+
+
 def test_the_queues_choices_become_form_options():
     attrs = {"media-supported": ["iso_a4_210x297mm", "na_index-4x6_4x6in", "om_a-4-borderless_210x297mm", "custom_x_215x345mm"],
              "media-default": ["na_index-4x6_4x6in"], "media-type-supported": ["stationery", "photographic-glossy", "com.brother-bp-71"],
