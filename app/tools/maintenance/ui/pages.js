@@ -4,7 +4,7 @@
 import { createPreview, drawnThumb, makeThumb, standardSvg } from './preview.js';
 
 const bytes = (n) => (n >= 2 ** 20 ? `${(n / 2 ** 20).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-const SIDES = [['one-sided', 'on one side'], ['two-sided-long-edge', 'on both sides (flip like a book)'], ['two-sided-short-edge', 'on both sides (flip like a notepad)']];
+const SIDES = [['one-sided', 'on one side'], ['two-sided-long-edge', 'on both sides, flip on long edge'], ['two-sided-short-edge', 'on both sides, flip on short edge']];
 const KIND = { 'application/pdf': 'PDF', 'image/png': 'PNG', 'image/jpeg': 'JPEG' };
 
 export function createPagesDialog(kit, { base, onChange }) {
