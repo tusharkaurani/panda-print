@@ -45,7 +45,7 @@ function tile(link) {
   } else {
     plate = letter();
   }
-  const attrs = { class: 'tile', href: link.url };
+  const attrs = { class: 'tile', href: link.url, title: link.name };  // full name when a narrow tile clips it
   if (link.new_tab) { attrs.target = '_blank'; attrs.rel = 'noopener noreferrer'; }
   return h('li', {}, h('a', attrs, plate,
     h('span', { class: 'tile-text' }, h('div', { class: 'tile-name' }, link.name),
@@ -73,7 +73,9 @@ async function loadLinks() {
       h('details', {}, h('summary', {}, `${cfg.warnings.length} note${cfg.warnings.length === 1 ? '' : 's'} about links.yml`),
         h('ul', {}, cfg.warnings.map((w) => h('li', {}, w))))));
   }
-  clear($('links-grid')).append(...cfg.links.map(tile));
+  const grid = clear($('links-grid'));
+  grid.style.setProperty('--n', Math.max(1, cfg.links.length));  // the CSS shares the row between this many tiles
+  grid.append(...cfg.links.map(tile));
   $('launcher').hidden = !(cfg.links.length || cfg.error || cfg.warnings?.length);
 }
 
