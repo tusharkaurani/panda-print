@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.local
+.claude
+**/__pycache__
+**/*.pyc
+.pytest_cache
+tests
+data
+config/logos
+.env
+.env.*
+*.md
+Makefile
+compose*.yml

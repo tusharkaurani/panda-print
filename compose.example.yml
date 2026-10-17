@@ -1,0 +1,50 @@
+# Copy to compose.yml next to a ./config folder (see config/links.yml) and run:
+#   docker compose up -d
+services:
+  panda-print:
+    image: ghcr.io/tusharkaurani/panda-print:latest
+    container_name: panda-print
+    restart: unless-stopped
+
+    # Host networking lets the app reach CUPS on the Pi at 127.0.0.1:631 and the
+    # printer on your LAN with no extra setup. The app opens ONE port (PORT).
+    # Without host networking: remove this line, add `ports: ["8095:8095"]`,
+    # and point CUPS_URL at the Pi's LAN address (CUPS must allow that client).
+    network_mode: host
+
+    user: "1000:1000"
+    environment:
+      PORT: "8095"
+      # HOST: "127.0.0.1"          # listen on loopback only if your proxy runs on this Pi (host network)
+      PRINTER_IP: "192.168.1.18"
+      CUPS_URL: "http://127.0.0.1:631"
+      CUPS_QUEUE: "T730"
+      # SNMP_COMMUNITY: "public"
+      # IDLE_DAYS: "7"
+      # POLL_INTERVAL: "300"       # seconds between page-counter reads
+      # PRINT_COOLDOWN: "120"      # seconds between manual nozzle checks
+      # PRINT_MAX_PER_HOUR: "5"
+      # TRUSTED_ORIGINS: "https://print.example.lan"   # only if the proxy rewrites Host
+
+    volumes:
+      - panda-print-data:/data                          # SQLite history (small)
+      - ./config:/config:ro                              # links.yml and logos/
+      # The host timer's state file, read-only. Mount the folder, not the file, so a
+      # missing file doesn't make Docker create a directory in its place.
+      - /var/lib/printer-nozzle-check:/host-state:ro
+
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m        # the app idles around 40 MB; this is a safety net, not a target
+
+    # The image already defines a healthcheck (python -m app.healthcheck).
+    logging:
+      driver: json-file
+      options: {max-size: "2m", max-file: "3"}
+
+volumes:
+  panda-print-data:
