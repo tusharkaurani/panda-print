@@ -26,7 +26,7 @@ function applyTheme(theme) {
   const btn = $('theme-btn');
   btn.replaceChildren(icon(THEME_ICON[theme], 20));
   btn.setAttribute('aria-label', `Theme: ${theme}. Click to change.`);
-  btn.title = `Theme: ${theme}`;
+  btn.title = `Theme: ${theme}. Click to switch between automatic, light and dark.`;
 }
 
 $('theme-btn').addEventListener('click', () => {
@@ -97,8 +97,8 @@ let shown = null;  // which page is on screen: 'setup' | 'printers' | 'view:<key
 
 function buildViews() {
   views = tools.flatMap((t) => (t.error || !t.tabs?.length
-    ? [{ key: t.id, tool: t, tabId: null, title: t.title, icon: t.icon }]
-    : t.tabs.map((tab) => ({ key: `${t.id}/${tab.id}`, tool: t, tabId: tab.id, title: tab.title, icon: tab.icon || t.icon }))));
+    ? [{ key: t.id, tool: t, tabId: null, title: t.title, icon: t.icon, description: t.description }]
+    : t.tabs.map((tab) => ({ key: `${t.id}/${tab.id}`, tool: t, tabId: tab.id, title: tab.title, icon: tab.icon || t.icon, description: tab.description }))));
 }
 
 const visibleViews = () => views.filter((v) => !v.tool.needs_printer || store.list.length > 0);
@@ -136,7 +136,7 @@ function paintTabs() {
   const sig = list.map((v) => v.key).join();
   if (tabs.dataset.sig !== sig) {
     tabs.dataset.sig = sig;
-    fill(tabs, list.map((v) => h('a', { class: 'tab', href: `#${v.key}`, role: 'tab', 'data-key': v.key }, icon(v.icon || 'wrench', 16), v.title)));
+    fill(tabs, list.map((v) => h('a', { class: 'tab', href: `#${v.key}`, role: 'tab', 'data-key': v.key, title: v.description || v.title }, icon(v.icon || 'wrench', 16), v.title)));
   }
   const current = activeView();
   tabs.querySelectorAll('a').forEach((a) => {

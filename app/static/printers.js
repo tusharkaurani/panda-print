@@ -92,7 +92,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
       ? h('div', { class: 'scan' }, spinner(), h('span', {}, 'Looking for printers on your network and in CUPS\u2026'))
       : s.found?.length
         ? h('ul', { class: 'cands' }, s.found.map((c) => h('li', {},
-            h('button', { class: 'cand', type: 'button', disabled: !!c.already_added, onclick: () => pick(c) },
+            h('button', { class: 'cand', type: 'button', disabled: !!c.already_added, title: c.already_added ? 'This printer is already added' : 'Use this printer', onclick: () => pick(c) },
               icon('printer', 22),
               h('span', { class: 'cand-text' }, h('strong', {}, c.model || c.name),
                 h('span', { class: 'sub' }, [c.ip, c.queue && `CUPS queue ${c.queue}`, c.sources?.includes('mdns') && 'found on the network'].filter(Boolean).join(' \u00b7 '))),
@@ -100,7 +100,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
         : h('p', { class: 'empty' }, 'No printers found automatically. Enter the address below.');
     fill(foundBox, h('h3', { class: 'sect' }, 'Printers we found'), list,
       s.notes.length > 0 && !s.scanning && h('ul', { class: 'notes' }, s.notes.map((n) => h('li', {}, n))),
-      !s.scanning && h('button', { class: 'btn small', type: 'button', onclick: scan }, icon('refresh', 15), 'Search again'));
+      !s.scanning && h('button', { class: 'btn small', type: 'button', title: 'Look for printers on the network again', onclick: scan }, icon('refresh', 15), 'Search again'));
   }
 
   function renderFind() {
@@ -119,8 +119,8 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
       h('form', { class: 'manual', onsubmit: go },
         h('h3', { class: 'sect' }, 'Or enter the address yourself'),
         h('p', { class: 'sub' }, 'You can find it on the printer\u2019s screen (network settings) or on your router\u2019s device list.'),
-        h('div', { class: 'row-inline' }, manual, h('button', { class: 'btn primary', type: 'submit' }, 'Continue')), err),
-      mode === 'add' && h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onclick: onCancel }, 'Cancel')));
+        h('div', { class: 'row-inline' }, manual, h('button', { class: 'btn primary', type: 'submit', title: 'Use this address and check that the printer answers' }, 'Continue')), err),
+      mode === 'add' && h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Go back without adding a printer', onclick: onCancel }, 'Cancel')));
   }
 
   // ---------------------------------------------------------- step 2: connect and name
@@ -163,7 +163,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
         hint: 'Leave blank to use the model name. Name your printers if you have two of the same model.' }),
       field('Address', 'ip', { placeholder: '192.168.1.50', hint: 'IP address or host name of the printer.' }),
       h('div', {}, h('div', { class: 'row-inline between' }, h('h3', { class: 'sect' }, 'Connection check'),
-        h('button', { class: 'btn small', type: 'button', onclick: runProbe }, icon('refresh', 15), 'Check again')), checksBox),
+        h('button', { class: 'btn small', type: 'button', title: 'Run the printer, page-counter and CUPS checks again (prints nothing)', onclick: runProbe }, icon('refresh', 15), 'Check again')), checksBox),
       queueBox, advanced, actionsBox);
     paintChecks();
     return frame(form);
@@ -220,10 +220,10 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
     const allOk = s.probe && s.probe.ipp.ok && s.probe.snmp.ok && s.probe.cups.ok;
     fill(actionsBox,
       mode !== 'edit'
-        ? h('button', { class: 'btn', type: 'button', onclick: () => { probeToken++; s.step = 'find'; paint(); if (!s.found && !s.scanning) scan(); } }, 'Back')
+        ? h('button', { class: 'btn', type: 'button', title: 'Go back to choosing a printer', onclick: () => { probeToken++; s.step = 'find'; paint(); if (!s.found && !s.scanning) scan(); } }, 'Back')
         : null,
-      mode !== 'first' && h('button', { class: 'btn', type: 'button', onclick: onCancel }, 'Cancel'),
-      h('button', { class: `btn primary${allOk ? '' : ' warn'}`, type: 'button', disabled: s.saving || s.probing, onclick: save },
+      mode !== 'first' && h('button', { class: 'btn', type: 'button', title: 'Leave without saving', onclick: onCancel }, 'Cancel'),
+      h('button', { class: `btn primary${allOk ? '' : ' warn'}`, type: 'button', disabled: s.saving || s.probing, title: allOk ? 'Save this printer' : 'Save this printer even though a check did not pass', onclick: save },
         s.saving ? 'Saving…' : mode === 'edit' ? 'Save changes' : allOk ? 'Add printer' : 'Add anyway'));
     if (!allOk && s.probe && !s.probing) {
       actionsBox.prepend(h('p', { class: 'sub grow' }, 'Some checks failed. You can still save and fix the details later.'));
@@ -268,7 +268,7 @@ export function admin(root, { onChanged }) {
     clear(root).append(
       h('div', { class: 'tool-head' }, h('h2', {}, 'Printers'),
         h('p', {}, 'The printers this dashboard keeps an eye on.'),
-        h('button', { class: 'btn primary push', type: 'button', onclick: add }, icon('printer', 16), 'Add printer')),
+        h('button', { class: 'btn primary push', type: 'button', title: 'Add another printer to panda-print', onclick: add }, icon('printer', 16), 'Add printer')),
       h('div', { class: 'grid' }, cards));
   }
 
@@ -294,9 +294,9 @@ export function admin(root, { onChanged }) {
           p.host_state_file && h('dt', {}, 'Timer state'), p.host_state_file && h('dd', {}, p.host_state_file)),
         rows.length > 0 && h('ul', { class: 'checks compact' }, rows),
         h('div', { class: 'actions left' },
-          h('button', { class: 'btn small', type: 'button', onclick: () => edit(p) }, 'Edit'),
-          h('button', { class: 'btn small', type: 'button', onclick: () => test(p) }, icon('refresh', 15), 'Test'),
-          h('button', { class: 'btn small danger', type: 'button', onclick: () => remove(p) }, 'Remove'))));
+          h('button', { class: 'btn small', type: 'button', title: 'Change this printer’s name, address or CUPS queue', onclick: () => edit(p) }, 'Edit'),
+          h('button', { class: 'btn small', type: 'button', title: 'Check that the printer, its page counter (SNMP) and its CUPS queue answer. Prints nothing.', onclick: () => test(p) }, icon('refresh', 15), 'Test'),
+          h('button', { class: 'btn small danger', type: 'button', title: 'Stop watching this printer and delete its history here (asks first). The printer itself is not touched.', onclick: () => remove(p) }, 'Remove'))));
   }
 
   async function test(p) {
@@ -316,8 +316,8 @@ export function admin(root, { onChanged }) {
       h('h3', { id: 'rm-title' }, `Remove ${p.name}?`),
       h('p', {}, 'panda-print will stop watching this printer and delete its nozzle-check history. The printer and its CUPS queue are not touched.'),
       h('div', { class: 'actions' },
-        h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Keep it'),
-        h('button', { class: 'btn primary danger-fill', type: 'button', onclick: async () => {
+        h('button', { class: 'btn', type: 'button', title: 'Leave this printer as it is', onclick: () => dialog.close() }, 'Keep it'),
+        h('button', { class: 'btn primary danger-fill', type: 'button', title: 'Remove this printer and its history from panda-print', onclick: async () => {
           dialog.close();
           const res = await api(`/printers/${p.id}`, { method: 'DELETE' });
           if (!res.ok) { toast(res.error.message, 'bad'); return; }

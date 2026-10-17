@@ -12,7 +12,8 @@ def test_health(client):
 def test_index_and_tool_registry(client):
     assert b"panda-print" in client.get("/").data
     tools = client.get("/api/tools").get_json()["tools"]
-    assert [t["id"] for t in tools] == ["maintenance"]
+    assert [t["id"] for t in tools] == ["maintenance", "utilities"]
+    assert all(tab["description"] for tab in tools[0]["tabs"])  # each tab says what it holds on hover
     assert client.get(tools[0]["entry"]).status_code == 200
     assert client.get("/tools/maintenance/../../settings.py").status_code == 404
     assert client.get("/tools/nope/ui.js").status_code == 404
@@ -256,3 +257,19 @@ def test_css_never_draws_a_closed_dialog(client):
             target = selector.strip().split()[-1] if selector.strip() else ""  # what the rule styles: the last part
             if target.startswith("dialog") and "[open]" not in target and ":not(" not in target:
                 assert False, f"{selector.strip()!r} sets display without [open]"
+
+
+def test_every_button_in_the_ui_says_what_it_does_on_hover():
+    """Each button is built on one line; it must carry a title (its hover text). Add one when you add a button."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "app"
+    missing = []
+    for path in [*root.glob("static/**/*.js"), *root.glob("tools/*/ui/*.js"), root / "static" / "index.html"]:
+        if "vendor" in path.parts:
+            continue
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            for m in re.finditer(r"h\('button'|<button\b|h\('a', \{ class: '(?:btn|icon-mini)", line):
+                if "title" not in line[m.start():] and "title" not in line[:m.start()].split("h('")[-1]:
+                    missing.append(f"{path.relative_to(root)}:{n}")
+    assert not missing, f"buttons without a title: {missing}"

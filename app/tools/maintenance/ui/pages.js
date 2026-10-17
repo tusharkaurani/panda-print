@@ -16,7 +16,7 @@ export function createPagesDialog(kit, { base, onChange }) {
   const body = h('div', { class: 'dlg-body' });
   const dialog = h('dialog', { class: 'wide pages-dialog', 'aria-labelledby': 'pg-title' },
     h('h3', { id: 'pg-title' }, 'Pages to print'), body,
-    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => dialog.close() }, 'Done')),
+    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', title: 'Close this window', onclick: () => dialog.close() }, 'Done')),
     preview.dialog);
   dialog.addEventListener('close', () => onChange());
   dialog.addEventListener('dragover', (e) => { e.preventDefault(); dialog.classList.add('drag'); });
@@ -106,8 +106,8 @@ export function createPagesDialog(kit, { base, onChange }) {
       : `${KIND[item.mime] || ''} · ${item.pages} page${item.pages === 1 ? '' : 's'} · ${bytes(item.size)}`;
     const ask = armed?.id === item.id ? armed.kind : null;
     const confirm = (kind, text, go) => h('span', { class: 'confirm' }, h('span', {}, text),
-      h('button', { class: `btn small${kind === 'delete' ? ' danger' : ' primary'}`, type: 'button', onclick: go }, kind === 'delete' ? 'Delete' : 'Print'),
-      h('button', { class: 'btn small', type: 'button', onclick: () => { armed = null; render(); } }, 'Cancel'));
+      h('button', { class: `btn small${kind === 'delete' ? ' danger' : ' primary'}`, type: 'button', title: kind === 'delete' ? 'Delete this page for good' : 'Send this page to the printer now', onclick: go }, kind === 'delete' ? 'Delete' : 'Print'),
+      h('button', { class: 'btn small', type: 'button', title: 'Do nothing', onclick: () => { armed = null; render(); } }, 'Cancel'));
     return h('li', { class: `pagecard${item.enabled ? '' : ' off'}` },
       thumb(item),
       h('div', { class: 'pagemain' },
@@ -120,13 +120,13 @@ export function createPagesDialog(kit, { base, onChange }) {
           item.standard
             ? h('button', { class: 'icon-mini', type: 'button', disabled: true, 'aria-label': 'The standard test page is built in, so there is no file to download', title: 'Built in: nothing to download' }, icon('download', 16))
             : h('a', { class: 'icon-mini', 'aria-label': `Download ${item.name}`, title: 'Download', download: '', href: `/api/maintenance/pages/${item.id}/file?download=1` }, icon('download', 16)),
-          h('button', { class: 'icon-mini up', type: 'button', 'aria-label': `Move ${item.name} up`, disabled: index === 0, onclick: () => move(index, -1) }, icon('chevron', 16)),
-          h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Move ${item.name} down`, disabled: last, onclick: () => move(index, 1) }, icon('chevron', 16)),
+          h('button', { class: 'icon-mini up', type: 'button', 'aria-label': `Move ${item.name} up`, title: 'Move up in the rotation', disabled: index === 0, onclick: () => move(index, -1) }, icon('chevron', 16)),
+          h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Move ${item.name} down`, title: 'Move down in the rotation', disabled: last, onclick: () => move(index, 1) }, icon('chevron', 16)),
           h('label', { class: 'switch compact', title: item.enabled ? 'In the rotation' : 'Left out of the rotation' },
             h('input', { type: 'checkbox', role: 'switch', 'aria-label': `Include ${item.name}`, checked: item.enabled ? true : null, onchange: (e) => toggle(item, e.target.checked) }),
             h('span', { class: 'track', 'aria-hidden': 'true' })),
-          h('button', { class: 'btn small', type: 'button', onclick: () => { armed = { id: item.id, kind: 'print' }; render(); } }, 'Print'),
-          h('button', { class: 'btn small danger', type: 'button', disabled: item.standard ? true : null, title: item.standard ? 'Built in: it can’t be deleted' : null,
+          h('button', { class: 'btn small', type: 'button', title: 'Print just this page now (asks to confirm; the rotation order is not changed)', onclick: () => { armed = { id: item.id, kind: 'print' }; render(); } }, 'Print'),
+          h('button', { class: 'btn small danger', type: 'button', disabled: item.standard ? true : null, title: item.standard ? 'Built in: it can’t be deleted' : 'Delete this page from the library (asks first)',
             onclick: () => { armed = { id: item.id, kind: 'delete' }; render(); } }, 'Delete')));
   }
 
@@ -141,7 +141,7 @@ export function createPagesDialog(kit, { base, onChange }) {
       h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {},
         'A page only moves the inks it uses. A black-and-white page won’t exercise cyan, magenta or yellow, so keep a colourful page in the list, or print the standard test page every few prints (below).')),
       h('div', { class: 'addrow' },
-        h('button', { class: 'btn primary', type: 'button', onclick: () => picker.click() }, icon('file', 16), 'Add pages…'), picker,
+        h('button', { class: 'btn primary', type: 'button', title: 'Add PDF, PNG or JPEG files to the library', onclick: () => picker.click() }, icon('file', 16), 'Add pages…'), picker,
         h('span', { class: 'hint' }, `PDF, PNG or JPEG, up to ${data.limits.max_file_mb} MB each (or drop files here).`)),
       problems.length > 0 && h('ul', { class: 'problems' }, problems.map((p) => h('li', { class: 'msg' }, p))),
       h('ul', { class: 'pagelist' }, data.items.map(row)),

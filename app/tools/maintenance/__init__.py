@@ -56,5 +56,6 @@ def create(ctx: AppContext) -> Tool:
         order=10,
         needs_printer=True,
         # Nozzle checks get their own tab so they can grow; new utilities can be added the same way
-        tabs=[ToolTab("overview", "Overview", "printer"), ToolTab("nozzle", "Nozzle Check", "droplet")],
+        tabs=[ToolTab("overview", "Overview", "printer", "Printer status, ink levels, the print queue and recent prints"),
+              ToolTab("nozzle", "Nozzle Check", "droplet", "When nozzle checks print, automatic printing and the pages it uses")],
     )

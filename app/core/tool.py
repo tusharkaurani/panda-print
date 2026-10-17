@@ -32,6 +32,7 @@ class ToolTab:
     id: str  # url-safe; the page address becomes #<tool id>/<tab id>
     title: str
     icon: str = ""  # name from static/lib/icons.js; defaults to the tool's icon
+    description: str = ""  # shown when hovering the tab; defaults to the tool's description
 
 
 @dataclass

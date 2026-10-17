@@ -28,7 +28,7 @@ export function mount(root, kit) {
   // ------------------------------------------------------------ run a check now (to test the real thing)
   // The button and its dialog are created once; the card body they sit in is rebuilt on every save.
   let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
-  const runBtn = h('button', { class: 'btn', type: 'button', onclick: () => dialog.showModal() }, icon('droplet', 16), 'Print now');
+  const runBtn = h('button', { class: 'btn', type: 'button', title: 'Print one page on this printer right now (asks you to confirm first)', onclick: () => dialog.showModal() }, icon('droplet', 16), 'Print now');
   const runHint = h('span', { class: 'hint' });
 
   function paintRun() {
@@ -46,8 +46,8 @@ export function mount(root, kit) {
     h('h3', { id: 'mt-run-title' }, 'Print a nozzle check now?'),
     h('p', {}, 'This sends one small test page with cyan, magenta, yellow and black bars to the printer. It uses a sheet of paper and a little ink.'),
     h('div', { class: 'actions' },
-      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', type: 'button', onclick: runNow }, icon('droplet', 16), 'Print')));
+      h('button', { class: 'btn', type: 'button', title: 'Close without printing', onclick: () => dialog.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'button', title: 'Send the page to the printer now', onclick: runNow }, icon('droplet', 16), 'Print')));
   root.append(dialog);
 
   async function runNow() {
@@ -131,7 +131,7 @@ export function mount(root, kit) {
     const custom = d.customised.length > 0;
     autoCard.setBadge(ui.badge(d.values.enabled ? 'On' : 'Off', d.values.enabled ? 'ok' : ''));
     const inputs = {}, errors = {};
-    const saveBtn = h('button', { class: 'btn primary', type: 'submit', disabled: true }, 'Save settings');
+    const saveBtn = h('button', { class: 'btn primary', type: 'submit', disabled: true, title: 'Save these automation settings for this printer' }, 'Save settings');
     // Save is only available when something differs from what is saved
     const same = (key, type) => (type === 'number'
       ? Number(inputs[key].value) === Number(d.values[key])
@@ -200,7 +200,7 @@ export function mount(root, kit) {
       radio('Standard test page', !rotation.rotate, false),
       radio('Rotate my pages', rotation.rotate, true),
       h('span', { class: 'sub pagesrow-note' }, rotation.rotate ? `Next: “${rotation.next.name}”` : mine ? `${mine} of your pages ready` : ''),
-      h('button', { class: 'btn small', type: 'button', onclick: () => pagesDialog.open() }, 'Manage pages…'));
+      h('button', { class: 'btn small', type: 'button', title: 'Add, preview, reorder or delete the pages that can be printed', onclick: () => pagesDialog.open() }, 'Manage pages…'));
 
     autoCard.set(
       h('label', { class: 'switch', for: 'auto-enabled' }, toggle, h('span', { class: 'track', 'aria-hidden': 'true' }),
@@ -211,7 +211,7 @@ export function mount(root, kit) {
         h('div', { class: 'autogrid' }, FIELDS.map(field)),
         h('div', { class: 'actions left' },
           saveBtn,
-          h('button', { class: 'btn', type: 'button', disabled: !custom, onclick: reset }, 'Reset to defaults'),
+          h('button', { class: 'btn', type: 'button', disabled: !custom, title: 'Put every setting back to its default (the automatic-print switch stays as it is)', onclick: reset }, 'Reset to defaults'),
           custom && h('span', { class: 'sub' }, `Changed from the defaults: ${d.customised.length} setting${d.customised.length === 1 ? '' : 's'}.`))),
       h('div', { class: 'runnow' }, runBtn, runHint));
     paintRun();

@@ -18,7 +18,7 @@ export function errorBox(error, onRetry) {
   return h('div', { class: 'err', role: 'alert' },
     h('strong', {}, icon('alert', 18), error?.message || 'Something went wrong.'),
     error?.hint && h('span', { class: 'hint' }, error.hint),
-    onRetry && h('button', { class: 'btn', type: 'button', onclick: onRetry }, icon('refresh', 16), 'Try again'));
+    onRetry && h('button', { class: 'btn', type: 'button', title: 'Ask again', onclick: onRetry }, icon('refresh', 16), 'Try again'));
 }
 
 // A titled card whose body can be swapped, with a refresh button and a "busy" state.

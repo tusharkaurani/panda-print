@@ -185,6 +185,14 @@ example colouring pages, so the print is worth having.
 
 PDFs are drawn in the browser with [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0), bundled in `app/static/vendor/pdfjs`, so nothing is loaded from a CDN. It is fetched only when a PDF needs drawing, and runs with script evaluation off.
 
+## Print Utilities tab
+
+A tab of cards that open free online tools for things worth printing (passport photos, student worksheets, colouring pages, calendars and ruled paper, PDF tools, posters, labels and crafts), grouped by category with at most four cards in a row. Each card is a drawing of the kind of page, the tool's name, a one-line description and its site; it opens in a new tab. The cards are drawings made by the app, so opening the tab loads nothing from those sites.
+
+The built-in list is `app/tools/utilities/catalog.yml`. To use your own, copy it to `print-utilities.yml` next to `links.yml` (in the folder you mount at `/config`), then edit: categories, tools, and for each tool `name`, `url` (https), `description`, `art` (which drawing) and optionally `image` (a picture URL). The page picks up changes within a minute; a mistake is reported on the page and the built-in list keeps showing. These are third-party sites that change, so check a link if it stops working; some have paid extras.
+
+Every button and tab in the app shows what it does when you hover over it (a test fails if a new button has no hover text).
+
 ## Security model
 
 - No login. Put an SSO reverse proxy in front.

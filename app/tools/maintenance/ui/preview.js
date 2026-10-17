@@ -97,10 +97,10 @@ export function createPreview(kit) {
   const sheets = h('div', { class: 'sheets' });
   const title = h('h3', { id: 'pv-title' });
   const meta = h('p', { class: 'sub' });
-  const download = h('a', { class: 'btn', hidden: true }, icon('download', 16), 'Download');
+  const download = h('a', { class: 'btn', hidden: true, title: 'Download the original file' }, icon('download', 16), 'Download');
   const dialog = h('dialog', { class: 'wide preview', 'aria-labelledby': 'pv-title' }, title, meta, sheets,
     h('p', { class: 'hint' }, 'Shown the way it will be sent. CUPS fits the page to the paper, so margins can differ slightly.'),
-    h('div', { class: 'actions' }, download, h('button', { class: 'btn primary', type: 'button', onclick: () => dialog.close() }, 'Close')));
+    h('div', { class: 'actions' }, download, h('button', { class: 'btn primary', type: 'button', title: 'Close the preview', onclick: () => dialog.close() }, 'Close')));
   let token = 0;  // a newer preview replaces one that is still drawing
   dialog.addEventListener('close', () => { if (dialog.open) return; token += 1; sheets.replaceChildren(); });  // (a close event can arrive after a reopen)
 
