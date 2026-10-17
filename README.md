@@ -218,6 +218,10 @@ Every button and tab in the app shows what it does when you hover over it (a tes
 - Strict Content-Security-Policy (no inline script or style, no external hosts except images you point links at), and logo files are served sandboxed.
 - The SNMP community and addresses are configuration, not secrets, but nothing sensitive is committed: `.env`, `data/`, `secret.key` and your logos are git-ignored.
 
+## When a printer is off
+
+A printer that is switched off or off the network is a normal case, not a crash. The Overview keeps the last known ink levels, model and page count on screen, dimmed, with a note ("The printer isn't answering… from 2 hours ago") and a Try again button; the badge says Offline. The last good answer is stored in the database, so it survives a restart. Nozzle Care says it can't read the page count. The automatic print waits (it only prints when it can tell the printer is idle) and goes ahead by itself when the printer returns. **Print now** warns first: the page would wait in the CUPS queue and print when the printer is back. A printer that has never answered shows just the reason. Everything recovers on its own, and one printer being off never affects another.
+
 ## Several printers
 
 Add as many printers as you like (**Manage printers…** in the header menu). The rules the code and `tests/test_multi_printer.py` hold to:

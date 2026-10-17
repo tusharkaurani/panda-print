@@ -86,7 +86,7 @@ def plan(*, enabled: bool, now: float, last_print_ts: float | None, idle_days: f
     if now < next_run:
         return Plan("wait", next_run_at=next_run)
     if not counter_ok:
-        return Plan("blocked", "Can't read the page count right now, so it isn't known whether the printer is idle.", next_run)
+        return Plan("blocked", "Can't read the page count, so it isn't known whether the printer is idle. Is it switched on?", next_run)
     if last_failure_ts is not None and now - last_failure_ts < RETRY_AFTER_FAILURE:
         return Plan("blocked", "The last try failed. Trying again in an hour.", last_failure_ts + RETRY_AFTER_FAILURE)
     if last_app_check_ts is not None and now - last_app_check_ts < COOLDOWN:

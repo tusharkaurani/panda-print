@@ -24,7 +24,13 @@ export function mount(root, kit) {
       h('dd', {}, c.value != null ? fmt.num(c.value) : '\u2013'),
       // the card's own "Updated" time covers a normal read; the age only matters when the printer can't be reached
       c.error && h('p', { class: 'msg' }, `${c.value != null ? `Showing the last known value${c.as_of ? ` (read ${fmt.ago(c.as_of)})` : ''}. ` : ''}${c.error}`));
+    // switched off or off the network: the last known values stay on screen, dimmed, with a plain note
+    const offline = d.offline && h('div', { class: 'notice warn' }, icon('alert', 18),
+      h('div', {}, h('strong', {}, 'The printer isn’t answering. '),
+        `It may be switched off or off the network. Showing what was last known${d.offline.as_of ? `, from ${fmt.ago(d.offline.as_of)}` : ''}.`),
+      h('button', { class: 'btn small', type: 'button', title: 'Ask the printer again', onclick: () => load(printerCard, 'printer', renderPrinter) }, icon('refresh', 15), 'Try again'));
     printerCard.set(
+      offline,
       // The badge already says Idle/Printing; only add words when there is something to flag
       (d.state.reasons.length || (d.state.message && d.state.health !== 'ok'))
         ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity))),
@@ -33,7 +39,7 @@ export function mount(root, kit) {
       // one row: the four rings, then Model / Firmware / Uptime / Web interface beside them
       h('div', { class: 'printer-top' },
         d.inks.length
-          ? h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge))
+          ? h('div', { class: `gauges${d.offline ? ' stale' : ''}`, role: 'group', 'aria-label': d.offline ? 'Ink levels as last known' : 'Ink levels' }, d.inks.map(ui.gauge))
           : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
         beside.length ? h('dl', { class: 'facts beside' }, beside.map(fact)) : null),
       h('dl', { class: 'facts' }, counter, rest.map(fact)));

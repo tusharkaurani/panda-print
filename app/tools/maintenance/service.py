@@ -1,6 +1,7 @@
 """Orchestration for the maintenance tool: what each API endpoint returns."""
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from pathlib import Path
@@ -47,9 +48,30 @@ class Service:
 
     # ------------------------------------------------------------ printer card
     def printer_status(self) -> dict:
-        info = normalize.printer(self._printer_cache.get(self.printer.printer_info), self.config.ip)
+        """The printer card. Every good answer is remembered, so a printer that is switched off still shows what
+        was last known (ink, model, page count) with an "offline" note, instead of an empty error card."""
+        try:
+            info = normalize.printer(self._printer_cache.get(self.printer.printer_info), self.config.ip)
+        except SourceError as e:
+            remembered = self._remembered_status()
+            if remembered is None:  # never seen it answer: nothing to show but the reason
+                raise
+            info, as_of = remembered
+            info["state"] = {"code": "offline", "label": "Offline", "health": "bad", "reasons": [],
+                             "message": "", "accepting": None}
+            info["offline"] = {"as_of": as_of, "error": e.to_dict()}
+        else:
+            self.store.put("last_status", json.dumps({"info": info, "ts": self.clock()}))
         info["counter"] = self._counter()
         return info
+
+    def _remembered_status(self) -> tuple[dict, float] | None:
+        raw = self.store.get("last_status")
+        try:
+            saved = json.loads(raw) if raw else None
+            return (saved["info"], float(saved["ts"])) if saved else None
+        except (ValueError, KeyError, TypeError):
+            return None
 
     def _counter(self) -> dict:
         try:

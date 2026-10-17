@@ -17,6 +17,7 @@ export function mount(root, kit) {
   // The button and its dialog are created once; the card bodies are rebuilt on every refresh.
   let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
   let cupsOff = false;  // this printer has no CUPS queue, so nothing here can print
+  let printerOffline = false;  // the page count couldn't be read last time, so the printer isn't answering
   let rotation = null;  // this printer's pages and what prints next (Service.rotation_status)
   const runLabel = h('span', {}, 'Print now');
   const runBtn = h('button', { class: 'btn small primary', type: 'button', title: 'Show the page that will print, then confirm', onclick: () => openRun() }, runLabel);
@@ -48,23 +49,29 @@ export function mount(root, kit) {
 
   const runSheets = h('div', { class: 'sheets run-sheets' });
   const runName = h('p', { class: 'sub' });
+  const runWarn = h('div', { class: 'notice warn', hidden: true }, icon('alert', 18),
+    h('div', {}, 'The printer isn’t answering right now. If you print, the page waits in the CUPS queue and prints when the printer is back.'));
+  const runGo = h('button', { class: 'btn primary', type: 'button', title: 'Send this page to the printer now', onclick: runNow }, 'Print');
   let runToken = 0;  // a newer open replaces a drawing that is still going
   const dialog = h('dialog', { class: 'wide run', 'aria-labelledby': 'mt-run-title' },
     h('h3', { id: 'mt-run-title' }, 'Print this page now?'),
-    runName, runSheets,
+    runName, runWarn, runSheets,
     h('p', { class: 'hint' }, 'It uses a sheet of paper and a little ink.'),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', type: 'button', title: 'Close without printing', onclick: () => dialog.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', type: 'button', title: 'Send this page to the printer now', onclick: runNow }, 'Print')));
+      runGo));
   dialog.addEventListener('close', () => { if (dialog.open) return; runToken += 1; runSheets.replaceChildren(); });
   root.append(dialog);
 
   async function openRun() {
-    const rot = await api(`${base()}/rotation`);  // the next page may have moved since the card was drawn
+    const [rot, live] = await Promise.all([api(`${base()}/rotation`), api(`${base()}/printer`)]);  // the next page may have moved; the printer may have gone off
     if (rot.ok) rotation = rot.data;
+    printerOffline = !live.ok || Boolean(live.data?.offline);
     const item = nextPage();
     runToken += 1;
     const mine = runToken;
+    runWarn.hidden = !printerOffline;
+    runGo.textContent = printerOffline ? 'Print anyway' : 'Print';
     runName.textContent = item.standard
       ? `${rotation?.rotate ? 'Next in the rotation: the' : 'The'} standard test page, four colour bars (cyan, magenta, yellow, black).`
       : `Next in the rotation: “${item.name}” · ${item.pages} page${item.pages === 1 ? '' : 's'}`;
@@ -115,7 +122,9 @@ export function mount(root, kit) {
     paintRun();
 
     const t = d.tracking;
-    const problems = [t.counter_error && `Can’t read the page count: ${t.counter_error}`, t.cups_error && `Can’t reach CUPS: ${t.cups_error}`,
+    printerOffline = Boolean(t.counter_error);
+    const problems = [t.counter_error && h('span', { title: t.counter_error }, 'Can’t read the page count. The printer may be switched off or off the network.'),
+      t.cups_error && h('span', { title: t.cups_error }, 'Can’t reach CUPS. Is it running?'),
       a.enabled && a.state === 'blocked' && !cupsOff && `Auto print is waiting: ${a.reason}`].filter(Boolean);
 
     nozzleCard.set(

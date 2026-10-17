@@ -421,3 +421,7 @@ dialog.run .sheets { max-height: 46vh; }
 /* shown when the server was updated under an open page */
 .update-banner { position: sticky; top: 60px; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
   padding: 10px 16px; background: var(--info-bg); color: var(--info); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--line); }
+
+.notice[hidden] { display: none; }
+.gauges.stale { opacity: .45; filter: grayscale(.7); }
+.notice .btn { margin-left: auto; align-self: center; flex: none; }
