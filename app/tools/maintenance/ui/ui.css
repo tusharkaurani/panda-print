@@ -1,0 +1,10 @@
+/* Printer Maintenance: tool-specific styles (shared tokens come from app.css) */
+.mt .ink-note { font-size: 12.5px; color: var(--muted); }
+.mt .print-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mt .print-row .hint { color: var(--muted); font-size: 13.5px; flex: 1 1 220px; }
+.mt .counter { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.mt .counter .big { font-size: 32px; font-weight: 750; letter-spacing: -.02em; }
+.mt h4 { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.mt .msg { color: var(--bad); font-size: 13px; }
+.mt .footnote { color: var(--muted); font-size: 13px; }
+.mt .footnote p + p { margin-top: 6px; }

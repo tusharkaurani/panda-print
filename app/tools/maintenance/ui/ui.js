@@ -1,0 +1,177 @@
+// Printer Maintenance UI. mount(root, kit) is the whole contract between a tool and the shell.
+
+const SOURCE = { manual: 'Manual check', auto: 'Automated check', host: 'Automated check (host timer)' };
+const KIND = { external: 'A document was printed', nozzle: 'A nozzle check', baseline: 'Earliest known activity' };
+const JOB_BADGE = { completed: 'ok', printing: 'info', pending: 'warn', held: 'warn', stopped: 'warn', canceled: 'bad', aborted: 'bad' };
+
+export function mount(root, kit) {
+  const { h, icon, fmt, ui, api, toast } = kit;
+  root.classList.add('mt');
+
+  const printerCard = ui.card({ title: 'Printer', iconName: 'printer', onRefresh: () => load(printerCard, '/maintenance/printer', renderPrinter) });
+  const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', onRefresh: () => load(nozzleCard, '/maintenance/nozzle', renderNozzle) });
+  const queueCard = ui.card({ title: 'Print queue', iconName: 'list', wide: true, onRefresh: () => load(queueCard, '/maintenance/queue', renderQueue) });
+  root.append(h('div', { class: 'grid' }, printerCard.el, nozzleCard.el, queueCard.el));
+
+  // ------------------------------------------------------------ generic loader
+  async function load(card, path, render) {
+    card.busy(true);
+    const res = await api(path);
+    card.busy(false);
+    if (!res.ok) {
+      card.setBadge(ui.badge('Unavailable', 'bad'));
+      card.set(ui.errorBox(res.error, () => load(card, path, render)));
+      return;
+    }
+    render(res.data);
+    card.stamp();
+  }
+
+  // ------------------------------------------------------------ printer
+  function renderPrinter(d) {
+    printerCard.setBadge(ui.badge(d.state.label, ui.healthKind(d.state.health)));
+    const c = d.counter;
+    printerCard.set(
+      h('div', { class: 'sub' }, d.name),
+      d.state.reasons.length || d.state.message
+        ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, r.severity === 'error' ? 'bad' : r.severity === 'warning' ? 'warn' : 'info')),
+            d.state.message && h('span', { class: 'sub' }, d.state.message))
+        : null,
+      d.inks.length
+        ? h('div', {}, h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge)),
+            h('p', { class: 'ink-note' }, 'Levels are the printer’s own estimate.'))
+        : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
+      h('div', { class: 'stat' },
+        h('div', { class: 'k' }, 'Lifetime pages printed'),
+        h('div', { class: 'counter' }, h('span', { class: 'big' }, fmt.num(c.value)),
+          c.value != null && c.as_of && !c.error && h('span', { class: 's' }, `read ${fmt.ago(c.as_of)}`)),
+        c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`)),
+      d.details.length
+        ? h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'More details'),
+            h('dl', { class: 'kv' }, d.details.flatMap((r) => [h('dt', {}, r.label), h('dd', {}, r.value)])))
+        : null);
+  }
+
+  // ------------------------------------------------------------ queue
+  function jobRow(j) {
+    const when = j.completed || j.created;
+    const bits = [`#${j.id}`, j.user, j.pages && `${j.pages} page${j.pages === 1 ? '' : 's'}`, when && fmt.ago(when)].filter(Boolean);
+    return h('li', { class: 'row' },
+      h('span', { class: 'ic' }, icon(j.nozzle_check ? 'droplet' : 'file', 18)),
+      h('div', { class: 'main' }, h('div', { class: 'title', title: j.name }, j.name), h('div', { class: 'meta' }, bits.join(' · '))),
+      h('div', { class: 'side' }, ui.badge(j.state, JOB_BADGE[j.state] || '')));
+  }
+
+  function renderQueue(d) {
+    queueCard.setBadge(ui.badge(d.state.label, ui.healthKind(d.state.health)));
+    const waiting = d.queued_jobs?.length ?? d.queued;
+    queueCard.set(
+      h('dl', { class: 'kv' },
+        h('dt', {}, 'Queue'), h('dd', {}, `${d.name}${d.info ? ` – ${d.info}` : ''}`),
+        h('dt', {}, 'Accepting jobs'), h('dd', {}, d.state.accepting == null ? 'Unknown' : d.state.accepting ? 'Yes' : 'No'),
+        h('dt', {}, 'Waiting'), h('dd', {}, waiting ? `${waiting} job${waiting === 1 ? '' : 's'}` : 'Nothing waiting'),
+        d.device && h('dt', {}, 'Connection'), d.device && h('dd', {}, d.device)),
+      d.state.reasons.length ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, r.severity === 'error' ? 'bad' : r.severity === 'warning' ? 'warn' : 'info'))) : null,
+      h('div', {}, h('h4', {}, 'Recent jobs'),
+        d.jobs_error ? ui.errorBox(d.jobs_error)
+          : d.jobs.length ? h('ul', { class: 'rows' }, d.jobs.map(jobRow))
+          : h('p', { class: 'empty' }, 'No jobs yet.')));
+  }
+
+  // ------------------------------------------------------------ nozzle check
+  let retryAt = 0;
+  const printBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => dialog.showModal() }, icon('droplet', 17), 'Print nozzle check now');
+  const printHint = h('span', { class: 'hint' });
+
+  function refreshPrintButton() {
+    const left = Math.ceil((retryAt - Date.now()) / 1000);
+    if (left > 0) {
+      printBtn.disabled = true;
+      printHint.textContent = `You can print another in ${fmt.countdown(left)}.`;
+    } else {
+      printBtn.disabled = false;
+      printHint.textContent = 'Prints one small test page (four colour bars). Uses a sheet of paper and a little ink.';
+      if (retryAt) { retryAt = 0; load(nozzleCard, '/maintenance/nozzle', renderNozzle); }
+    }
+  }
+  setInterval(() => { if (retryAt) refreshPrintButton(); }, 1000);
+
+  function checkRow(c) {
+    const state = c.state === 'failed' ? ['Failed', 'bad'] : c.state === 'submitted' ? ['Sent', 'info'] : ['Printed', 'ok'];
+    return h('li', { class: 'row' },
+      h('span', { class: 'ic' }, icon('droplet', 18)),
+      h('div', { class: 'main' }, h('div', { class: 'title' }, SOURCE[c.source] || c.source),
+        h('div', { class: 'meta' }, [fmt.abs(c.ts), c.job_id && `job #${c.job_id}`].filter(Boolean).join(' · ')),
+        c.message && h('div', { class: 'msg' }, c.message)),
+      h('div', { class: 'side' }, ui.badge(...state)));
+  }
+
+  function renderNozzle(d) {
+    const lp = d.last_print, nx = d.next_check;
+    nozzleCard.setBadge(nx ? (nx.overdue ? ui.badge('Check due', 'warn') : ui.badge(`Next in ${fmt.days(nx.days_until)}`, 'ok')) : null);
+
+    retryAt = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
+    refreshPrintButton();
+
+    const t = d.tracking;
+    const problems = [t.counter_error && `Can’t read the page counter: ${t.counter_error}`, t.cups_error && `Can’t read CUPS: ${t.cups_error}`].filter(Boolean);
+
+    nozzleCard.set(
+      problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
+      h('div', { class: 'stats' },
+        ui.stat('Last print (any device)', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
+          lp && `${fmt.abs(lp.ts)} · ${KIND[lp.kind] || ''}`),
+        ui.stat('Days since last print', fmt.days(d.days_since_last_print), `Check fires after ${d.idle_days_threshold} idle days`),
+        ui.stat('Next automated check', !nx ? '–' : nx.overdue ? 'Due now' : `In ${fmt.days(nx.days_until)}`,
+          !nx ? null : nx.overdue ? 'Prints at the next daily run of the host timer' : `Around ${fmt.day(nx.due_at)}`),
+        ui.stat('Last automated check', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet', d.last_auto ? fmt.abs(d.last_auto.ts) : 'Not seen since tracking began'),
+        ui.stat('Last manual run', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
+          d.last_manual ? (d.last_manual.state === 'failed' ? 'Failed: ' + (d.last_manual.message || '') : fmt.abs(d.last_manual.ts)) : null)),
+      h('div', { class: 'print-row' }, printBtn, printHint),
+      h('div', {}, h('h4', {}, 'Recent checks'),
+        d.history.length ? h('ul', { class: 'rows' }, d.history.map(checkRow)) : h('p', { class: 'empty' }, 'No nozzle checks recorded yet.')),
+      h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'How this is tracked'),
+        h('div', { class: 'footnote', style: { 'margin-top': '10px' } },
+          h('p', {}, `The dashboard reads the printer’s lifetime page counter every ${Math.round(t.poll_interval / 60)} minutes and notes when it changes, so prints from any device are counted and times are accurate to about that interval.`),
+          h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list.'),
+          t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter check ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
+          d.host_state.configured && (d.host_state.error
+            ? h('p', {}, `Host timer state file: ${d.host_state.error}`)
+            : h('p', {}, `Host timer last noticed the counter at ${d.host_state.count} on ${fmt.abs(d.host_state.noticed_at)} (it only checks once a day).`)))));
+  }
+
+  // ------------------------------------------------------------ confirm + print
+  const dialog = h('dialog', { 'aria-labelledby': 'mt-confirm-title' },
+    h('h3', { id: 'mt-confirm-title' }, 'Print a nozzle check?'),
+    h('p', {}, 'This prints one small test page with cyan, magenta, yellow and black bars. Use it to see whether any nozzle is clogged.'),
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'button', onclick: doPrint }, icon('droplet', 16), 'Print')));
+  root.append(dialog);
+
+  async function doPrint() {
+    dialog.close();
+    printBtn.disabled = true;
+    const res = await api('/maintenance/nozzle/print', { method: 'POST' });
+    if (res.ok) {
+      toast(`Nozzle check sent to the printer (job #${res.data.job_id}).`);
+    } else {
+      toast(res.error.message || 'Could not print.', 'bad');
+      if (res.status === 429) retryAt = Date.now() + (res.retryAfter || 60) * 1000;
+    }
+    printBtn.disabled = false;
+    refreshAll();
+    // the page counter moves a few seconds after the job is accepted
+    [4000, 15000, 40000].forEach((ms) => setTimeout(refreshAll, ms));
+  }
+
+  function refreshAll() {
+    load(nozzleCard, '/maintenance/nozzle', renderNozzle);
+    load(printerCard, '/maintenance/printer', renderPrinter);
+    load(queueCard, '/maintenance/queue', renderQueue);
+  }
+
+  kit.poll(() => load(printerCard, '/maintenance/printer', renderPrinter), 30_000);
+  kit.poll(() => load(queueCard, '/maintenance/queue', renderQueue), 30_000);
+  kit.poll(() => load(nozzleCard, '/maintenance/nozzle', renderNozzle), 60_000);
+}

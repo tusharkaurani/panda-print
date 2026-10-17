@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 from pathlib import Path
 from typing import Callable
@@ -31,9 +32,12 @@ def create_app(settings: Settings | None = None, printer: PrinterBackend | None 
     app.json.sort_keys = False  # type: ignore[attr-defined]
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
-    db = Database(settings.db_path)
+    ephemeral = settings.mock and not settings.mock_persist
+    db = Database(":memory:" if ephemeral else settings.db_path)
     ctx = AppContext(settings, db, printer or make_backend(settings), clock)
-    csrf = csrf_mod.Csrf(csrf_mod.load_secret(settings.secret_key, settings.data_dir), settings.trusted_origins)
+    secret = secrets.token_hex(32).encode() if ephemeral and not settings.secret_key \
+        else csrf_mod.load_secret(settings.secret_key, settings.data_dir)
+    csrf = csrf_mod.Csrf(secret, settings.trusted_origins)
     links = LinksConfig(settings.links_file, settings.logos_dir, ROOT / "defaults" / "links.yml")
     slots = discover(ctx, only_tools)
     app.extensions["panda"] = {"ctx": ctx, "slots": slots, "links": links, "csrf": csrf}
