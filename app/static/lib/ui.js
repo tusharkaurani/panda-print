@@ -22,14 +22,14 @@ export function errorBox(error, onRetry) {
 }
 
 // A titled card whose body can be swapped, with a refresh button and a "busy" state.
-export function card({ title, iconName, wide = false, onRefresh }) {
+export function card({ title, iconName, wide = false, onRefresh, actions = [] }) {
   const badgeSlot = h('span');
   const updated = h('span', { class: 'updated' });
   const heading = h('h3', {}, iconName && icon(iconName, 18), h('span', { class: 'card-title' }, title));
   const body = h('div', { class: 'card-body' }, skeleton());
   const refresh = onRefresh && h('button', { class: 'refresh', type: 'button', 'aria-label': `Refresh ${title}`, title: 'Refresh', onclick: onRefresh }, icon('refresh', 16));
   const el = h('section', { class: `card${wide ? ' wide' : ''}`, 'aria-label': title },
-    h('div', { class: 'card-head' }, heading, badgeSlot, updated, refresh),
+    h('div', { class: 'card-head' }, heading, badgeSlot, updated, refresh, ...actions),  // actions: buttons in the top-right corner
     body);
   return {
     el, body,

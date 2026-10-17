@@ -1,6 +1,7 @@
 // Nozzle Care tab: when the printer last printed, the history of checks, and the Automation settings that
 // drive how checks are tracked. This is the file to extend with more nozzle-check features.
 import { createPagesDialog } from './pages.js';
+import { drawSheets } from './preview.js';
 import { cardLoader } from './shared.js';
 
 // who sent a nozzle check: the Run now button, this app's schedule, or an older timer seen in the CUPS history
@@ -12,11 +13,17 @@ export function mount(root, kit) {
   const { h, icon, fmt, ui, api, toast } = kit;
   const { base, load } = cardLoader(kit);
 
-  const nozzleCard = ui.card({ title: 'Nozzle care', iconName: 'droplet', wide: true, onRefresh: () => refresh() });
+  // ------------------------------------------------------------ Print now (top right of the card)
+  // The button and its dialog are created once; the card bodies are rebuilt on every refresh.
+  let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
+  let rotation = null;  // this printer's pages and what prints next (Service.rotation_status)
+  const runLabel = h('span', {}, 'Print now');
+  const runBtn = h('button', { class: 'btn small', type: 'button', title: 'Show the page that will print, then confirm', onclick: () => openRun() }, icon('droplet', 15), runLabel);
+
+  const nozzleCard = ui.card({ title: 'Nozzle care', iconName: 'droplet', wide: true, onRefresh: () => refresh(), actions: [runBtn] });
   const autoCard = ui.card({ title: 'Automation', iconName: 'clock', wide: true, onRefresh: () => refreshAuto() });
   root.append(h('div', { class: 'grid' }, nozzleCard.el, autoCard.el));
   const refresh = () => load(nozzleCard, 'nozzle', renderNozzle);
-  let rotation = null;  // this printer's pages and what prints next (Service.rotation_status)
   async function refreshAuto() {
     const rot = await api(`${base()}/rotation`);
     rotation = rot.ok ? rot.data : null;
@@ -25,30 +32,44 @@ export function mount(root, kit) {
   const pagesDialog = createPagesDialog(kit, { base, onChange: () => { refreshAuto(); refresh(); } });
   root.append(pagesDialog.dialog);
 
-  // ------------------------------------------------------------ run a check now (to test the real thing)
-  // The button and its dialog are created once; the card body they sit in is rebuilt on every save.
-  let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
-  const runBtn = h('button', { class: 'btn', type: 'button', title: 'Print one page on this printer right now (asks you to confirm first)', onclick: () => dialog.showModal() }, icon('droplet', 16), 'Print now');
-  const runHint = h('span', { class: 'hint' });
-
   function paintRun() {
     const left = Math.ceil((waitUntil - Date.now()) / 1000);
     runBtn.disabled = left > 0;
-    runHint.textContent = left > 0
-      ? `You can print again in ${fmt.countdown(left)}.`
-      : rotation?.rotate
-        ? `Prints “${rotation.next.name}” now. The idle clock starts over.`
-        : 'Prints the test page now. The idle clock starts over.';
+    runLabel.textContent = left > 0 ? `Print again in ${fmt.countdown(left)}` : 'Print now';
+    runBtn.title = left > 0 ? 'Printing is limited so a page can’t be sent twice by accident. Try again shortly.'
+      : 'Shows the page that will print, then asks you to confirm. The idle clock starts over.';
   }
   setInterval(() => { if (waitUntil > Date.now()) paintRun(); }, 1000);
 
-  const dialog = h('dialog', { 'aria-labelledby': 'mt-run-title' },
-    h('h3', { id: 'mt-run-title' }, 'Print now?'),
-    h('p', {}, 'This sends one page to the printer. It uses a sheet of paper and a little ink.'),
+  // what the next print will be: the next page in the rotation, or the standard page
+  const STANDARD = { id: 'standard', standard: true, name: 'Standard test page', mime: 'application/postscript', pages: 1, thumb: false };
+  const nextPage = () => (rotation?.rotate && rotation.items.find((i) => i.id === rotation.next.id)) || STANDARD;
+
+  const runSheets = h('div', { class: 'sheets run-sheets' });
+  const runName = h('p', { class: 'sub' });
+  let runToken = 0;  // a newer open replaces a drawing that is still going
+  const dialog = h('dialog', { class: 'wide run', 'aria-labelledby': 'mt-run-title' },
+    h('h3', { id: 'mt-run-title' }, 'Print this page now?'),
+    runName, runSheets,
+    h('p', { class: 'hint' }, 'It uses a sheet of paper and a little ink.'),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', type: 'button', title: 'Close without printing', onclick: () => dialog.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', type: 'button', title: 'Send the page to the printer now', onclick: runNow }, icon('droplet', 16), 'Print')));
+      h('button', { class: 'btn primary', type: 'button', title: 'Send this page to the printer now', onclick: runNow }, icon('droplet', 16), 'Print')));
+  dialog.addEventListener('close', () => { if (dialog.open) return; runToken += 1; runSheets.replaceChildren(); });
   root.append(dialog);
+
+  async function openRun() {
+    const rot = await api(`${base()}/rotation`);  // the next page may have moved since the card was drawn
+    if (rot.ok) rotation = rot.data;
+    const item = nextPage();
+    runToken += 1;
+    const mine = runToken;
+    runName.textContent = item.standard
+      ? `${rotation?.rotate ? 'Next in the rotation: the' : 'The'} standard test page, four colour bars (cyan, magenta, yellow, black).`
+      : `Next in the rotation: “${item.name}” · ${item.pages} page${item.pages === 1 ? '' : 's'}`;
+    dialog.showModal();
+    drawSheets(kit, item, runSheets, { alive: () => mine === runToken, width: Math.min(250, dialog.clientWidth - 80), maxPages: 3 });
+  }
 
   async function runNow() {
     dialog.close();
@@ -211,8 +232,7 @@ export function mount(root, kit) {
         h('div', { class: 'actions left' },
           saveBtn,
           h('button', { class: 'btn', type: 'button', disabled: !custom, title: 'Put every setting back to its default (the automatic-print switch stays as it is)', onclick: reset }, 'Reset to defaults'),
-          custom && h('span', { class: 'sub' }, `${d.customised.length} setting${d.customised.length === 1 ? '' : 's'} changed from the defaults.`))),
-      h('div', { class: 'runnow' }, runBtn, runHint));
+          custom && h('span', { class: 'sub' }, `${d.customised.length} setting${d.customised.length === 1 ? '' : 's'} changed from the defaults.`))));
     paintRun();
   }
 

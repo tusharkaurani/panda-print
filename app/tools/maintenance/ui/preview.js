@@ -90,6 +90,46 @@ async function drawThumb(file) {
   }
 }
 
+// ------------------------------------------------------------------ drawing a page's sheets
+
+const sheetOf = (kit, ...kids) => kit.h('div', { class: 'sheet' }, ...kids);
+const noteOf = (kit, text) => kit.h('p', { class: 'empty' }, text);
+
+// Draws what a library page (or the standard page) looks like on paper into `sheets` (a container element).
+// `alive()` says whether this drawing is still wanted; `width` is the sheet width in CSS pixels.
+export async function drawSheets(kit, item, sheets, { alive = () => true, width = 420, maxPages = 12 } = {}) {
+  const { h } = kit;
+  sheets.replaceChildren();
+  if (item.standard) { sheets.append(sheetOf(kit, standardSvg(kit))); return; }
+  const file = `/api/maintenance/pages/${item.id}/file`;
+  if (item.mime.startsWith('image/')) { sheets.append(sheetOf(kit, h('img', { src: file, alt: item.name }))); return; }
+  sheets.append(noteOf(kit, 'Drawing the pages…'));
+  try {
+    const res = await fetch(file, { credentials: 'same-origin' });
+    const doc = await openPdf(new Uint8Array(await res.arrayBuffer()));
+    if (!alive()) return;
+    sheets.replaceChildren();
+    const count = Math.min(doc.numPages, maxPages);  // plenty to see what it is; keeps a long book quick
+    const ratio = window.devicePixelRatio || 1;
+    for (let n = 1; n <= count && alive(); n++) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const cssWidth = Math.max(160, Math.min(560, width));
+      const view = page.getViewport({ scale: (cssWidth / base.width) * ratio });
+      const canvas = h('canvas', { 'aria-label': `Page ${n} of ${item.pages}` });
+      canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height);
+      canvas.style.setProperty('width', `${cssWidth}px`);
+      sheets.append(sheetOf(kit, canvas));
+      await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: view }).promise;
+    }
+    if (doc.numPages > count && alive()) sheets.append(noteOf(kit, `…and ${doc.numPages - count} more pages.`));
+    doc.loadingTask.destroy();
+  } catch (e) {
+    console.warn('preview failed', e);
+    if (alive()) sheets.replaceChildren(noteOf(kit, 'This PDF could not be drawn here. You can still download it to look at it.'));
+  }
+}
+
 // ------------------------------------------------------------------ the Preview dialog
 
 export function createPreview(kit) {
@@ -104,37 +144,6 @@ export function createPreview(kit) {
   let token = 0;  // a newer preview replaces one that is still drawing
   dialog.addEventListener('close', () => { if (dialog.open) return; token += 1; sheets.replaceChildren(); });  // (a close event can arrive after a reopen)
 
-  const sheet = (...kids) => h('div', { class: 'sheet' }, ...kids);
-  const note = (text) => h('p', { class: 'empty' }, text);
-
-  async function showPdf(item, mine) {
-    sheets.replaceChildren(note('Drawing the pages…'));
-    try {
-      const res = await fetch(`/api/maintenance/pages/${item.id}/file`, { credentials: 'same-origin' });
-      const doc = await openPdf(new Uint8Array(await res.arrayBuffer()));
-      if (mine !== token) return;
-      sheets.replaceChildren();
-      const count = Math.min(doc.numPages, 12);  // plenty to see what it is; keeps a long book quick
-      const ratio = window.devicePixelRatio || 1;
-      for (let n = 1; n <= count && mine === token; n++) {
-        const page = await doc.getPage(n);
-        const base = page.getViewport({ scale: 1 });
-        const cssWidth = Math.min(560, dialog.clientWidth - 80);
-        const view = page.getViewport({ scale: (cssWidth / base.width) * ratio });
-        const canvas = h('canvas', { 'aria-label': `Page ${n} of ${item.pages}` });
-        canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height);
-        canvas.style.setProperty('width', `${cssWidth}px`);
-        sheets.append(sheet(canvas));
-        await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: view }).promise;
-      }
-      if (doc.numPages > count && mine === token) sheets.append(note(`…and ${doc.numPages - count} more pages.`));
-      doc.loadingTask.destroy();
-    } catch (e) {
-      console.warn('preview failed', e);
-      if (mine === token) sheets.replaceChildren(note('This PDF could not be drawn here. You can still download it to look at it.'));
-    }
-  }
-
   return {
     dialog,
     open(item) {
@@ -148,11 +157,8 @@ export function createPreview(kit) {
         download.setAttribute('href', `/api/maintenance/pages/${item.id}/file?download=1`);
         download.setAttribute('download', '');
       }
-      sheets.replaceChildren();
-      if (item.standard) sheets.append(sheet(standardSvg(kit)));
-      else if (item.mime.startsWith('image/')) sheets.append(sheet(h('img', { src: `/api/maintenance/pages/${item.id}/file`, alt: item.name })));
       dialog.showModal();
-      if (item.mime === 'application/pdf') showPdf(item, mine);
+      drawSheets(kit, item, sheets, { alive: () => mine === token, width: dialog.clientWidth - 80 });
     },
   };
 }
