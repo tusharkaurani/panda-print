@@ -7,11 +7,14 @@ import pytest
 from app.printer import ipp
 
 from app.factory import create_app
-from app.printer.mock import MockAccess
+from app.tools.maintenance.store import Store
+from fakes import FakeAccess, seed_history
 from app.settings import Settings
 
 T0 = 1_800_000_000.0
-PID = "brother-dcp-t730dw"  # id of the printer that mock mode adds on start-up
+PID = "brother-dcp-t730dw"  # id of the default test printer
+DEFAULT_PRINTER = {"name": "Brother DCP-T730DW", "ip": "192.168.1.18", "cups_queue": "T730",
+                   "ipp_url": "ipp://192.168.1.18/ipp/print"}
 
 
 class Clock:
@@ -33,20 +36,29 @@ def clock():
 @pytest.fixture
 def settings(tmp_path):
     (tmp_path / "config").mkdir()
-    return Settings(mock=True, data_dir=tmp_path / "data", config_dir=tmp_path / "config",
+    return Settings(data_dir=tmp_path / "data", config_dir=tmp_path / "config",
                     host_state_file=tmp_path / "host-state" / "state")
+
+
+def add_default_printer(app, clock, seed=True):
+    """Register the default fake printer and (optionally) give it a believable past."""
+    ctx = app.extensions["panda"]["ctx"]
+    printer = ctx.printers.add(DEFAULT_PRINTER)
+    if seed:
+        seed_history(Store(ctx.db, printer.id), clock())
+    return ctx.backend_for(printer)
 
 
 @pytest.fixture
 def make_app(settings, clock):
-    """make_app(**setting_overrides) -> (flask app, backend of the mock printer)"""
+    """make_app(fail=(), printer=True, **setting_overrides) -> (flask app, fake backend of the default printer).
+    `fail` lists sources ("printer", "snmp", "cups") that should raise; printer=False starts with no printers."""
     import dataclasses
 
-    def _make(**overrides):
+    def _make(fail=(), printer=True, **overrides):
         s = dataclasses.replace(settings, **overrides) if overrides else settings
-        app = create_app(s, access=MockAccess(s, clock, delay=0), start_background=False, clock=clock)
-        ctx = app.extensions["panda"]["ctx"]
-        return app, ctx.backend_for(ctx.printers.get(PID))
+        app = create_app(s, access=FakeAccess(s, clock, fail=fail), start_background=False, clock=clock)
+        return app, (add_default_printer(app, clock) if printer else None)
 
     return _make
 

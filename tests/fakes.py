@@ -1,4 +1,5 @@
-"""Fake printer + CUPS with realistic data, for MOCK=1 and for tests.
+"""Test doubles: a fake printer + CUPS + network with realistic data. Used by the tests only;
+nothing here ships in the app or touches a real device.
 
 It behaves like a tiny printer: submitting a nozzle check makes a CUPS job, the
 printer shows "processing" for a few seconds, then the lifetime counter goes up
@@ -14,6 +15,7 @@ from app.core.errors import SourceError
 from app.core.printers import Printer, validate
 from app.printer import Attrs
 from app.settings import Settings
+from app.tools.maintenance.store import Store
 
 DAY = 86400.0
 PRINT_SECONDS = 8.0
@@ -33,8 +35,8 @@ HISTORY = [
 ]
 FIRST_JOB_ID = 31
 
-# the pretend network: what the setup wizard can "find" in mock mode
-MOCK_DEVICES = {
+# the pretend network: what the setup wizard can "find"
+FAKE_DEVICES = {
     "192.168.1.18": {"model": "Brother DCP-T730DW", "queue": "T730", "rp": "ipp/print"},
     "192.168.1.23": {"model": "HP ENVY 6000 series", "queue": "HP_ENVY", "rp": "ipp/print"},
 }
@@ -51,10 +53,12 @@ def history_events(now: float) -> list[dict]:
     return events
 
 
-class MockPrinter:
-    def __init__(self, settings: Settings, printer: Printer, clock: Callable[[], float] = time.time):
+class FakePrinter:
+    def __init__(self, settings: Settings, printer: Printer, clock: Callable[[], float] = time.time,
+                 fail: tuple[str, ...] = ()):
         self.s, self.p = settings, printer
-        self.model = MOCK_DEVICES.get(printer.ip, {}).get("model", "Brother DCP-T730DW")
+        self.fail = tuple(fail)  # any of "printer", "snmp", "cups": that source raises SourceError
+        self.model = FAKE_DEVICES.get(printer.ip, {}).get("model", "Brother DCP-T730DW")
         self.clock = clock
         self._lock = threading.Lock()
         now = clock()
@@ -81,8 +85,8 @@ class MockPrinter:
         return job
 
     def _fail(self, what: str, source: str, message: str) -> None:
-        if what in self.s.mock_fail:
-            raise SourceError(source, message, "This is a simulated failure (MOCK_FAIL).")
+        if what in self.fail:
+            raise SourceError(source, message, "This is a simulated failure.")
 
     def _need_queue(self) -> None:
         if not self.p.cups_queue:
@@ -160,26 +164,26 @@ class MockPrinter:
             return job_id
 
 
-class MockAccess:
-    """Mock mode's network: two pretend printers can be found, everything else times out."""
+class FakeAccess:
+    """A pretend network: two printers can be found, every other address times out."""
 
-    def __init__(self, settings: Settings, clock: Callable[[], float] | None = None, delay: float = 1.0):
-        self.s, self.clock = settings, clock or time.time
-        self.delay = delay  # a real scan or probe takes a moment; this lets the UI show its progress states
-        self._backends: dict[str, tuple[Printer, MockPrinter]] = {}
+    def __init__(self, settings: Settings, clock: Callable[[], float] | None = None, delay: float = 0.0,
+                 fail: tuple[str, ...] = ()):
+        self.s, self.clock, self.delay, self.fail = settings, clock or time.time, delay, tuple(fail)
+        self._backends: dict[str, tuple[Printer, FakePrinter]] = {}
 
-    def backend(self, printer: Printer) -> MockPrinter:
+    def backend(self, printer: Printer) -> FakePrinter:
         cached = self._backends.get(printer.id)
         if cached and cached[0] == printer:
             return cached[1]
-        backend = MockPrinter(self.s, printer, self.clock)
+        backend = FakePrinter(self.s, printer, self.clock, self.fail)
         self._backends[printer.id] = (printer, backend)
         return backend
 
     def discover(self, cups_url: str | None = None) -> dict:
         time.sleep(self.delay * 0.8)
         found = []
-        for ip, dev in MOCK_DEVICES.items():
+        for ip, dev in FAKE_DEVICES.items():
             c = {"name": dev["model"], "model": dev["model"], "ip": ip, "ipp_url": f"ipp://{ip}/{dev['rp']}"}
             if dev["queue"] == "T730":  # only the Brother is already set up in CUPS
                 c.update(queue=dev["queue"], cups_url=cups_url or self.s.cups_url, sources=["cups", "mdns"],
@@ -195,9 +199,9 @@ class MockAccess:
         if errors:
             return {"ok": False, "errors": errors}
         time.sleep(self.delay * 0.5)
-        dev = MOCK_DEVICES.get(clean["ip"])
+        dev = FAKE_DEVICES.get(clean["ip"])
         queues = [{"name": d["queue"], "info": d["model"], "device_uri": f"ipp://{ip}/{d['rp']}"}
-                  for ip, d in MOCK_DEVICES.items() if d["queue"] == "T730"]
+                  for ip, d in FAKE_DEVICES.items() if d["queue"] == "T730"]
         same = [q["name"] for q in queues if clean["ip"] in q["device_uri"]]
         suggested = clean["cups_queue"] if clean["cups_queue"] in [q["name"] for q in queues] else (same[0] if same else "")
         if dev:
@@ -216,3 +220,24 @@ class MockAccess:
                              "hint": "Pick one of the queues below."}
         return {"ok": True, "ipp": ipp, "snmp": snmp, "cups": cups,
                 "suggested_name": ipp.get("name") or "", "ipp_url": ipp.get("ipp_url", "")}
+
+
+def seed_history(store: Store, now: float) -> None:
+    """Give a fresh maintenance store the scripted past (the fake CUPS has the same jobs).
+    Host-timer checks are not inserted: the tracker imports them from the fake job list."""
+    if store.activity_count() or store.get("last_count") is not None:
+        return
+    events = history_events(now)
+    first_ts = events[0]["ts"]
+    store.put("first_seen_ts", first_ts)
+    store.put("last_count", FINAL_COUNT)
+    store.put("last_count_ts", now)
+    store.add_activity(first_ts - 3600, 0, events[0]["count_after"] - events[0]["pages"], "baseline",
+                       note="Test data")
+    previous = first_ts - 3600
+    for ev in events:
+        kind = "external" if ev["kind"] == "external" else "nozzle"
+        store.add_activity(ev["ts"], ev["pages"], ev["count_after"], kind, since_ts=previous)
+        previous = ev["ts"]
+        if ev["kind"] == "manual":
+            store.add_check(ev["ts"], "manual", "submitted", ev["job_id"], claimed_ts=ev["ts"])

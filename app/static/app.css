@@ -68,7 +68,6 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 700;
   font-size: 18px; letter-spacing: -.01em; margin-right: auto; }
 .brand img { display: block; }
-.pill { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--info-bg); color: var(--info); }
 .icon-btn { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
 .icon-btn:hover { background: var(--surface-2); }

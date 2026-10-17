@@ -13,14 +13,10 @@ remove printers later. Everything else (ports, paths, timeouts) is an environmen
 - Light and dark themes (follows the OS, with a toggle), mobile friendly.
 - One port (default 8095). No login: it expects an SSO reverse proxy in front. State-changing requests are CSRF-protected and printing is rate-limited.
 
-## Try it on your laptop (mock mode)
-
-`MOCK=1` replaces the printers and CUPS with fakes that have realistic data, so the whole UI works offline. It
-starts with one demo printer, and the wizard can "find" two pretend ones (192.168.1.18 and 192.168.1.23).
-Printing a nozzle check in mock mode creates a fake job and bumps the fake page counter a few seconds later.
+## Run it locally
 
 ```bash
-make dev        # creates .venv on first run, serves http://localhost:8095
+make dev        # creates .venv on first run, serves http://localhost:8095 (data in .local/data)
 make test       # runs the test suite
 ```
 
@@ -28,12 +24,15 @@ Without `make`:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-MOCK=1 CONFIG_DIR=config .venv/bin/python -m app
+DATA_DIR=.local/data CONFIG_DIR=config .venv/bin/python -m app
 ```
 
-`MOCK_SETUP=1` starts with no printers so you can walk through the first-run wizard. `MOCK_FAIL=printer,snmp,cups`
-makes those fake sources fail so you can see the error cards. Mock data lives in memory and is regenerated on every
-start (`MOCK_PERSIST=1` keeps it in `DATA_DIR`).
+It talks to your real network: the wizard discovers printers on the LAN and the cards read live data. Opening the
+dashboard, the wizard and the Printers page only ever *read* from printers; the only thing that prints is the
+"Print nozzle check now" button. To start over, delete `.local/data`.
+
+The tests never touch a real device or print anything: they use fakes in `tests/fakes.py` (a fake printer, CUPS
+server and network, with realistic data).
 
 ## Setting up printers
 
@@ -137,7 +136,7 @@ app/tools/scan/
 ```
 
 **Backend** (`__init__.py`). `create(ctx)` receives `ctx.settings`, `ctx.db`, `ctx.printers` (the printer registry),
-`ctx.backend_for(printer)` (IPP/SNMP/CUPS access for one printer, or its mock) and `ctx.clock`, and returns a `Tool`:
+`ctx.backend_for(printer)` (IPP/SNMP/CUPS access for one printer) and `ctx.clock`, and returns a `Tool`:
 
 ```python
 from pathlib import Path
@@ -171,7 +170,7 @@ def create(ctx):
 `toast()`, `poll(fn, ms)` (runs while the tool is on screen), `toolId`, and `printer` (`printer.current` is the selected printer, `printer.subscribe(fn)` fires when the selection or its settings change; reload your cards there). See `app/tools/maintenance/ui/ui.js` for a full example.
 When there is more than one tool the dashboard shows tabs (`#<id>` in the URL). Icons come from `app/static/lib/icons.js`; add a path there if you need a new one.
 
-**Tests.** The `make_app` fixture in `tests/conftest.py` builds the app with the mock printer and a controllable clock.
+**Tests.** The `make_app` fixture in `tests/conftest.py` builds the app with a fake printer (`tests/fakes.py`) and a controllable clock.
 
 ## Project layout
 
@@ -179,12 +178,12 @@ When there is more than one tool the dashboard shows tabs (`#<id>` in the URL). 
 app/
   factory.py            wiring: settings, db, security, tool discovery
   core/                 db, csrf, rate-limit rule, links.yml loader, tool registry, printer registry + API, errors
-  printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, mock.py, discovery.py (wizard: find + probe)
+  printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, discovery.py (wizard: find + probe)
   static/               index.html, app.css, app.js, printers.js (wizard + admin), lib/ (dom, api, ui kit, icons)
   tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/
   tools/_template/      copy me
 config/                 links.yml (starter) and logos/
-tests/                  pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)
+tests/                  fakes.py (fake printer/CUPS/network) and pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)
 Dockerfile  compose.example.yml  .github/workflows/build.yml
 ```
 

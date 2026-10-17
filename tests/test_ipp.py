@@ -1,4 +1,3 @@
-import dataclasses
 import struct
 import pytest
 

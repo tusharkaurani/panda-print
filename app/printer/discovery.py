@@ -25,6 +25,12 @@ def timeout_for(settings: Settings) -> float:
     return min(settings.net_timeout, PROBE_TIMEOUT)
 
 
+def _generic(model: str) -> bool:
+    """CUPS describes driverless queues with filler like 'Printer - IPP Everywhere'."""
+    m = model.lower()
+    return not m or "ipp everywhere" in m or m.startswith("generic") or m == "local raw printer"
+
+
 def device_host(device_uri: str) -> str:
     """The IP/host in a CUPS device URI (ipp://, socket://, lpd://...), or '' (usb:, dnssd names...)."""
     parts = urlsplit(device_uri)
@@ -47,7 +53,8 @@ def cups_candidates(settings: Settings, cups_url: str) -> tuple[list[dict], str 
     for q in queues:
         device = str(_first(q, "device-uri", ""))
         ip = device_host(device)
-        model = _first(q, "printer-make-and-model") or _first(q, "printer-info") or ""
+        model = str(_first(q, "printer-make-and-model") or "")
+        model = "" if _generic(model) else model
         if not ip:  # usb:, dnssd://... : nothing we can talk to over the network
             continue
         out.append({"source": "cups", "name": _first(q, "printer-info") or _first(q, "printer-name"),
@@ -69,7 +76,7 @@ def discover(settings: Settings, cups_url: str | None = None) -> dict:
             m = merged[c["ip"]]
             m["sources"].append("mdns")
             m["ipp_url"] = m["ipp_url"] or c["ipp_url"]
-            m["model"] = m["model"] or c["model"]
+            m["model"] = c["model"] or m["model"]  # the printer's own name beats CUPS's driver text
         else:
             merged[c["ip"]] = {**c, "sources": ["mdns"]}
     notes = [n for n in (cups_note, net_note) if n]

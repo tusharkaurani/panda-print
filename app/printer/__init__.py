@@ -1,5 +1,5 @@
 """Printer I/O behind one interface, so the dashboard runs the same code against
-the real printer + CUPS (LivePrinter) or against fake data (MockPrinter, MOCK=1).
+the real printer + CUPS (LivePrinter). Tests substitute fakes (tests/fakes.py).
 
 All methods raise app.core.errors.SourceError with a message fit for the UI.
 IPP attributes come back as {name: [values]} exactly as the printer sent them.
@@ -32,7 +32,7 @@ class PrinterBackend(Protocol):
 
 
 class PrinterAccess(Protocol):
-    """Everything that touches the network on behalf of printers (live or mock)."""
+    """Everything that touches the network on behalf of printers (the real one, or a fake in tests)."""
 
     def backend(self, printer: Printer) -> PrinterBackend: ...
 
@@ -43,9 +43,6 @@ class PrinterAccess(Protocol):
         """Check a not-yet-saved printer config: IPP, SNMP and CUPS results."""
 
 
-def make_access(settings: Settings, clock=None) -> PrinterAccess:
-    if settings.mock:
-        from app.printer.mock import MockAccess
-        return MockAccess(settings, clock)
+def make_access(settings: Settings) -> PrinterAccess:
     from app.printer.access import LiveAccess
     return LiveAccess(settings)

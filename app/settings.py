@@ -29,14 +29,6 @@ class Settings:
     # --- server
     host: str = "0.0.0.0"
     port: int = 8095
-    mock: bool = False
-    # MOCK_FAIL=printer,snmp,cups makes those mock sources fail, to see the error cards
-    mock_fail: tuple[str, ...] = ()
-    # mock data is regenerated relative to "now" on every start, so by default MOCK=1
-    # keeps its database in memory; MOCK_PERSIST=1 stores it in DATA_DIR like normal
-    mock_persist: bool = False
-    # MOCK_SETUP=1 starts mock mode with no printers, to try the setup wizard
-    mock_setup: bool = False
     log_level: str = "INFO"
     data_dir: Path = Path("data")
     config_dir: Path = Path("config")
@@ -90,10 +82,6 @@ class Settings:
         return cls(
             host=e.get("HOST", d.host),
             port=int(_num(e.get("PORT"), d.port)),
-            mock=_bool(e.get("MOCK")),
-            mock_persist=_bool(e.get("MOCK_PERSIST")),
-            mock_setup=_bool(e.get("MOCK_SETUP")),
-            mock_fail=tuple(x.strip() for x in e.get("MOCK_FAIL", "").split(",") if x.strip()),
             log_level=e.get("LOG_LEVEL", d.log_level).upper(),
             data_dir=Path(e.get("DATA_DIR", str(d.data_dir))),
             config_dir=Path(e.get("CONFIG_DIR", str(d.config_dir))),

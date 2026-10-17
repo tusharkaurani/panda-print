@@ -25,6 +25,8 @@ JOB_ATTRS = [
     "job-id", "job-name", "job-state", "job-state-reasons", "job-originating-user-name",
     "time-at-creation", "time-at-processing", "time-at-completed", "job-media-sheets-completed",
     "job-k-octets",
+    # jobs submitted with `lp` can come back with no job-name; the file name is only here
+    "document-name-supplied",
 ]
 
 

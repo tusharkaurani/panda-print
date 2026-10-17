@@ -20,5 +20,5 @@ class AppContext:
     clock: Callable[[], float] = field(default=time.time)
 
     def backend_for(self, printer: Printer) -> PrinterBackend:
-        """IPP/SNMP/CUPS access for one printer (or its mock)."""
+        """IPP/SNMP/CUPS access for one printer ."""
         return self.access.backend(printer)

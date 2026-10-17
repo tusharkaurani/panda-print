@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from app.core.context import AppContext
 from app.core.printers import Printer
-from app.tools.maintenance import mock_seed
 from app.tools.maintenance.service import Service
 from app.tools.maintenance.store import Store
 from app.tools.maintenance.tracker import Tracker
@@ -44,8 +43,6 @@ class Runtimes:
         backend = ctx.backend_for(printer)
         store = Store(ctx.db, printer.id)
         tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file)
-        if ctx.settings.mock:
-            mock_seed.seed(store, ctx.clock())
         return Runtime(printer, store, tracker, Service(ctx, backend, store, tracker))
 
     def all(self) -> list[Runtime]:

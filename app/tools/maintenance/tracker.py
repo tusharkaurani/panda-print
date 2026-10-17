@@ -19,7 +19,7 @@ from app.core.errors import SourceError
 from app.printer import Attrs
 from app.settings import Settings
 from app.tools.maintenance import idle
-from app.tools.maintenance.normalize import first
+from app.tools.maintenance.normalize import first, job_name
 from app.tools.maintenance.store import Store
 
 log = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class Tracker:
     def __init__(self, settings: Settings, store: Store, printer, clock, host_state_file: str = ""):
         self.s, self.store, self.printer, self.clock = settings, store, printer, clock
         self.host_state_file = Path(host_state_file) if host_state_file else None
+        self._newest_document: float | None = None  # newest finished non-nozzle job seen in CUPS
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ polling
@@ -47,7 +48,9 @@ class Tracker:
             now = self.clock()
             self.store.put("last_poll_ts", now)
             try:
-                self.import_host_checks(self.printer.list_jobs())
+                jobs = self.printer.list_jobs()
+                self.import_host_checks(jobs)
+                self._newest_document = self.newest_document_ts(jobs)
                 self.store.put("cups_error", None)
             except SourceError as e:
                 self.store.put("cups_error", e.message)
@@ -71,7 +74,7 @@ class Tracker:
         pattern = self.s.nozzle_job_pattern.lower()
         added = 0
         for j in jobs:
-            name = str(first(j, "job-name", ""))
+            name = job_name(j)
             user = str(first(j, "job-originating-user-name", ""))
             if pattern not in name.lower():
                 continue
@@ -90,6 +93,17 @@ class Tracker:
             if self.store.add_check(float(ts), "host", status, int(job_id), msg, cups_key=f"{job_id}:{created}"):
                 added += 1
         return added
+
+    def is_nozzle_job(self, job: Attrs) -> bool:
+        name = job_name(job).lower()
+        return self.s.nozzle_job_pattern.lower() in name or APP_JOB_MARKER in name
+
+    def newest_document_ts(self, jobs: list[Attrs]) -> float | None:
+        """When the newest finished job that is not a nozzle check completed (None if CUPS has none)."""
+        times = [first(j, "time-at-completed") or first(j, "time-at-creation") for j in jobs
+                 if first(j, "job-state") == JOB_COMPLETED and not self.is_nozzle_job(j)]
+        times = [float(t) for t in times if t]
+        return max(times) if times else None
 
     # ------------------------------------------------------------ counter
     def host_state(self) -> tuple[idle.HostState | None, str | None]:
@@ -131,14 +145,19 @@ class Tracker:
         log.info("counter %s -> %s (%s nozzle, %s other)", last, count, nozzle, other)
 
     def _first_sample(self, count: int, now: float) -> None:
-        """First ever read: start the idle clock from the host timer's state if it
-        agrees with the counter, otherwise from now."""
+        """First ever read: start the idle clock from the host timer's state if it agrees with
+        the counter, else from the newest finished job in CUPS, else from now."""
         host, _ = self.host_state()
-        if host and host.count == count:
-            ts, note = host.changed_at, "From the host timer's state file (can lag the real print by a day)"
-        else:
-            ts, note = now, "First reading; earlier prints are unknown"
         self.store.put("first_seen_ts", now)
         self.store.put("last_count", count)
         self.store.put("last_count_ts", now)
+        if host and host.count == count:
+            ts, note = host.changed_at, "From the host timer's state file (can lag the real print by a day)"
+        elif self._newest_document is not None and self._newest_document <= now:
+            # CUPS remembers real prints: better than starting the clock at "now"
+            self.store.add_activity(self._newest_document, 0, count, "external",
+                                    note="Newest finished job in CUPS")
+            return
+        else:
+            ts, note = now, "First reading; earlier prints are unknown"
         self.store.add_activity(ts, 0, count, "baseline", note=note)

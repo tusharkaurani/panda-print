@@ -1,12 +1,9 @@
-import dataclasses
-
 import pytest
 
 from app.core.db import Database
 from app.core.printers import PrinterRegistry, ValidationError, clean_host, validate
 from app.factory import create_app, seed_printers
 from app.printer import discovery
-from app.printer.mock import MockAccess
 from app.settings import Settings
 from conftest import PID, csrf_headers
 
@@ -107,9 +104,8 @@ def test_no_env_means_no_printer_and_bad_env_does_not_crash(tmp_path):
     assert len(r) == 0
 
 
-def test_mock_setup_starts_empty(settings, clock):
-    s = dataclasses.replace(settings, mock_setup=True)
-    app = create_app(s, access=MockAccess(s, clock, delay=0), start_background=False, clock=clock)
+def test_starts_with_no_printers_until_one_is_added(make_app):
+    app, _ = make_app(printer=False)
     assert app.test_client().get("/api/printers").get_json()["data"]["printers"] == []
 
 
@@ -239,3 +235,8 @@ def test_probe_of_a_dead_address_fails_fast_and_cleanly():
     out = discovery.probe(Settings(net_timeout=1), {"ip": "127.0.0.1", "ipp_url": "ipp://127.0.0.1:1/ipp/print",
                                                      "cups_url": "http://127.0.0.1:1", "snmp_port": 1})
     assert not out["ipp"]["ok"] and not out["cups"]["ok"] and out["ipp"]["error"]["message"]
+
+
+def test_generic_cups_driver_text_is_not_used_as_a_model():
+    assert discovery._generic("Printer - IPP Everywhere") and discovery._generic("Generic PostScript Printer")
+    assert discovery._generic("") and not discovery._generic("Brother DCP-T730DW")

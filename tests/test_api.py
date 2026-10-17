@@ -1,5 +1,3 @@
-import dataclasses
-
 import pytest
 
 from conftest import PID, csrf_headers
@@ -33,7 +31,7 @@ def test_printer_status_orders_inks_and_reports_counter(client):
 def test_queue_status_lists_recent_jobs_newest_first(client):
     d = client.get(f"/api/maintenance/{PID}/queue").get_json()["data"]
     ids = [j["id"] for j in d["jobs"]]
-    assert ids == sorted(ids, reverse=True) and len(ids) == 8  # all of the mock's jobs, under the limit of 10
+    assert ids == sorted(ids, reverse=True) and len(ids) == 8  # all of the fake's jobs, under the limit of 10
     assert d["name"] == "T730" and d["state"]["accepting"] is True
     assert any(j["nozzle_check"] for j in d["jobs"]) and not all(j["nozzle_check"] for j in d["jobs"])
 
@@ -58,7 +56,7 @@ def test_overdue_when_idle_longer_than_threshold(client, clock):
 
 
 def test_one_unreachable_source_does_not_break_the_other_cards(make_app):
-    app, _ = make_app(mock_fail=("printer",))
+    app, _ = make_app(fail=("printer",))
     c = app.test_client()
     printer = c.get(f"/api/maintenance/{PID}/printer")
     assert printer.status_code == 200
@@ -72,7 +70,7 @@ def test_counter_failure_keeps_last_known_value_and_reports_it(make_app, clock):
     app, printer = make_app()
     c = app.test_client()
     assert c.get(f"/api/maintenance/{PID}/printer").get_json()["data"]["counter"]["value"] == 174
-    printer.s = dataclasses.replace(printer.s, mock_fail=("snmp",))  # the printer's SNMP goes away
+    printer.fail = ("snmp",)  # the printer's SNMP goes away
     clock.advance(120)
     d = c.get(f"/api/maintenance/{PID}/printer").get_json()["data"]
     assert d["counter"]["value"] == 174 and "SNMP" in d["counter"]["error"]
@@ -81,7 +79,7 @@ def test_counter_failure_keeps_last_known_value_and_reports_it(make_app, clock):
 
 
 def test_cups_failure_shows_in_queue_card_only(make_app):
-    app, _ = make_app(mock_fail=("cups",))
+    app, _ = make_app(fail=("cups",))
     c = app.test_client()
     assert c.get(f"/api/maintenance/{PID}/queue").get_json()["ok"] is False
     assert c.get(f"/api/maintenance/{PID}/printer").get_json()["ok"] is True
@@ -149,7 +147,7 @@ def test_hourly_cap(make_app, clock):
 
 
 def test_failed_print_is_reported_and_recorded(make_app):
-    app, _ = make_app(mock_fail=("cups",))
+    app, _ = make_app(fail=("cups",))
     c = app.test_client()
     r = c.post(f"/api/maintenance/{PID}/nozzle/print", headers=csrf_headers(c))
     assert r.status_code == 502 and "CUPS" in r.get_json()["error"]["message"]
@@ -159,7 +157,7 @@ def test_failed_print_is_reported_and_recorded(make_app):
 def test_own_print_is_attributed_to_the_nozzle_check_not_to_a_person(client, clock):
     before = client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]
     client.post(f"/api/maintenance/{PID}/nozzle/print", headers=csrf_headers(client))
-    clock.advance(60)  # the mock printer finishes the page after 8s and the counter moves
+    clock.advance(60)  # the fake printer finishes the page after 8s and the counter moves
     after = client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]
     assert client.get(f"/api/maintenance/{PID}/printer").get_json()["data"]["counter"]["value"] == 175
     assert after["last_print"]["kind"] == "nozzle"

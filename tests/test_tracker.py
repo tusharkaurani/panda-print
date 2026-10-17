@@ -117,3 +117,45 @@ def test_import_host_checks_from_cups_jobs(tmp_path):
     auto = store.last_check(("auto", "host"))
     assert auto["job_id"] == 34 and auto["ts"] == 1030
     assert [r["state"] for r in store.recent_checks(10)] == ["failed", "completed"]
+
+
+def test_host_job_without_a_job_name_is_recognised_by_its_document_name(tmp_path):
+    """Real CUPS answers for jobs sent with `lp` omit job-name and the user; the file name survives."""
+    tr, store, _ = make(tmp_path)
+    jobs = [{"job-id": [2], "document-name-supplied": ["nozzle-check.ps"], "job-state": [9],
+             "time-at-creation": [1792175189], "time-at-completed": [1792175205]},
+            {"job-id": [1], "document-name-supplied": ["testprint"], "job-state": [9],
+             "time-at-creation": [1792175166], "time-at-completed": [1792175168]}]
+    assert tr.import_host_checks(jobs) == 1
+    assert store.last_check(("host",))["job_id"] == 2
+
+
+def _doc(job_id, name, completed, state=9):
+    return {"job-id": [job_id], "job-name": [name], "job-state": [state], "time-at-creation": [completed - 5],
+            "time-at-completed": [completed]}
+
+
+def test_first_sample_starts_from_the_newest_real_job_in_cups(tmp_path):
+    tr, store, clock = make(tmp_path)
+    jobs = [_doc(1, "old.pdf", T0 - 5 * DAY), _doc(2, "nozzle-check.ps", T0 - 1 * DAY),
+            _doc(3, "newer.pdf", T0 - 2 * DAY), _doc(4, "panda-print nozzle check (manual)", T0 - 3600),
+            _doc(5, "still printing", T0 - 60, state=5)]
+    assert tr.newest_document_ts(jobs) == T0 - 2 * DAY  # not the nozzle checks, not the unfinished one
+    tr._newest_document = tr.newest_document_ts(jobs)
+    tr.record_counter(174, clock())
+    row = store.last_activity()
+    assert row["kind"] == "external" and row["ts"] == T0 - 2 * DAY
+
+
+def test_host_state_beats_cups_history_on_first_sample(tmp_path):
+    tr, store, clock = make(tmp_path)
+    (tmp_path / "state").write_text(f"174 {T0 - 3 * DAY}\n")
+    tr._newest_document = T0 - 2 * DAY
+    tr.record_counter(174, clock())
+    assert store.last_activity()["kind"] == "baseline" and store.last_activity()["ts"] == T0 - 3 * DAY
+
+
+def test_no_documents_in_cups_means_no_newest(tmp_path):
+    tr, _, _ = make(tmp_path)
+    assert tr.newest_document_ts([]) is None
+    assert tr.newest_document_ts([_doc(1, "nozzle-check.ps", 1000)]) is None

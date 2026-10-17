@@ -17,7 +17,7 @@ TOOL_ID = Path(__file__).parent.name
 
 def create(ctx: AppContext) -> Tool:
     # ctx.settings: env-derived settings   ctx.db: SQLite (see db.migrate)
-    # ctx.printers: the printers added in the UI   ctx.backend_for(printer): IPP/SNMP/CUPS access (or mock)
+    # ctx.printers: the printers added in the UI   ctx.backend_for(printer): IPP/SNMP/CUPS access
     # ctx.clock: time.time, overridable in tests
     bp = Blueprint(TOOL_ID, __name__)
 

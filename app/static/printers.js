@@ -81,7 +81,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
 
   function pick(c) {
     Object.assign(draft, {
-      ip: c.ip, ipp_url: c.ipp_url || '', name: c.model || c.name || '',
+      ip: c.ip, ipp_url: c.ipp_url || '', name: c.model || '',  // blank: the connection check suggests the printer's own name
       cups_queue: c.queue || draft.cups_queue, cups_url: c.cups_url || draft.cups_url,
     });
     goForm();
@@ -94,7 +94,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
         ? h('ul', { class: 'cands' }, s.found.map((c) => h('li', {},
             h('button', { class: 'cand', type: 'button', disabled: !!c.already_added, onclick: () => pick(c) },
               icon('printer', 22),
-              h('span', { class: 'cand-text' }, h('strong', {}, c.name || c.model),
+              h('span', { class: 'cand-text' }, h('strong', {}, c.model || c.name),
                 h('span', { class: 'sub' }, [c.ip, c.queue && `CUPS queue ${c.queue}`, c.sources?.includes('mdns') && 'found on the network'].filter(Boolean).join(' \u00b7 '))),
               c.already_added ? ui.badge('Already added') : icon('chevron', 16)))))
         : h('p', { class: 'empty' }, 'No printers found automatically. Enter the address below.');

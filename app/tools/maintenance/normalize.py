@@ -16,6 +16,11 @@ def first(attrs: Attrs, name: str, default=None):
     return values[0] if values else default
 
 
+def job_name(attrs: Attrs) -> str:
+    """A CUPS job's name. Jobs sent with `lp` may lack job-name; then the document name is all there is."""
+    return str(first(attrs, "job-name") or first(attrs, "document-name-supplied") or "")
+
+
 def ink_key(name: str, color: str | None = None) -> str | None:
     n = (name or "").strip().lower()
     if "black" in n or n in ("k", "bk", "pgbk"):
@@ -125,7 +130,7 @@ def printer(attrs: Attrs) -> dict:
 
 
 def job(attrs: Attrs, nozzle_pattern: str) -> dict:
-    name = str(first(attrs, "job-name", "(unnamed)"))
+    name = job_name(attrs) or "(unnamed)"
     code = first(attrs, "job-state")
     created = first(attrs, "time-at-creation")
     completed = first(attrs, "time-at-completed")

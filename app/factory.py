@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
 import time
 from pathlib import Path
 from typing import Callable
@@ -27,26 +26,19 @@ CSP = ("default-src 'self'; img-src 'self' data: http: https:; style-src 'self';
 
 
 def seed_printers(settings: Settings, registry: PrinterRegistry) -> None:
-    """Unattended installs: PRINTER_IP in the environment adds the first printer. MOCK=1 adds a demo one
-    (unless MOCK_SETUP=1, which starts empty so the setup wizard can be tried)."""
-    if len(registry):
+    """Unattended installs: PRINTER_IP in the environment adds the first printer."""
+    if len(registry) or not settings.printer_ip:
         return
-    if settings.mock:
-        if not settings.mock_setup:
-            registry.add({"name": "Brother DCP-T730DW", "ip": "192.168.1.18", "cups_queue": "T730",
-                          "ipp_url": "ipp://192.168.1.18/ipp/print"})
-        return
-    if settings.printer_ip:
-        try:
-            printer = registry.add({
-                "name": settings.printer_ip, "ip": settings.printer_ip, "ipp_url": settings.printer_ipp_url,
-                "snmp_community": settings.snmp_community, "snmp_port": settings.snmp_port,
-                "counter_oid": settings.snmp_counter_oid, "cups_url": settings.cups_url,
-                "cups_queue": settings.cups_queue,
-                "host_state_file": str(settings.host_state_file) if settings.host_state_file.exists() else ""})
-            log.info("added printer %s from PRINTER_IP", printer.ip)
-        except ValidationError as e:
-            log.error("PRINTER_IP settings are invalid, so no printer was added: %s", e)
+    try:
+        printer = registry.add({
+            "name": settings.printer_ip, "ip": settings.printer_ip, "ipp_url": settings.printer_ipp_url,
+            "snmp_community": settings.snmp_community, "snmp_port": settings.snmp_port,
+            "counter_oid": settings.snmp_counter_oid, "cups_url": settings.cups_url,
+            "cups_queue": settings.cups_queue,
+            "host_state_file": str(settings.host_state_file) if settings.host_state_file.exists() else ""})
+        log.info("added printer %s from PRINTER_IP", printer.ip)
+    except ValidationError as e:
+        log.error("PRINTER_IP settings are invalid, so no printer was added: %s", e)
 
 
 def create_app(settings: Settings | None = None, access: PrinterAccess | None = None,
@@ -57,14 +49,11 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
     app.json.sort_keys = False  # type: ignore[attr-defined]
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
-    ephemeral = settings.mock and not settings.mock_persist
-    db = Database(":memory:" if ephemeral else settings.db_path)
+    db = Database(settings.db_path)
     registry = PrinterRegistry(db, clock)
-    ctx = AppContext(settings, db, registry, access or make_access(settings, clock), clock)
+    ctx = AppContext(settings, db, registry, access or make_access(settings), clock)
     seed_printers(settings, registry)
-    secret = secrets.token_hex(32).encode() if ephemeral and not settings.secret_key \
-        else csrf_mod.load_secret(settings.secret_key, settings.data_dir)
-    csrf = csrf_mod.Csrf(secret, settings.trusted_origins)
+    csrf = csrf_mod.Csrf(csrf_mod.load_secret(settings.secret_key, settings.data_dir), settings.trusted_origins)
     links = LinksConfig(settings.links_file, settings.logos_dir, ROOT / "defaults" / "links.yml")
     slots = discover(ctx, only_tools)
     app.extensions["panda"] = {"ctx": ctx, "slots": slots, "links": links, "csrf": csrf}
@@ -107,7 +96,7 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
 
     @app.get("/api/health")
     def health():
-        return jsonify(ok=True, version=__version__, mock=settings.mock)
+        return jsonify(ok=True, version=__version__)
 
     @app.get("/api/csrf")
     def csrf_token():
@@ -129,7 +118,7 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
                             "needs_printer": t.needs_printer})
             else:
                 out.append({"id": s.id, "title": s.title, "error": s.error})
-        return jsonify(tools=out, mock=settings.mock, version=__version__)
+        return jsonify(tools=out, version=__version__)
 
     @app.get("/api/links")
     def get_links():

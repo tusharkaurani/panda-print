@@ -12,7 +12,7 @@ def main() -> None:
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(settings)
     log = logging.getLogger("panda-print")
-    log.info("panda-print listening on %s:%s%s", settings.host, settings.port, " (MOCK data)" if settings.mock else "")
+    log.info("panda-print listening on %s:%s", settings.host, settings.port)
     serve(app, host=settings.host, port=settings.port, threads=4, ident="panda-print",
           max_request_body_size=64 * 1024, connection_limit=50, channel_timeout=30, _quiet=True)
 

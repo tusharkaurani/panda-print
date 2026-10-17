@@ -5,9 +5,9 @@ PY := .venv/bin/python
 	python3 -m venv .venv
 	.venv/bin/pip install -q -r requirements-dev.txt
 
-# Run the whole UI with fake data: http://localhost:8095
+# Run the real app against your network: http://localhost:8095 (data in .local/data)
 dev: .venv/bin/python
-	MOCK=1 CONFIG_DIR=config $(PY) -m app
+	DATA_DIR=.local/data CONFIG_DIR=config $(PY) -m app
 
 test: .venv/bin/python
 	$(PY) -m pytest

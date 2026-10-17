@@ -192,7 +192,6 @@ async function init() {
     return;
   }
   tools = toolsRes.data.tools;
-  $('mock-pill').hidden = !toolsRes.data.mock;
   $('version').textContent = `panda-print ${toolsRes.data.version}`;
   $('printers-link').append(icon('printer', 18), h('span', {}, 'Printers'));
   store.subscribe(() => { paintPrinterBar(); });
