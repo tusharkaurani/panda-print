@@ -1,23 +1,25 @@
 /* panda-print shell + shared components. Tools add their own ui.css on top. */
 
 :root {
-  --bg: #f2f6f3;
+  --bg: #f5f6f9;
   --surface: #ffffff;
-  --surface-2: #f5f8f6;
-  --text: #14201a;
-  --muted: #566860;
-  --line: #dfe7e2;
-  --accent: #1f7a50;
+  --surface-2: #f3f5f8;
+  --text: #0b1220;
+  --muted: #5a6578;
+  --line: #e4e8ee;
+  --accent: #0c9f6c;
   --accent-ink: #ffffff;
-  --accent-soft: #e0f2e8;
-  --ok: #17703f;      --ok-bg: #dff3e7;
-  --warn: #7d5200;    --warn-bg: #fcefcf;
-  --bad: #a8201a;     --bad-bg: #fde6e3;
-  --info: #25549f;    --info-bg: #e3ecfa;
-  --ink-c: #0698c9;   --ink-m: #d4146f;   --ink-y: #e0a800;   --ink-k: #2a302d;
-  --track: #e4ebe7;
-  --shadow: 0 1px 2px rgba(15, 35, 25, .06), 0 6px 20px rgba(15, 35, 25, .05);
-  --radius: 16px;
+  --accent-soft: #e0f5ec;
+  --ok: #08794f;      --ok-bg: #dcf5e9;
+  --warn: #855400;    --warn-bg: #fdf0d0;
+  --bad: #bf2a22;     --bad-bg: #fde8e6;
+  --info: #2a55c4;    --info-bg: #e5edfd;
+  --ink-c: #00a3e0;   --ink-m: #e6007e;   --ink-y: #f5b800;   --ink-k: #2b3138;
+  --track: #e7eaf0;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 10px 28px -12px rgba(15, 23, 42, .12);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --glow-a: rgba(12, 159, 108, .10);  --glow-b: rgba(99, 102, 241, .07);
+  --radius: 20px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -25,22 +27,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1210; --surface: #151c19; --surface-2: #1a2320; --text: #e6eee9; --muted: #97a79e;
-    --line: #26312c; --accent: #4cc38a; --accent-ink: #052013; --accent-soft: #15301f;
-    --ok: #66d69c; --ok-bg: #12301f; --warn: #f0c261; --warn-bg: #33290f;
-    --bad: #ff9088; --bad-bg: #3b1815; --info: #94b8ff; --info-bg: #172440;
-    --ink-c: #2ec1ee; --ink-m: #ff4fa3; --ink-y: #ffd23d; --ink-k: #d3dcd7; --track: #25302b;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .25);
+    --bg: #080b10; --surface: #10141b; --surface-2: #161b23; --text: #e8edf5; --muted: #8a96a8;
+    --line: #212935; --accent: #34d399; --accent-ink: #04130c; --accent-soft: #0e2a20;
+    --ok: #52dc9d; --ok-bg: #0f2b20; --warn: #f6c05c; --warn-bg: #2f2410;
+    --bad: #ff8d84; --bad-bg: #3a1714; --info: #94b6ff; --info-bg: #15223d;
+    --ink-c: #2cc4f5; --ink-m: #ff4fa6; --ink-y: #ffd23d; --ink-k: #d6dde6; --track: #222a35;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 14px 32px -14px rgba(0, 0, 0, .65);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+    --glow-a: rgba(52, 211, 153, .10); --glow-b: rgba(129, 140, 248, .09);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d1210; --surface: #151c19; --surface-2: #1a2320; --text: #e6eee9; --muted: #97a79e;
-  --line: #26312c; --accent: #4cc38a; --accent-ink: #052013; --accent-soft: #15301f;
-  --ok: #66d69c; --ok-bg: #12301f; --warn: #f0c261; --warn-bg: #33290f;
-  --bad: #ff9088; --bad-bg: #3b1815; --info: #94b8ff; --info-bg: #172440;
-  --ink-c: #2ec1ee; --ink-m: #ff4fa3; --ink-y: #ffd23d; --ink-k: #d3dcd7; --track: #25302b;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .25);
+  --bg: #080b10; --surface: #10141b; --surface-2: #161b23; --text: #e8edf5; --muted: #8a96a8;
+  --line: #212935; --accent: #34d399; --accent-ink: #04130c; --accent-soft: #0e2a20;
+  --ok: #52dc9d; --ok-bg: #0f2b20; --warn: #f6c05c; --warn-bg: #2f2410;
+  --bad: #ff8d84; --bad-bg: #3a1714; --info: #94b6ff; --info-bg: #15223d;
+  --ink-c: #2cc4f5; --ink-m: #ff4fa6; --ink-y: #ffd23d; --ink-k: #d6dde6; --track: #222a35;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 14px 32px -14px rgba(0, 0, 0, .65);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+  --glow-a: rgba(52, 211, 153, .10); --glow-b: rgba(129, 140, 248, .09);
   color-scheme: dark;
 }
 
@@ -425,3 +431,93 @@ dialog.run .sheets { max-height: 46vh; }
 .notice[hidden] { display: none; }
 .gauges.stale { opacity: .45; filter: grayscale(.7); }
 .notice .btn { margin-left: auto; align-self: center; flex: none; }
+
+
+/* =====================================================================================================
+   Look and feel: a calm cool-grey canvas, white cards with soft depth, one emerald accent, pill tabs,
+   a frosted top bar. Colours all come from the tokens above, so light and dark stay in step. */
+body {
+  background:
+    radial-gradient(900px 420px at 12% -8%, var(--glow-a), transparent 65%),
+    radial-gradient(760px 380px at 96% -6%, var(--glow-b), transparent 65%),
+    var(--bg);
+  background-attachment: fixed;
+  font-feature-settings: "cv11", "ss01"; text-rendering: optimizeLegibility;
+}
+.stat .v, .gauge text, .counter, .fact dd { font-variant-numeric: tabular-nums; }
+
+/* top bar */
+.topbar { background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: saturate(160%) blur(16px);
+  -webkit-backdrop-filter: saturate(160%) blur(16px); border-bottom-color: color-mix(in srgb, var(--line) 80%, transparent); }
+.topbar-inner { height: 64px; }
+.brand { font-weight: 750; font-size: 18.5px; letter-spacing: -.02em; }
+.icon-btn, .printer-pick { background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: var(--shadow-sm);
+  transition: background .15s, border-color .15s, box-shadow .15s; }
+.icon-btn:hover, .printer-pick:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: var(--surface); }
+.printer-pick { border-radius: 14px; }
+
+/* tabs as a segmented pill */
+.tabs { gap: 2px; padding: 4px; width: fit-content; max-width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent); }
+.tab { padding: 8px 15px; border-radius: 12px; border-bottom: 0; margin: 0; font-weight: 620; font-size: 14.5px;
+  transition: background .15s, color .15s, box-shadow .15s; }
+.tab:hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.tab[aria-current="page"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm), 0 0 0 1px var(--line); }
+
+/* cards */
+.card { border-radius: var(--radius); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--line) 85%, transparent); }
+.card-head { padding: 18px 20px 0; }
+.card-body { padding: 16px 20px 20px; }
+.card-head h3 { font-size: 15.5px; font-weight: 680; letter-spacing: -.01em; gap: 10px; }
+.card-head h3 svg { box-sizing: content-box; padding: 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.refresh { border-radius: 10px; transition: background .15s, color .15s; }
+
+/* figures */
+.stat { border-radius: 16px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: linear-gradient(180deg, var(--surface-2), color-mix(in srgb, var(--surface-2) 55%, var(--surface))); }
+.stat .k { text-transform: uppercase; letter-spacing: .05em; font-size: 11.5px; font-weight: 650; }
+.stat .v { font-size: 22px; font-weight: 720; letter-spacing: -.02em; margin-top: 4px; }
+.fact { border-radius: 14px; }
+.gauge .fill { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gauge) 38%, transparent)); }
+.gauge .track { stroke: var(--track); }
+
+/* buttons */
+.btn { border-radius: 12px; padding: 9px 16px; font-weight: 640; letter-spacing: -.005em; box-shadow: var(--shadow-sm);
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .12s, filter .15s; }
+.btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--surface); box-shadow: var(--shadow-sm), 0 4px 14px -6px rgba(15, 23, 42, .18); transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, #fff), var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 85%, #000); color: var(--accent-ink);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .28) inset, 0 6px 16px -8px color-mix(in srgb, var(--accent) 80%, transparent); }
+.btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff), color-mix(in srgb, var(--accent) 94%, #000));
+  border-color: color-mix(in srgb, var(--accent) 85%, #000); filter: none; }
+.btn.small { border-radius: 10px; }
+.btn:disabled { opacity: .5; box-shadow: none; }
+:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent); outline-offset: 2px; }
+
+/* badges, rows, inputs */
+.badge { font-weight: 640; padding: 4px 11px 4px 9px; letter-spacing: -.005em; }
+.row .title { font-weight: 620; }
+.input { border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-sm); transition: border-color .15s, box-shadow .15s; }
+.input:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.input:focus-visible { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.notice { border-radius: 14px; }
+
+/* launcher tiles */
+.tile { border-radius: 18px; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.tile:hover { box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
+.plate { border-radius: 14px; background: var(--surface-2); }
+.plate.letter { background: linear-gradient(135deg, hsl(var(--hue, 160) 68% 52%), hsl(calc(var(--hue, 160) + 28) 66% 40%)); box-shadow: 0 6px 14px -8px hsl(var(--hue, 160) 70% 30%); }
+.eyebrow { letter-spacing: .1em; font-size: 11.5px; }
+
+/* dialogs and toasts */
+dialog { border-radius: 24px; border-color: color-mix(in srgb, var(--line) 80%, transparent); box-shadow: 0 30px 80px -20px rgba(8, 14, 24, .55); }
+dialog::backdrop { background: rgba(8, 12, 20, .5); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.toast { border-radius: 14px; box-shadow: 0 12px 30px -10px rgba(8, 14, 24, .5); }
+
+/* wizard */
+.cand { border-radius: 14px; transition: border-color .15s, background .15s, transform .12s; }
+.cand:hover:not(:disabled) { transform: translateY(-1px); }
+.steps li[aria-current="step"] b { box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--accent) 70%, transparent); }
+
+main.wrap > *, #view-tools, #view-printers { min-width: 0; }  /* a wide child (the tab pills) must never stretch the page past the screen */
