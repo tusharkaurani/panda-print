@@ -350,3 +350,13 @@ select.input { appearance: auto; }
   .facts { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .facts.beside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---- nozzle tab */
+.stats.four { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.autogrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); column-gap: 20px; row-gap: 0; align-items: start; }
+/* each field spans four rows of the shared grid, so labels, inputs and hints line up across a row even when a label wraps */
+.autogrid .field { grid-row: span 4; grid-template-rows: subgrid; row-gap: 5px; margin-bottom: 16px; }
+.autoform { display: grid; gap: 18px; }
+.input-unit { display: flex; align-items: center; gap: 8px; }
+.input-unit .input { flex: 1 1 auto; min-width: 0; }
+.unit { color: var(--muted); font-size: 14px; white-space: nowrap; }

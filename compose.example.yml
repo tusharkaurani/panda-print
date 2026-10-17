@@ -22,9 +22,9 @@ services:
       # PRINTER_IP: "192.168.1.18"   # optional: add this printer automatically on first start
       # CUPS_QUEUE: "T730"
       # SNMP_COMMUNITY: "public"
-      # IDLE_DAYS: "7"
+      # IDLE_DAYS: "7"            # defaults only; each printer can override its own in the Automation card
       # POLL_INTERVAL: "300"       # seconds between page-counter reads
-      # PRINT_COOLDOWN: "120"      # seconds between manual nozzle checks
+      # PRINT_COOLDOWN: "120"      # rate limit of the manual-print API endpoint
       # PRINT_MAX_PER_HOUR: "5"
       # TRUSTED_ORIGINS: "https://print.example.lan"   # only if the proxy rewrites Host
 

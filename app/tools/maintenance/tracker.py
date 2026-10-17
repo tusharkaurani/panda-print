@@ -18,6 +18,7 @@ from pathlib import Path
 from app.core.errors import SourceError
 from app.printer import Attrs
 from app.settings import Settings
+from app.tools.maintenance import automation as auto
 from app.tools.maintenance import idle
 from app.tools.maintenance.normalize import first, job_name
 from app.tools.maintenance.store import Store
@@ -46,6 +47,10 @@ class Tracker:
         # somewhere else: a phone printing straight to the printer, or a copy made on its glass.
         self._cups_active: int | None = None
         self._lock = threading.Lock()
+
+    def automation(self) -> auto.Automation:
+        """This printer's settings: what it overrides, else the defaults (the environment values)."""
+        return auto.effective(auto.defaults(self.s), self.store.automation_overrides())
 
     # ------------------------------------------------------------ polling
     def poll(self) -> None:
@@ -79,7 +84,7 @@ class Tracker:
     # ------------------------------------------------------------ CUPS sync
     def import_host_checks(self, jobs: list[Attrs]) -> int:
         """Record nozzle-check jobs that the host timer submitted (not ours)."""
-        pattern = self.s.nozzle_job_pattern.lower()
+        pattern = self.automation().job_pattern.lower()
         added = 0
         for j in jobs:
             name = job_name(j)
@@ -104,7 +109,7 @@ class Tracker:
 
     def is_nozzle_job(self, job: Attrs) -> bool:
         name = job_name(job).lower()
-        return self.s.nozzle_job_pattern.lower() in name or APP_JOB_MARKER in name
+        return self.automation().job_pattern.lower() in name or APP_JOB_MARKER in name
 
     def newest_document_ts(self, jobs: list[Attrs]) -> float | None:
         """When the newest finished job that is not a nozzle check completed (None if CUPS has none)."""
@@ -155,7 +160,7 @@ class Tracker:
             self.store.add_activity(now, 0, count, "baseline",
                                     note=f"Counter went backwards ({last} to {count}); tracking restarted")
             return
-        unclaimed = self.store.unclaimed_checks(now - self.s.attribution_window)
+        unclaimed = self.store.unclaimed_checks(now - self.automation().attribution_seconds)
         nozzle, other = split_delta(count - last, len(unclaimed))
         if nozzle:
             self.store.claim([r["id"] for r in unclaimed[:nozzle]], now)

@@ -35,3 +35,12 @@ export function countdown(seconds) {
 }
 
 export const num = (n) => (n == null ? '–' : n.toLocaleString());
+
+// 1 -> "minute", 5 -> "5 minutes", 60 -> "hour", 90 -> "1.5 hours" (for "every ...")
+export function minutes(n) {
+  const trim = (x) => (Number.isInteger(x) ? x : Math.round(x * 10) / 10);
+  if (n === 1) return 'minute';
+  if (n < 60) return `${trim(n)} minutes`;
+  const h = n / 60;
+  return h === 1 ? 'hour' : `${trim(h)} hours`;
+}

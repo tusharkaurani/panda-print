@@ -8,6 +8,7 @@ from app.core import ratelimit
 from app.core.context import AppContext
 from app.core.errors import SourceError
 from app.core.ttlcache import TTLCache
+from app.tools.maintenance import automation as auto
 from app.tools.maintenance import idle, normalize
 from app.tools.maintenance.store import Store
 from app.tools.maintenance.tracker import APP_USER, Tracker
@@ -63,7 +64,8 @@ class Service:
                           for r in self.store.recent_activity("direct", self.s.recent_jobs)]
         try:
             raw = self._jobs_cache.get(self.printer.list_jobs)
-            jobs = [normalize.job(j, self.s.nozzle_job_pattern) for j in raw]
+            pattern = self.tracker.automation().job_pattern
+            jobs = [normalize.job(j, pattern) for j in raw]
             jobs.sort(key=lambda j: j["id"] or 0, reverse=True)
             data["jobs"] = jobs[: self.s.recent_jobs]
             data["queued_jobs"] = [j for j in jobs if j["state"] in ("pending", "held", "printing", "stopped")]
@@ -78,7 +80,8 @@ class Service:
         except Exception:
             pass
         now = self.clock()
-        threshold = self.s.idle_days
+        settings = self.tracker.automation()
+        threshold = settings.idle_days
         activity = self.store.last_activity()
         check = self.store.last_check(("manual", "auto", "host"))
         # The latest print of any kind: a counter change, or a check we know was submitted.
@@ -112,7 +115,7 @@ class Service:
             "tracking": {
                 "since": float(first_seen) if first_seen else None,
                 "last_poll": float(self.store.get("last_poll_ts") or 0) or None,
-                "poll_interval": self.s.poll_interval,
+                "poll_interval": settings.check_seconds,
                 "counter_error": self.store.get("counter_error"),
                 "cups_error": self.store.get("cups_error"),
             },
@@ -131,6 +134,28 @@ class Service:
             return None
         return {"ts": row["ts"], "source": row["source"], "state": row["state"],
                 "job_id": row["job_id"], "message": row["message"]}
+
+    # ------------------------------------------------------------ automation settings
+    def automation_status(self) -> dict:
+        base = auto.defaults(self.s)
+        overrides = self.store.automation_overrides()
+        return {"values": auto.effective(base, overrides).to_dict(), "defaults": base.to_dict(),
+                "customised": sorted(overrides)}
+
+    def save_automation(self, payload: dict) -> dict:
+        """Set this printer's automation settings. Raises ValidationError(fields) for bad input.
+        Only values that differ from the defaults are stored, so the rest keep following them."""
+        clean, errors = auto.validate(payload)
+        if errors:
+            raise auto.ValidationError(errors)
+        base = auto.defaults(self.s)
+        merged = {**self.store.automation_overrides(), **clean}
+        self.store.set_automation_overrides(auto.overrides_from(merged, base))
+        return self.automation_status()
+
+    def reset_automation(self) -> dict:
+        self.store.set_automation_overrides({})
+        return self.automation_status()
 
     # ------------------------------------------------------------ printing
     def _allowance(self, now: float) -> dict:

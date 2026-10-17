@@ -2,7 +2,7 @@
 
 A small, self-hosted dashboard that is the front door for everything printer-related at home.
 It ships with one tool, **Printer Maintenance** (status, ink gauges, lifetime page counter, CUPS queue,
-recent jobs, and a nozzle-check tracker with a "Print nozzle check now" button), plus a **launcher** grid for
+recent prints, and a nozzle-check tracker with per-printer automation settings), plus a **launcher** grid for
 external tools. More tools plug in as self-contained modules.
 
 Built for a Brother DCP-T730DW behind CUPS on a Raspberry Pi, but no printer is hard-wired: the first visit opens
@@ -28,8 +28,8 @@ DATA_DIR=.local/data CONFIG_DIR=config .venv/bin/python -m app
 ```
 
 It talks to your real network: the wizard discovers printers on the LAN and the cards read live data. Opening the
-dashboard, the wizard and the Printers page only ever *read* from printers; the only thing that prints is the
-"Print nozzle check now" button. To start over, delete `.local/data`.
+dashboard, the wizard and the Printers page only ever *read* from printers, and nothing in the UI prints. To start over,
+delete `.local/data`.
 
 The tests never touch a real device or print anything: they use fakes in `tests/fakes.py` (a fake printer, CUPS
 server and network, with realistic data).
@@ -83,10 +83,11 @@ All settings are environment variables; see [.env.example](.env.example) for the
 | `SNMP_COMMUNITY`, `SNMP_PORT`, `SNMP_COUNTER_OID` | `public`, `161`, `1.3.6.1.2.1.43.10.2.1.4.1.1` | Defaults prefilled for new printers (page counter is prtMarkerLifeCount) |
 | `CUPS_URL` | `http://127.0.0.1:631` | Default CUPS server for new printers, and where discovery looks |
 | `PRINTER_IP`, `PRINTER_IPP_URL`, `CUPS_QUEUE` | unset | Optional: add this printer automatically on first start if none exists |
-| `IDLE_DAYS` | `7` | Idle days before the host timer prints a check (used for "next check due") |
-| `POLL_INTERVAL` | `300` | Seconds between counter reads and CUPS job syncs (every printer) |
+| `IDLE_DAYS` | `7` | **Default** idle days before a nozzle check is due; each printer can override it in the Automation card |
+| `POLL_INTERVAL` | `300` | **Default** seconds between counter reads and CUPS job syncs; overridable per printer |
 | `HOST_STATE_FILE` | `/host-state/state` | The host timer's `"<count> <epoch>"` file; offered in the wizard (as that printer's timer state file) if it exists and no printer uses it yet |
-| `PRINT_COOLDOWN`, `PRINT_MAX_PER_HOUR` | `120`, `5` | Rate limit for manual nozzle checks |
+| `NOZZLE_JOB_PATTERN`, `ATTRIBUTION_WINDOW` | `nozzle-check`, `1800` | **Defaults** for how the timer's check pages are recognised and matched to the counter; overridable per printer |
+| `PRINT_COOLDOWN`, `PRINT_MAX_PER_HOUR` | `120`, `5` | Rate limit of the manual-print endpoint (see below) |
 | `DATA_DIR`, `CONFIG_DIR` | `./data`, `./config` (image: `/data`, `/config`) | SQLite history, and `links.yml` + `logos/` |
 | `SECRET_KEY` | generated | CSRF signing key; if unset a random key is stored in `DATA_DIR/secret.key` (mode 0600) |
 
@@ -127,20 +128,35 @@ links:
 SNMP gives only the printer's current lifetime page count and IPP `Get-Jobs` only lists queued jobs, so the app
 keeps its own history in SQLite, separately for each printer:
 
-1. **Counter polling.** Every `POLL_INTERVAL` seconds (and when a page is viewed and the last read is older than 30 s) the app reads the counter. A rise is recorded with the time it was noticed and the previous read time, so times are accurate to roughly the poll interval. This is more precise than the host timer's state file, which is stamped when its daily run *noticed* the change.
+1. **Counter polling.** Every *check interval* (5 minutes by default) (and when a page is viewed and the last read is older than 30 s) the app reads the counter. A rise is recorded with the time it was noticed and the previous read time, so times are accurate to roughly the poll interval. This is more precise than the host timer's state file, which is stamped when its daily run *noticed* the change.
 2. **Telling nozzle checks from other printing.** The app matches counter rises with nozzle checks it knows about: ones it submitted itself, and ones the host timer printed (found in CUPS's completed jobs: job name containing `nozzle-check`, i.e. `NOZZLE_JOB_PATTERN`, not submitted by this app). Anything left over is "someone printed". That is how *last print by someone*, *last automated check* and *last manual run* stay separate.
 3. **Prints that bypass CUPS.** CUPS only knows about jobs sent through it. A phone printing straight to the printer, or a copy made on its glass, never appears in CUPS but does move the page counter. When the counter rises and no real CUPS job was printing or finished since the last read, those pages are listed under *Recent prints* as **Printed without CUPS** (a page count and an approximate time, since the printer doesn't say more). If CUPS can't be reached at that moment the pages are not labelled either way.
-4. **Idle clock.** Like the host script, a nozzle check counts as a print and restarts the idle clock, so *next automated check due* is `last print of any kind + IDLE_DAYS`.
+4. **Idle clock.** Like the host script, a nozzle check counts as a print and restarts the idle clock, so *next automated check due* is `last print of any kind + idle days` (7 by default).
 5. **First run.** If the printer has a timer state file set and its count equals the printer's current count, the idle clock starts from its timestamp (it can lag the real print by up to a day). Otherwise it starts from the newest finished non-nozzle job in CUPS, and failing that from the first reading, in which case the card says "at least".
 
-The idle rule lives in `app/tools/maintenance/idle.py` with no I/O: `decide()` is the host script's `main()` minus side effects, and `parse_host_state()` reads its state format. That is the piece to reuse if you later move the scheduler into the app. **The app never prints automatically**; the host timer remains the only scheduler. A manual print uses IPP `Print-Job` straight to CUPS (no `lp` needed in the container).
+The idle rule lives in `app/tools/maintenance/idle.py` with no I/O: `decide()` is the host script's `main()` minus side effects, and `parse_host_state()` reads its state format. That is the piece to reuse if you later move the scheduler into the app. **The app never prints automatically**; the host timer remains the only scheduler. The API can print one check (`POST /api/maintenance/<printer id>/nozzle/print`: IPP `Print-Job` straight to CUPS, CSRF-protected and rate-limited), but there is no button for it in the UI.
+
+## Automation settings (Nozzle Check tab)
+
+The **Automation** card holds what used to be fixed values, separately for each printer:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Idle days before a check is due | 7 | Drives "Next in ..." / "Check due" |
+| Read the page counter every | 5 minutes | How often prints are noticed |
+| Timer's check page name contains | `nozzle-check` | Recognises the host timer's pages in the CUPS job list |
+| Match a check to the counter within | 30 minutes | How long a check may wait for the counter to move |
+
+The defaults are the environment values above, so a newly added printer starts exactly as before. Only values you
+change are stored; the rest keep following the defaults, and **Reset to defaults** clears the overrides. The card is
+about *tracking*: printing the automatic check is still the host timer's job.
 
 ## Security model
 
 - No login. Put an SSO reverse proxy in front.
 - Every `POST`/`PUT`/`PATCH`/`DELETE` under `/api/` needs an `X-CSRF-Token` header that matches an HttpOnly, `SameSite=Strict` cookie and carries a valid HMAC signature (`GET /api/csrf` issues both). If the browser sends `Origin` or `Referer`, its host must match the request host, `X-Forwarded-Host`, or `TRUSTED_ORIGINS`.
 - The wizard and the Printers page make the server contact addresses you type (printers, CUPS), so they are POSTs behind the same CSRF protection, and link-local and multicast addresses (where cloud metadata services live) are refused. Anyone allowed through your SSO can add a printer, so treat that as an admin-level permission.
-- Manual printing is limited by `PRINT_COOLDOWN` and `PRINT_MAX_PER_HOUR`, counted from the database so restarts don't reset it (answers `429` with `Retry-After`).
+- The manual-print endpoint is limited by `PRINT_COOLDOWN` and `PRINT_MAX_PER_HOUR`, counted from the database so restarts don't reset it (answers `429` with `Retry-After`).
 - Strict Content-Security-Policy (no inline script or style, no external hosts except images you point links at), and logo files are served sandboxed.
 - The SNMP community and addresses are configuration, not secrets, but nothing sensitive is committed: `.env`, `data/`, `secret.key` and your logos are git-ignored.
 
@@ -232,5 +248,5 @@ Dockerfile  compose.example.yml  .github/workflows/build.yml
 - The nozzle-check timer's state file is per printer, and the host script only serves one printer. Other printers still get full tracking from the page counter and CUPS.
 - If CUPS is unreachable while the host timer prints a check, that page is counted as "someone printed" (the counter can't tell the difference).
 - "Printed without CUPS" needs no real CUPS job at all in the window. If a CUPS print and a direct print land between two reads, both are attributed to CUPS.
-- The page counter is shared by all prints, so a manual check that never prints (for example the printer is offline) can be mistaken for a later print within `ATTRIBUTION_WINDOW` (30 minutes by default).
+- The page counter is shared by all prints, so a manual check that never prints (for example the printer is offline) can be mistaken for a later print within the matching window (30 minutes by default).
 - Ink levels are the printer's own estimates.

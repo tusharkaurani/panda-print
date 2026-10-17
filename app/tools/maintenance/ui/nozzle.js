@@ -1,5 +1,5 @@
-// Nozzle Check tab: when the printer last printed, when the next automated check is due, the history of
-// checks, and the "Print nozzle check now" button. This is the file to extend with more nozzle-check features.
+// Nozzle Check tab: when the printer last printed, the history of checks, and the Automation settings that
+// drive how checks are tracked. This is the file to extend with more nozzle-check features.
 import { cardLoader } from './shared.js';
 
 const SOURCE = { manual: 'Manual check', auto: 'Automated check', host: 'Automated check (host timer)' };
@@ -10,27 +10,12 @@ export function mount(root, kit) {
   const { base, load } = cardLoader(kit);
 
   const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', wide: true, onRefresh: () => refresh() });
-  root.append(h('div', { class: 'grid' }, nozzleCard.el));
+  const autoCard = ui.card({ title: 'Automation', iconName: 'clock', wide: true, onRefresh: () => refreshAuto() });
+  root.append(h('div', { class: 'grid' }, nozzleCard.el, autoCard.el));
   const refresh = () => load(nozzleCard, 'nozzle', renderNozzle);
+  const refreshAuto = () => load(autoCard, 'automation', renderAutomation);
 
   // ------------------------------------------------------------ nozzle check
-  let retryAt = 0;
-  const printBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => dialog.showModal() }, icon('droplet', 17), 'Print nozzle check now');
-  const printHint = h('span', { class: 'hint' });
-
-  function refreshPrintButton() {
-    const left = Math.ceil((retryAt - Date.now()) / 1000);
-    if (left > 0) {
-      printBtn.disabled = true;
-      printHint.textContent = `You can print another in ${fmt.countdown(left)}.`;
-    } else {
-      printBtn.disabled = false;
-      printHint.textContent = 'Prints one small test page (four colour bars). Uses a sheet of paper and a little ink.';
-      if (retryAt) { retryAt = 0; refresh(); }
-    }
-  }
-  setInterval(() => { if (retryAt) refreshPrintButton(); }, 1000);
-
   function checkRow(c) {
     const state = c.state === 'failed' ? ['Failed', 'bad'] : c.state === 'submitted' ? ['Sent', 'info'] : ['Printed', 'ok'];
     return h('li', { class: 'row' },
@@ -43,31 +28,26 @@ export function mount(root, kit) {
 
   function renderNozzle(d) {
     const lp = d.last_print, nx = d.next_check;
+    // the next check is summarised by this badge, so it has no card of its own
     nozzleCard.setBadge(nx ? (nx.overdue ? ui.badge('Check due', 'warn') : ui.badge(`Next in ${fmt.days(nx.days_until)}`, 'ok')) : null);
-
-    retryAt = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
-    refreshPrintButton();
 
     const t = d.tracking;
     const problems = [t.counter_error && `Can’t read the page counter: ${t.counter_error}`, t.cups_error && `Can’t read CUPS: ${t.cups_error}`].filter(Boolean);
 
     nozzleCard.set(
       problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
-      h('div', { class: 'stats' },
+      h('div', { class: 'stats four' },
         ui.stat('Last print (any device)', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
           lp && `${fmt.abs(lp.ts)} · ${KIND[lp.kind] || ''}`),
         ui.stat('Days since last print', fmt.days(d.days_since_last_print), `Check fires after ${d.idle_days_threshold} idle days`),
-        ui.stat('Next automated check', !nx ? '–' : nx.overdue ? 'Due now' : `In ${fmt.days(nx.days_until)}`,
-          !nx ? null : nx.overdue ? 'Prints at the next daily run of the host timer' : `Around ${fmt.day(nx.due_at)}`),
         ui.stat('Last automated check', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet', d.last_auto ? fmt.abs(d.last_auto.ts) : 'Not seen since tracking began'),
         ui.stat('Last manual run', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
           d.last_manual ? (d.last_manual.state === 'failed' ? 'Failed: ' + (d.last_manual.message || '') : fmt.abs(d.last_manual.ts)) : null)),
-      h('div', { class: 'print-row' }, printBtn, printHint),
       h('div', {}, h('h4', {}, 'Recent checks'),
         d.history.length ? h('ul', { class: 'rows' }, d.history.map(checkRow)) : h('p', { class: 'empty' }, 'No nozzle checks recorded yet.')),
       h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'How this is tracked'),
         h('div', { class: 'footnote', style: { 'margin-top': '10px' } },
-          h('p', {}, `The dashboard reads the printer’s lifetime page counter every ${Math.round(t.poll_interval / 60)} minutes and notes when it changes, so prints from any device are counted and times are accurate to about that interval.`),
+          h('p', {}, `The dashboard reads the printer’s lifetime page counter every ${fmt.minutes(t.poll_interval / 60)} and notes when it changes, so prints from any device are counted and times are accurate to about that interval.`),
           h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list. Pages that appear on the counter with no CUPS job behind them are shown as printed straight to the printer.'),
           t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter check ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
           d.host_state.configured && (d.host_state.error
@@ -75,37 +55,70 @@ export function mount(root, kit) {
             : h('p', {}, `Host timer last noticed the counter at ${d.host_state.count} on ${fmt.abs(d.host_state.noticed_at)} (it only checks once a day).`)))));
   }
 
-  // ------------------------------------------------------------ confirm + print
-  const dialog = h('dialog', { 'aria-labelledby': 'mt-confirm-title' },
-    h('h3', { id: 'mt-confirm-title' }, 'Print a nozzle check?'),
-    h('p', {}, 'This prints one small test page with cyan, magenta, yellow and black bars. Use it to see whether any nozzle is clogged.'),
-    h('div', { class: 'actions' },
-      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', type: 'button', onclick: doPrint }, icon('droplet', 16), 'Print')));
-  root.append(dialog);
+  // ------------------------------------------------------------ automation settings
+  // [key, label, input type, unit text, hint]. Every value falls back to the default shown in its hint.
+  const FIELDS = [
+    ['idle_days', 'Idle days before a check is due', 'number', 'days', 'How long the printer can sit unused before its nozzle check is due.'],
+    ['check_minutes', 'Read the page counter every', 'number', 'minutes', 'How often the dashboard looks for new prints.'],
+    ['job_pattern', 'Timer’s check page name contains', 'text', '', 'CUPS jobs whose name contains this text are the timer’s nozzle-check pages.'],
+    ['attribution_minutes', 'Match a check to the counter within', 'number', 'minutes', 'How long after a check is sent the page counter may rise and still count as that check.'],
+  ];
 
-  async function doPrint() {
-    dialog.close();
-    printBtn.disabled = true;
-    const res = await api(`${base()}/nozzle/print`, { method: 'POST' });
-    if (res.ok) {
-      toast(`Nozzle check sent to the printer (job #${res.data.job_id}).`);
-    } else {
-      toast(res.error.message || 'Could not print.', 'bad');
-      if (res.status === 429) retryAt = Date.now() + (res.retryAfter || 60) * 1000;
+  function renderAutomation(d) {
+    const custom = d.customised.length > 0;
+    autoCard.setBadge(ui.badge(custom ? 'Customised' : 'Using defaults', custom ? 'info' : ''));
+    const inputs = {}, errors = {};
+    const field = ([key, label, type, unit, hint]) => {
+      inputs[key] = h('input', { id: `auto-${key}`, class: 'input', type, value: d.values[key], step: type === 'number' ? 'any' : null,
+        autocomplete: 'off', spellcheck: 'false', oninput: () => { errors[key].textContent = ''; inputs[key].removeAttribute('aria-invalid'); } });
+      errors[key] = h('p', { class: 'msg', role: 'alert' });
+      return h('div', { class: 'field' },
+        h('label', { for: `auto-${key}` }, label),
+        h('div', { class: 'input-unit' }, inputs[key], unit && h('span', { class: 'unit' }, unit)),
+        h('p', { class: 'hint' }, `${hint} Default: ${d.defaults[key]}${unit ? ` ${unit}` : ''}.`),
+        errors[key]);
+    };
+
+    async function save(event) {
+      event.preventDefault();
+      const body = Object.fromEntries(FIELDS.map(([key]) => [key, inputs[key].value]));
+      const res = await api(`${base()}/automation`, { method: 'PUT', body });
+      if (!res.ok) {
+        const fields = res.error?.fields;
+        if (!fields) { toast(res.error?.message || 'Could not save.', 'bad'); return; }
+        for (const [key, message] of Object.entries(fields)) { errors[key].textContent = message; inputs[key].setAttribute('aria-invalid', 'true'); }
+        inputs[Object.keys(fields)[0]].focus();
+        return;
+      }
+      toast('Automation settings saved.');
+      renderAutomation(res.data);
+      refresh();  // the "next check" badge and the idle-day wording follow the new values
     }
-    printBtn.disabled = false;
-    refresh();
-    // the page counter moves a few seconds after the job is accepted
-    [4000, 15000, 40000].forEach((ms) => setTimeout(refresh, ms));
+
+    async function reset() {
+      const res = await api(`${base()}/automation`, { method: 'DELETE' });
+      if (!res.ok) { toast(res.error?.message || 'Could not reset.', 'bad'); return; }
+      toast('Back to the defaults.');
+      renderAutomation(res.data);
+      refresh();
+    }
+
+    autoCard.set(
+      h('p', { class: 'sub' }, 'The host timer prints the automatic nozzle check. These settings tell the dashboard how to track it and when the next one counts as due. A printer you add later starts with the defaults shown here.'),
+      h('form', { class: 'autoform', onsubmit: save },
+        h('div', { class: 'autogrid' }, FIELDS.map(field)),
+        h('div', { class: 'actions left' },
+          h('button', { class: 'btn primary', type: 'submit' }, 'Save settings'),
+          h('button', { class: 'btn', type: 'button', disabled: !custom, onclick: reset }, 'Reset to defaults'))));
   }
 
   // another printer was chosen (or this one's settings were edited): start over
   kit.printer.subscribe(() => {
-    retryAt = 0;
-    nozzleCard.set(ui.skeleton()); nozzleCard.setBadge(null); nozzleCard.stamp('');
+    for (const c of [nozzleCard, autoCard]) { c.set(ui.skeleton()); c.setBadge(null); c.stamp(''); }
     refresh();
+    refreshAuto();
   });
 
+  refreshAuto();
   kit.poll(refresh, 60_000);
 }

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Callable
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from app.core.errors import SourceError
+from app.tools.maintenance.automation import ValidationError
 from app.tools.maintenance.runtimes import Runtime, Runtimes
 from app.tools.maintenance.service import RateLimited
 
@@ -35,6 +36,29 @@ def build_blueprint(runtimes: Runtimes, clock: Callable[[], float]) -> Blueprint
     @bp.get("/<pid>/nozzle")
     def nozzle(pid):
         return card(pid, lambda rt: rt.service.nozzle_status())
+
+    # Automation settings for this printer (CSRF-protected like every change)
+    def settings_call(pid, fn):
+        rt = runtimes.get(pid)
+        if rt is None:
+            return jsonify(ok=False, error={"source": "printers", "message": "That printer isn't set up (any more)."}), 404
+        try:
+            return jsonify(ok=True, data=fn(rt))
+        except ValidationError as e:
+            return jsonify(ok=False, error={"message": "Please check the highlighted fields.", "fields": e.errors}), 400
+
+    @bp.get("/<pid>/automation")
+    def automation_get(pid):
+        return settings_call(pid, lambda rt: rt.service.automation_status())
+
+    @bp.put("/<pid>/automation")
+    def automation_put(pid):
+        body = request.get_json(silent=True)
+        return settings_call(pid, lambda rt: rt.service.save_automation(body if isinstance(body, dict) else {}))
+
+    @bp.delete("/<pid>/automation")
+    def automation_reset(pid):
+        return settings_call(pid, lambda rt: rt.service.reset_automation())
 
     @bp.post("/<pid>/nozzle/print")
     def nozzle_print(pid):

@@ -1,6 +1,7 @@
 """Storage for the maintenance tool (tables are prefixed mt_)."""
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from app.core.db import Database
@@ -34,6 +35,13 @@ MIGRATIONS = [
     """,
 ]
 
+MIGRATIONS.append("""
+    CREATE TABLE IF NOT EXISTS mt_automation (
+        printer_id TEXT PRIMARY KEY,
+        data TEXT NOT NULL          -- JSON of the settings this printer overrides (see automation.py)
+    );
+""")
+
 OK_STATES = ("submitted", "completed")
 
 
@@ -62,8 +70,26 @@ class Store:
         with self.db.tx() as c:
             c.execute("DELETE FROM mt_activity WHERE printer_id=?", (self.pid,))
             c.execute("DELETE FROM mt_checks WHERE printer_id=?", (self.pid,))
+            c.execute("DELETE FROM mt_automation WHERE printer_id=?", (self.pid,))
             prefix = self._key("")
             c.execute("DELETE FROM kv WHERE substr(key, 1, ?) = ?", (len(prefix), prefix))
+
+    # --- automation settings this printer overrides
+    def automation_overrides(self) -> dict:
+        row = self.db.one("SELECT data FROM mt_automation WHERE printer_id=?", (self.pid,))
+        try:
+            data = json.loads(row["data"]) if row else {}
+        except ValueError:
+            data = {}
+        return data if isinstance(data, dict) else {}
+
+    def set_automation_overrides(self, overrides: dict) -> None:
+        if not overrides:
+            self.db.execute("DELETE FROM mt_automation WHERE printer_id=?", (self.pid,))
+        else:
+            self.db.execute("INSERT INTO mt_automation(printer_id,data) VALUES(?,?) "
+                            "ON CONFLICT(printer_id) DO UPDATE SET data=excluded.data",
+                            (self.pid, json.dumps(overrides)))
 
     # --- activity (counter changes)
     def add_activity(self, ts: float, delta: int, count: int | None, kind: str,
