@@ -14,7 +14,7 @@ export async function mount(root, kit) {
   // ------------------------------------------------------------------ state
   const S = {
     unit: 'mm', photoW: 35, photoH: 45, margin: 5, gap: 2, orientation: 'auto', mode: 'fill', cols: 5, rows: 6, count: 12,
-    fit: 'fill', cropX: 0.5, cropY: 0.5, marks: true, outline: false, paper: 'a4', presetId: '', presetDirty: false, customW: 210, customH: 297,
+    fit: 'fill', area: 'full', marks: true, outline: false, paper: 'a4', presetId: '', presetDirty: false, customW: 210, customH: 297,
     mediaType: '', quality: '', resolution: '', copies: 1,
   };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage is optional */ }
@@ -88,7 +88,7 @@ export async function mount(root, kit) {
       const width = Math.round(bitmap.width * k), height = Math.round(bitmap.height * k);
       // a new photo starts with an average share, so it gets an average number of places
       const avg = images.length ? Math.max(1, Math.round(images.reduce((n, i) => n + i.share, 0) / images.length)) : 1;
-      images.push({ orig: bitmap, width, height, name: file.name, share: avg, jpegs: {} });
+      images.push({ orig: bitmap, width, height, name: file.name, share: avg, fit: S.fit, cropX: 0.5, cropY: 0.5, open: false, jpegs: {} });
     }
     paintPhotos();
     changed();
@@ -125,20 +125,48 @@ export async function mount(root, kit) {
   }
   const palette = (i) => `c${i % 8}`;
 
+  let paintedSig = '';
+  const sigOf = () => JSON.stringify([counts(), images.length, S.photoW, S.photoH, images.map((i) => i.fit), layout?.count]);
+  function paintPhotosIfNeeded() { if (sigOf() !== paintedSig) paintPhotos(); }
   function paintPhotos() {
+    paintedSig = sigOf();
     const some = images.length > 0;
     dropzone.hidden = some; photoList.hidden = !some; addMore.hidden = !some;
     photoList.replaceChildren(...images.map((img, i) => {
       const thumb = document.createElement('canvas');
       thumb.width = 44; thumb.height = Math.max(1, Math.round(44 * img.height / img.width));
       thumb.getContext('2d').drawImage(img.orig, 0, 0, thumb.width, thumb.height);
-      const row = h('li', { class: `photo-row ${images.length > 1 ? palette(i) : ''}` }, thumb,
+      const main = h('div', { class: 'photo-main' }, thumb,
         h('div', { class: 'photo-meta' }, h('strong', { title: img.name }, img.name), h('span', { class: 'hint' }, `${img.width} × ${img.height} px`)),
         images.length > 1 ? stepper(i, img) : null,
         h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Remove ${img.name}`, title: 'Remove this photo', onclick: () => { images.splice(i, 1); paintPhotos(); changed(); } }, icon('x', 16)));
+      const row = h('li', { class: `photo-row ${images.length > 1 ? palette(i) : ''}` }, main, adjustPanel(img));
       return row;
     }));
     paintSplit();
+  }
+
+  // Crop and fit belong to each photo: one may need its sides trimmed while another already has the right shape.
+  function adjustPanel(img) {
+    const shape = Math.abs(img.width / img.height - S.photoW / S.photoH) > 0.01;  // does this photo have a different shape from the frame?
+    const fitSel = h('select', { class: 'input', 'aria-label': `If ${img.name} has a different shape`, title: 'Crop the photo to the frame, or show all of it with white edges',
+      onchange: () => { img.fit = fitSel.value; paintPhotos(); changed(); } },
+      [['fill', 'Crop it to the frame'], ['fit', 'Show all of it (white edges)']].map(([v, t]) => h('option', { value: v, selected: img.fit === v ? true : null }, t)));
+    const slider = (key, label, hint) => {
+      const r = h('input', { type: 'range', min: 0, max: 100, value: Math.round(img[key] * 100), 'aria-label': `${hint} for ${img.name}`, title: hint,
+        oninput: () => { img[key] = r.value / 100; changed(); } });
+      return h('label', { class: 'range' }, h('span', {}, label), r);
+    };
+    const note = img.fit === 'fit' ? 'The whole photo is shown, with white edges where it doesn’t fill the frame.'
+      : shape ? 'The photo is cropped to the frame. Move it in its frame:' : 'This photo already has the shape of the frame, so nothing is cropped.';
+    const d = h('details', { class: 'adjust', open: img.open ? true : null, ontoggle: () => { img.open = d.open; } },
+      h('summary', {}, icon('chevron', 16), 'Crop and fit', h('span', { class: 'hint' }, img.fit === 'fit' ? ' · shown whole' : shape ? ' · cropped' : ' · right shape')),
+      h('div', { class: 'adjust-body' }, fitSel, h('p', { class: 'hint' }, note),
+        img.fit === 'fill' && shape ? slider('cropX', 'Left / right', 'Move the photo left or right in its frame') : null,
+        img.fit === 'fill' && shape ? slider('cropY', 'Up / down', 'Move the photo up or down in its frame') : null,
+        images.length > 1 ? h('button', { class: 'btn small', type: 'button', title: 'Give every photo this one’s crop and fit',
+          onclick: () => { for (const o of images) { o.fit = img.fit; o.cropX = img.cropX; o.cropY = img.cropY; } paintPhotos(); changed(); } }, 'Use for all photos') : null));
+    return d;
   }
 
   function stepper(i, img) {
@@ -214,10 +242,10 @@ export async function mount(root, kit) {
   const paperField = h('div', { class: 'field' });
   const paperSelect = h('select', { class: 'input', id: 'ps-paper', onchange: () => { S.paper = paperSelect.value; syncPaper(); changed(); } });
   const customRow = h('div', { class: 'two', hidden: true });
+  const areaNote = h('p', { class: 'notice info', hidden: true });
   const modeField = h('div', { class: 'field' });
   const gridRow = h('div', { class: 'two', hidden: true });
   const countRow = h('div', { class: 'two', hidden: true });
-  const cropBox = h('div', { class: 'crop', hidden: true });
 
   function syncPaper() {
     const list = papers();
@@ -225,6 +253,13 @@ export async function mount(root, kit) {
     if (S.paper !== 'custom' && !list.some((p) => p.id === S.paper)) S.paper = list.find((p) => p.keyword === printer?.default_media)?.id || list[0]?.id || 'a4';
     paperSelect.value = S.paper;
     customRow.hidden = S.paper !== 'custom';
+  }
+  function syncArea() {
+    const part = S.area !== 'full';
+    if (inputs.orientation) { inputs.orientation.disabled = part; inputs.orientation.value = S.orientation; }
+    const other = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[S.area];
+    areaNote.hidden = !part;
+    areaNote.replaceChildren(icon('info', 18), h('div', {}, `Only the ${S.area} half is printed; the rest stays blank. To use the ${other} half later, choose “${other[0].toUpperCase()}${other.slice(1)} half only” and put the sheet back in the tray the same way it went in (let the ink dry first). The sheet is not turned, so “Sheet direction” is fixed.`));
   }
   function syncMode() {
     gridRow.hidden = S.mode !== 'grid';
@@ -304,7 +339,7 @@ export async function mount(root, kit) {
     const paper = currentPaper();
     const out = { photo: { width: S.photoW, height: S.photoH }, unit: S.unit,
       paper: { width: paper.width, height: paper.height, ...(paper.keyword ? { media: paper.keyword } : {}), label: paper.label },
-      orientation: S.orientation, margin: S.margin, gap: S.gap, mode: S.mode, align: S.align, fit: S.fit, marks: S.marks, outline: S.outline, copies: Number(S.copies) || 1 };
+      orientation: S.orientation, area: S.area, margin: S.margin, gap: S.gap, mode: S.mode, align: S.align, fit: images[0]?.fit || S.fit, marks: S.marks, outline: S.outline, copies: Number(S.copies) || 1 };
     if (S.mode === 'grid') { out.cols = S.cols; out.rows = S.rows; }
     if (S.mode === 'count') out.count = S.count;
     if (S.mediaType) out.media_type = S.mediaType;
@@ -317,12 +352,13 @@ export async function mount(root, kit) {
     for (const k of ['orientation', 'align', 'fit', 'mode']) if (inputs[k]) inputs[k].value = S[k];
     for (const k of ['cols', 'rows', 'count']) if (inputs[k]) inputs[k].value = S[k];
     for (const k of ['marks', 'outline']) { const el = document.getElementById(`ps-${k}`); if (el) el.checked = Boolean(S[k]); }
-    syncFields(); syncMode(); syncPaper(); syncPrinter();
+    if (inputs.area) inputs.area.value = S.area;
+    syncFields(); syncMode(); syncArea(); syncPaper(); syncPrinter();
   }
   function applyPreset(p) {
     const x = p.settings;
     applying = true;
-    Object.assign(S, { photoW: x.photo.width, photoH: x.photo.height, unit: x.unit || 'mm', orientation: x.orientation || 'auto', margin: x.margin ?? 5, gap: x.gap ?? 2,
+    Object.assign(S, { photoW: x.photo.width, photoH: x.photo.height, unit: x.unit || 'mm', orientation: x.orientation || 'auto', area: x.area || 'full', margin: x.margin ?? 5, gap: x.gap ?? 2,
       mode: x.mode || 'fill', align: x.align || 'center', fit: x.fit || 'fill', marks: x.marks !== false, outline: Boolean(x.outline), copies: x.copies || 1 });
     if (x.cols) S.cols = x.cols;
     if (x.rows) S.rows = x.rows;
@@ -335,6 +371,8 @@ export async function mount(root, kit) {
     S.quality = printer?.qualities?.some((q) => q.value === x.quality) ? String(x.quality) : '';
     S.resolution = x.resolution && printer?.resolutions?.some((r) => r.value.join() === x.resolution.join()) ? x.resolution.join('x') : '';
     S.presetId = p.id; S.presetDirty = false;
+    for (const img of images) { img.fit = S.fit; img.cropX = 0.5; img.cropY = 0.5; }  // a preset's fit applies to every photo, centred
+    paintPhotos();
     syncAll();
     changed();
     applying = false;
@@ -412,25 +450,22 @@ export async function mount(root, kit) {
       customRow,
       h('div', { class: 'two' }, select('orientation', 'Sheet direction', [['auto', 'Automatic (fits the most)'], ['portrait', 'Portrait'], ['landscape', 'Landscape']]),
         select('align', 'Placed', [['center', 'Centred on the paper'], ['start', 'Top left']])),
+      select('area', 'Print on', [['full', 'The whole page'], ['top', 'Top half only'], ['bottom', 'Bottom half only'], ['left', 'Left half only'], ['right', 'Right half only']],
+        { onchange: (v) => { S.area = v; if (v !== 'full') S.orientation = 'auto'; syncArea(); }, id: 'ps-area',
+          hint: 'A half leaves the rest of the sheet blank, so you can use it later (the top half of A4 is an A5 area).' }),
+      areaNote,
       h('div', { class: 'two' }, numberField('margin', 'Margin around the photos'), numberField('gap', 'Space between photos')),
       select('mode', 'How many', [['fill', 'Fill the page'], ['grid', 'A grid (columns × rows)'], ['count', 'A number of photos']], { onchange: (v) => { S.mode = v; syncMode(); } }),
       gridRow, countRow),
     h('section', { class: 'card ps-card' }, sectionHead('check', 'Finishing'),
       check('marks', 'Cut marks', 'Small ticks beside the grid to guide the scissors or cutter.'),
       check('outline', 'Thin outline around each photo', 'Easier to cut along.'),
-      select('fit', 'If the photo has a different shape', [['fill', 'Crop it to the size'], ['fit', 'Show all of it (white edges)']]),
-      cropBox),
+      h('p', { class: 'hint' }, 'Cropping and fitting are set for each photo, under “Crop and fit” in its row above.')),
     printBox);
 
   // the grid, count and crop controls are built once and shown or hidden
   gridRow.append(plainNumber('cols', 'Columns'), plainNumber('rows', 'Rows'));
   countRow.append(plainNumber('count', 'Number of photos', { max: 600 }));
-  const cropX = h('input', { type: 'range', min: 0, max: 100, value: Math.round(S.cropX * 100), id: 'ps-cropx', 'aria-label': 'Move the photo left or right in its frame', title: 'Move the photo left or right in its frame',
-    oninput: () => { S.cropX = cropX.value / 100; changed(); } });
-  const cropY = h('input', { type: 'range', min: 0, max: 100, value: Math.round(S.cropY * 100), id: 'ps-cropy', 'aria-label': 'Move the photo up or down in its frame', title: 'Move the photo up or down in its frame',
-    oninput: () => { S.cropY = cropY.value / 100; changed(); } });
-  cropBox.append(h('p', { class: 'hint' }, 'The photo is cropped to fit. Move it in its frame:'),
-    h('label', { class: 'range' }, h('span', {}, 'Left / right'), cropX), h('label', { class: 'range' }, h('span', {}, 'Up / down'), cropY));
   customRow.append(numberField('customW', 'Paper width'), numberField('customH', 'Paper height'));
 
   // ------------------------------------------------------------------ the preview
@@ -448,10 +483,10 @@ export async function mount(root, kit) {
   form.append(h('section', { class: 'card ps-card narrow-only' }, sectionHead('printer', 'Make the sheet'), actionRow()));
   root.append(h('div', { class: 'ps-layout' }, form, side));
 
-  function cover(iw, ih, c, fit) {  // where the picture sits inside a cell (mm); the same rule as the PDF writer
+  function cover(iw, ih, c, fit, cx, cy) {  // where the picture sits inside a cell (mm); the same rule as the PDF writer
     const s = fit === 'fit' ? Math.min(c.w / iw, c.h / ih) : Math.max(c.w / iw, c.h / ih);
     const dw = iw * s, dh = ih * s;
-    return { dw, dh, x: c.x + (c.w - dw) * (dw > c.w ? S.cropX : 0.5), y: c.y + (c.h - dh) * (dh > c.h ? S.cropY : 0.5) };
+    return { dw, dh, x: c.x + (c.w - dw) * (dw > c.w ? cx : 0.5), y: c.y + (c.h - dh) * (dh > c.h ? cy : 0.5) };
   }
   function drawPreview() {
     const ratio = window.devicePixelRatio || 1;
@@ -467,13 +502,22 @@ export async function mount(root, kit) {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(ratio * k, 0, 0, ratio * k, 0, 0);
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, pageW, pageH);
+    if (L && L.area !== 'full' && L.region) {  // the part left blank (only in this preview; the PDF has nothing there)
+      const R = L.region;
+      ctx.fillStyle = 'rgba(100, 116, 139, 0.10)';
+      const rects = { top: [0, R.h, L.page_w, L.page_h - R.h], bottom: [0, 0, L.page_w, R.y], left: [R.w, 0, L.page_w - R.w, L.page_h], right: [0, 0, R.x, L.page_h] }[L.area];
+      ctx.fillRect(...rects);
+      ctx.save(); ctx.setLineDash([2, 1.5]); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 0.4; ctx.strokeRect(R.x, R.y, R.w, R.h); ctx.restore();
+      ctx.fillStyle = '#64748b'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('stays blank', rects[0] + rects[2] / 2, rects[1] + rects[3] / 2); ctx.textAlign = 'start';
+    }
     if (!L) return;
     ctx.lineWidth = 0.25; ctx.strokeStyle = '#444';
     for (const [n, c] of L.cells.entries()) {
       ctx.save();
       ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.clip();
       const img = images[L.assign ? L.assign[n] : 0] || images[0];
-      if (img) { const p = cover(img.width, img.height, c, S.fit); ctx.drawImage(img.orig, p.x, p.y, p.dw, p.dh); }
+      if (img) { const p = cover(img.width, img.height, c, img.fit, img.cropX, img.cropY); ctx.drawImage(img.orig, p.x, p.y, p.dw, p.dh); }
       else { ctx.fillStyle = '#e8ecf0'; ctx.fillRect(c.x, c.y, c.w, c.h); ctx.fillStyle = '#c4ccd6'; ctx.beginPath(); ctx.arc(c.x + c.w / 2, c.y + c.h * 0.4, c.w * 0.18, 0, 7); ctx.fill();
         ctx.beginPath(); ctx.ellipse(c.x + c.w / 2, c.y + c.h * 0.95, c.w * 0.36, c.h * 0.3, 0, 0, 7); ctx.fill(); }
       ctx.restore();
@@ -501,7 +545,8 @@ export async function mount(root, kit) {
     return {
       paper: { width: paper.width, height: paper.height }, photo: { width: S.photoW, height: S.photoH },
       margin: S.margin, gap: S.gap, mode: S.mode, cols: S.cols, rows: S.rows, count: S.count, orientation: S.orientation,
-      align: S.align, fit: S.fit, crop_x: S.cropX, crop_y: S.cropY, marks: S.marks, outline: S.outline,
+      align: S.align, area: S.area, fit: S.fit, marks: S.marks, outline: S.outline,
+      photos: images.length ? images.map((i) => ({ fit: i.fit, crop_x: i.cropX, crop_y: i.cropY })) : undefined,
       min_margin: minMargin(), borderless: Boolean(paper.borderless),
       counts: images.length ? images.map((i) => i.share) : undefined,
     };
@@ -521,7 +566,6 @@ export async function mount(root, kit) {
   function changed() {
     if (!applying && S.presetId && !S.presetDirty) { S.presetDirty = true; paintPresets(); }
     save();
-    updateCropBox();
     clearTimeout(timer);
     timer = setTimeout(refreshLayout, 120);
   }
@@ -557,11 +601,9 @@ export async function mount(root, kit) {
       b.disabled = !ok || !canPrint();
       b.title = canPrint() ? 'Show the sheet, then print it on the selected printer' : 'Needs a printer with a CUPS queue and a paper size it offers. You can still download the PDF.';
     }
-    updateCropBox();
-    paintPhotos();
+    paintPhotosIfNeeded();
     drawPreview();
   }
-  const updateCropBox = () => { cropBox.hidden = !(S.fit === 'fill' && layout?.cells?.length && images.some((i) => Math.abs(i.width / i.height - S.photoW / S.photoH) > 0.01)); };
   const canPrint = () => Boolean(printer && printer.configured !== false && !printer.error && printer.actual_size && S.paper !== 'custom' && currentPaper().keyword);
 
   // ------------------------------------------------------------------ download and print
@@ -647,6 +689,7 @@ export async function mount(root, kit) {
   hideLauncher();
 
   syncMode();
+  syncArea();
   syncFields();
   loadPresets();
   paintPhotos();

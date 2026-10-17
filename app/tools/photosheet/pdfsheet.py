@@ -80,10 +80,11 @@ def build_pdf(layout: Layout, jpeg: bytes, info: Jpeg, **kw) -> bytes:
 
 
 def build_sheet(layout: Layout, images: list[tuple[bytes, Jpeg]], assign: list[int] | None, *, fit: str = "fill",
-                crop_x: float = 0.5, crop_y: float = 0.5, marks: bool = True, outline: bool = False,
+                crop_x: float = 0.5, crop_y: float = 0.5, per_photo: list[dict] | None = None, marks: bool = True, outline: bool = False,
                 for_media: bool = False, title: str = "Photo sheet") -> bytes:
     """The PDF bytes. `images` are the photos (JPEG bytes and their size); `assign[i]` is the photo in place i
-    (default: the first photo everywhere). `fit`: "fill" crops the picture to the photo size, "fit" shows all of it on white.
+    (default: the first photo everywhere). `per_photo[i]` ({"fit", "crop_x", "crop_y"}) sets how photo i is cropped or
+    fitted; what it leaves out comes from `fit`, `crop_x` and `crop_y`. `fit`: "fill" crops the picture to the photo size, "fit" shows all of it on white.
     `for_media`: a landscape layout is rotated onto a portrait page, the way the paper is fed into the printer
     (so the printer needs no rotating of its own). The picture is never rotated relative to the sheet."""
     lw, lh = layout.page_w, layout.page_h
@@ -105,13 +106,15 @@ def build_sheet(layout: Layout, images: list[tuple[bytes, Jpeg]], assign: list[i
     for n, cell in enumerate(layout.cells):
         which = assign[n] if assign and n < len(assign) else 0
         info = images[which][1]
+        mine = per_photo[which] if per_photo and which < len(per_photo) else {}
+        my_fit, my_x, my_y = mine.get("fit", fit), mine.get("crop_x", crop_x), mine.get("crop_y", crop_y)
         x, w, h = cell["x"], cell["w"], cell["h"]
         y = ypdf(cell["y"], h)
-        scale = _scale(info, w, h, fit)
+        scale = _scale(info, w, h, my_fit)
         dw, dh = info.width * scale, info.height * scale
         # where the picture sits inside the cell: centred, or shifted when it is cropped
-        ix = x + (w - dw) * (crop_x if dw > w else 0.5)
-        iy = y + (h - dh) * ((1 - crop_y) if dh > h else 0.5)
+        ix = x + (w - dw) * (my_x if dw > w else 0.5)
+        iy = y + (h - dh) * ((1 - my_y) if dh > h else 0.5)
         out.append("q")
         out.append(f"{pt(x)} {pt(y)} {pt(w)} {pt(h)} re W n")
         out.append(f"{pt(dw)} 0 0 {pt(dh)} {pt(ix)} {pt(iy)} cm /Im{which} Do")

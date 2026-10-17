@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 MAX_USER_PRESETS = 50
 MAX_NAME = 60
 UNITS = ("mm", "cm", "in")
-KEYS = {"photo", "unit", "paper", "orientation", "margin", "gap", "mode", "cols", "rows", "count", "align", "fit",
+KEYS = {"photo", "unit", "paper", "orientation", "area", "margin", "gap", "mode", "cols", "rows", "count", "align", "fit",
         "marks", "outline", "media_type", "quality", "resolution", "copies"}
 MIGRATIONS = ["CREATE TABLE IF NOT EXISTS ps_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, created_at REAL NOT NULL);"]
 
@@ -60,7 +60,7 @@ def clean_settings(raw) -> dict:
         "paper": {"width": _num(paper, "width", lay.MIN_PAPER_MM, lay.MAX_PAPER_MM, "The paper width"),
                   "height": _num(paper, "height", lay.MIN_PAPER_MM, lay.MAX_PAPER_MM, "The paper height")},
         "orientation": raw.get("orientation", "auto"), "mode": raw.get("mode", "fill"), "align": raw.get("align", "center"),
-        "fit": raw.get("fit", "fill"),
+        "fit": raw.get("fit", "fill"), "area": raw.get("area", "full"),
         "margin": _num(raw, "margin", 0, lay.MAX_MARGIN_MM, "The margin") if "margin" in raw else 5.0,
         "gap": _num(raw, "gap", 0, lay.MAX_GAP_MM, "The gap") if "gap" in raw else 2.0,
         "marks": raw.get("marks", True), "outline": raw.get("outline", False),
@@ -69,6 +69,10 @@ def clean_settings(raw) -> dict:
         raise PresetError("The unit must be mm, cm or in.")
     if out["orientation"] not in ("auto", "portrait", "landscape"):
         raise PresetError("The sheet direction must be automatic, portrait or landscape.")
+    if out["area"] not in lay.AREAS:
+        raise PresetError("The part of the page must be full, top, bottom, left or right.")
+    if out["area"] != "full" and out["orientation"] == "landscape":
+        raise PresetError("A half page can't be combined with a landscape sheet.")
     if out["mode"] not in ("fill", "grid", "count"):
         raise PresetError("How many must be fill, grid or count.")
     if out["align"] not in ("center", "start"):

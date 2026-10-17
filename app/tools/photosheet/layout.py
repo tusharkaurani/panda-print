@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 MM_PER_INCH = 25.4
 MAX_COPIES = 600  # a sanity cap: a 5 mm photo on A4 would otherwise ask for thousands
 MAX_PHOTOS = 20  # different photos on one sheet
+AREAS = ("full", "top", "bottom", "left", "right")  # which part of the paper to use; the rest stays blank
+# the sides of the used area that lie on the paper's own edge (the printer can't reach the very edge there)
+EDGE_SIDES = {"full": ("top", "right", "bottom", "left"), "top": ("top", "right", "left"), "bottom": ("right", "bottom", "left"),
+              "left": ("top", "bottom", "left"), "right": ("top", "right", "bottom")}
 MIN_PHOTO_MM, MAX_PHOTO_MM = 5.0, 300.0
 MIN_PAPER_MM, MAX_PAPER_MM = 40.0, 500.0
 MAX_MARGIN_MM, MAX_GAP_MM = 100.0, 50.0
@@ -94,6 +98,7 @@ class Request:
     orientation: str = "auto"  # auto | portrait | landscape
     align: str = "center"  # center | start
     min_margin: float = 3.0  # the closest the printer can print to an edge (mm)
+    area: str = "full"  # full | top | bottom | left | right: print on that part of the paper only, leave the rest blank
 
 
 @dataclass
@@ -108,11 +113,13 @@ class Layout:
     cells: list[dict]  # {"x", "y", "w", "h"} of each photo
     grid: dict  # bounding box of the photos {"x", "y", "w", "h"}
     warnings: list[str] = field(default_factory=list)
+    region: dict = field(default_factory=dict)  # the part of the paper in use {"x", "y", "w", "h"}; the rest is blank
+    area: str = "full"
 
     def to_dict(self) -> dict:
         return {"page_w": self.page_w, "page_h": self.page_h, "orientation": self.orientation, "cols": self.cols,
                 "rows": self.rows, "count": self.count, "capacity": self.capacity, "cells": self.cells,
-                "grid": self.grid, "warnings": self.warnings}
+                "grid": self.grid, "warnings": self.warnings, "region": self.region, "area": self.area}
 
 
 def _fits(avail: float, size: float, gap: float) -> int:
@@ -139,12 +146,24 @@ def _check(req: Request) -> None:
         raise LayoutError("Choose portrait, landscape or automatic.")
     if req.align not in ("center", "start"):
         raise LayoutError("Choose centred or top-left.")
+    if req.area not in AREAS:
+        raise LayoutError("Choose the whole page, or its top, bottom, left or right half.")
+    if req.area != "full" and req.orientation == "landscape":
+        raise LayoutError("A half page is laid out the way the paper is fed. Choose portrait or automatic, or use the whole page.")
+
+
+def _region(area: str, w: float, h: float) -> dict:
+    """The part of a page of w x h in use. Halves are exact, so an A4 sheet's top half is an A5 area."""
+    return {"full": {"x": 0.0, "y": 0.0, "w": w, "h": h},
+            "top": {"x": 0.0, "y": 0.0, "w": w, "h": h / 2}, "bottom": {"x": 0.0, "y": h / 2, "w": w, "h": h / 2},
+            "left": {"x": 0.0, "y": 0.0, "w": w / 2, "h": h}, "right": {"x": w / 2, "y": 0.0, "w": w / 2, "h": h}}[area]
 
 
 def _lay(req: Request, landscape: bool) -> Layout:
     page_w, page_h = (req.paper_h, req.paper_w) if landscape else (req.paper_w, req.paper_h)
     top, right, bottom, left = req.margin
-    avail_w, avail_h = page_w - left - right, page_h - top - bottom
+    region = _region(req.area, page_w, page_h)
+    avail_w, avail_h = region["w"] - left - right, region["h"] - top - bottom  # margins are measured inside the area in use
     max_cols, max_rows = _fits(avail_w, req.photo_w, req.gap), _fits(avail_h, req.photo_h, req.gap)
     capacity = min(max_cols * max_rows, MAX_COPIES)
     warnings: list[str] = []
@@ -169,21 +188,23 @@ def _lay(req: Request, landscape: bool) -> Layout:
         used_cols = cols
         grid_w = used_cols * req.photo_w + (used_cols - 1) * req.gap
         grid_h = rows * req.photo_h + (rows - 1) * req.gap
-        ox = left + ((avail_w - grid_w) / 2 if req.align == "center" else 0.0)
-        oy = top + ((avail_h - grid_h) / 2 if req.align == "center" else 0.0)
+        ox = region["x"] + left + ((avail_w - grid_w) / 2 if req.align == "center" else 0.0)
+        oy = region["y"] + top + ((avail_h - grid_h) / 2 if req.align == "center" else 0.0)
         for i in range(count):
             r, c = divmod(i, cols)
             cells.append({"x": round(ox + c * (req.photo_w + req.gap), 3), "y": round(oy + r * (req.photo_h + req.gap), 3),
                           "w": req.photo_w, "h": req.photo_h})
         grid = {"x": round(ox, 3), "y": round(oy, 3), "w": round(grid_w, 3), "h": round(grid_h, 3)}
     return Layout(page_w, page_h, "landscape" if landscape else "portrait", cols if count else 0, rows if count else 0,
-                  count, capacity, cells, grid, warnings)
+                  count, capacity, cells, grid, warnings, region, req.area)
 
 
 def compute(req: Request) -> Layout:
     """Lay the photos out. Raises LayoutError if the request makes no sense or nothing fits."""
     _check(req)
     options = {"portrait": [False], "landscape": [True], "auto": [False, True]}[req.orientation]
+    if req.area != "full":
+        options = [False]  # a part of the page is described as the paper is fed, so the sheet is never turned
     layouts = [_lay(req, landscape) for landscape in options]
     # the best one: for a grid the one where the whole grid fits, otherwise the most photos (portrait wins a tie)
     def score(l: Layout) -> tuple:
@@ -192,8 +213,8 @@ def compute(req: Request) -> Layout:
     best = max(layouts, key=score)
     if best.count == 0:
         raise LayoutError("The photo doesn't fit on this paper with these margins. Try a smaller margin, a bigger paper, or a smaller photo.")
-    top, right, bottom, left = req.margin
-    close = [s for s, v in zip(("top", "right", "bottom", "left"), req.margin) if v < req.min_margin]
+    on_edge = EDGE_SIDES[req.area]  # the edge between the used part and the blank part is not the printer's concern
+    close = [s for s, v in zip(("top", "right", "bottom", "left"), req.margin) if s in on_edge and v < req.min_margin]
     if close:
         best.warnings.append(f"The {', '.join(close)} margin is under {req.min_margin:g} mm. Most printers can't print that close to the edge, so the photos there may be cut off. Use a borderless paper size, or a bigger margin.")
     if req.mode == "fill" and best.capacity >= MAX_COPIES:

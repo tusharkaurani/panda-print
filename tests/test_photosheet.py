@@ -573,9 +573,11 @@ def jpeg_n(rig_unused=None, n=3, size=(700, 900), sizes=None):
     return [make_jpeg(*(sizes[i] if sizes else size)) + bytes([i]) * 3 for i in range(n)]  # distinct bytes per photo
 
 
-def send_many(rig, path, photos, counts=None, fill=None, opts=None, printer=None, **extra):
+def send_many(rig, path, photos, counts=None, fill=None, opts=None, printer=None, looks=None, **extra):
     import io
     st = rig.settings(**extra)
+    if looks is not None:
+        st["photos"] = looks  # each photo's own crop and fit
     if counts is not None:
         st["counts"] = counts
     if fill is not None:
@@ -869,3 +871,213 @@ def test_a_damaged_saved_preset_is_ignored_not_shown(rig):
     rig.ctx.db.execute("INSERT INTO ps_presets(id, name, data, created_at) VALUES('user-bad','Bad','{not json',1)")
     names = [p["name"] for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]]
     assert "Bad" not in names and len(names) >= 3
+
+
+# ------------------------------------------------------------------ crop and fit are per photo
+
+def image_ops(pdf: bytes, which: int):
+    """For each cell that draws photo `which`: (drawn width, drawn height, x, y) in points."""
+    return [tuple(float(v) for v in m.groups()) for m in re.finditer(rb"([\d.]+) 0 0 ([\d.]+) ([\d.-]+) ([\d.-]+) cm /Im%d Do" % which, pdf)]
+
+
+def two_photo_sheet(per_photo, **kw):
+    lay = L.compute(req(mode="count", count=2, align="start"))
+    wide, tall = P.Jpeg(1200, 900, 3), P.Jpeg(700, 900, 3)
+    return P.build_sheet(lay, [(make_jpeg(1200, 900), wide), (make_jpeg(700, 900) + b"x", tall)], [0, 1], per_photo=per_photo, marks=False, **kw)
+
+
+def test_each_photo_is_cropped_on_its_own():
+    left = two_photo_sheet([{"fit": "fill", "crop_x": 0.0, "crop_y": 0.5}, {"fit": "fill", "crop_x": 0.5, "crop_y": 0.5}])
+    right = two_photo_sheet([{"fit": "fill", "crop_x": 1.0, "crop_y": 0.5}, {"fit": "fill", "crop_x": 0.5, "crop_y": 0.5}])
+    a_left, a_right = image_ops(left, 0)[0], image_ops(right, 0)[0]
+    assert a_left[2] > a_right[2]  # the wide photo's picture shifts with its own crop
+    assert image_ops(left, 1) == image_ops(right, 1)  # the other photo is untouched
+
+
+def test_one_photo_can_be_shown_whole_while_another_is_cropped():
+    sheet = two_photo_sheet([{"fit": "fit"}, {"fit": "fill"}])
+    wide = image_ops(sheet, 0)[0]
+    tall = image_ops(sheet, 1)[0]
+    cell_w, cell_h = 35 / 25.4 * 72, 45 / 25.4 * 72
+    assert abs(wide[0] - cell_w) < 0.01 and wide[1] < cell_h  # shown whole: full width, less than full height
+    assert tall[0] >= cell_w - 0.01 and tall[1] >= cell_h - 0.01  # cropped: covers the frame
+
+
+def test_without_per_photo_settings_the_sheet_wide_ones_apply():
+    base = two_photo_sheet(None, fit="fit")
+    explicit = two_photo_sheet([{"fit": "fit"}, {"fit": "fit"}])
+    assert image_ops(base, 0) == image_ops(explicit, 0) and image_ops(base, 1) == image_ops(explicit, 1)
+
+
+def test_the_api_uses_each_photos_own_crop_and_fit(rig):
+    photos = jpeg_n(sizes=[(1200, 900), (700, 900)], n=2)
+    looks = [{"fit": "fill", "crop_x": 0.0, "crop_y": 0.5}, {"fit": "fit", "crop_x": 0.5, "crop_y": 0.5}]
+    a = send_many(rig, "pdf", photos, counts=[1, 1], marks=False, looks=looks).data
+    b = send_many(rig, "pdf", photos, counts=[1, 1], marks=False, looks=[{**looks[0], "crop_x": 1.0}, looks[1]]).data
+    assert image_ops(a, 0)[0][2] != image_ops(b, 0)[0][2] and image_ops(a, 1) == image_ops(b, 1)
+    cell_w = 35 / 25.4 * 72
+    assert abs(image_ops(a, 1)[0][0] - cell_w) < 0.01  # the second is shown whole
+
+
+def test_crops_outside_the_frame_are_held_to_its_edges(rig):
+    photos = jpeg_n(sizes=[(1200, 900)], n=1)
+    far = send_many(rig, "pdf", photos, marks=False, looks=[{"fit": "fill", "crop_x": 99, "crop_y": -5}]).data
+    edge = send_many(rig, "pdf", photos, marks=False, looks=[{"fit": "fill", "crop_x": 1, "crop_y": 0}]).data
+    assert image_ops(far, 0) == image_ops(edge, 0)
+
+
+def test_bad_per_photo_settings_are_plain_400s(rig):
+    photos = jpeg_n(n=2)
+    for bad in ([{"fit": "fill"}], [{"fit": "squash"}, {"fit": "fill"}], "fill", [1, 2], {"a": 1}):
+        r = send_many(rig, "pdf", photos, counts=[1, 1], looks=bad)
+        assert r.status_code == 400 and r.get_json()["error"]["message"], bad
+        body = {**rig.settings(), "images": [{"width": 700, "height": 900}] * 2, "photos": bad}
+        assert rig.client.post("/api/photosheet/layout", json=body, headers=rig.h).status_code == 400, bad
+
+
+def test_sharpness_follows_each_photos_own_fit(rig):
+    body = {**rig.settings(), "images": [{"width": 1200, "height": 900}]}
+    filled = rig.client.post("/api/photosheet/layout", json={**body, "photos": [{"fit": "fill"}]}, headers=rig.h).get_json()["data"]["dpi"]
+    whole = rig.client.post("/api/photosheet/layout", json={**body, "photos": [{"fit": "fit"}]}, headers=rig.h).get_json()["data"]["dpi"]
+    assert whole > filled  # shrinking the whole wide photo into the frame packs more pixels into each inch than cropping it up to fill
+
+
+def test_the_page_has_crop_and_fit_in_each_photo_and_not_in_finishing():
+    js = (Path(__file__).resolve().parent.parent / "app/tools/photosheet/ui/ui.js").read_text()
+    assert "Crop and fit" in js and "Use for all photos" in js and "img.cropX" in js
+    assert "'If the photo has a different shape'" not in js  # the sheet-wide control is gone
+
+
+# ------------------------------------------------------------------ printing on only part of the page
+
+@pytest.mark.parametrize("area", ["top", "bottom", "left", "right"])
+def test_photos_stay_inside_the_part_of_the_page_in_use(area):
+    r = L.compute(req(area=area))
+    R = r.region
+    assert r.orientation == "portrait" and r.area == area and r.count > 0
+    for c in r.cells:
+        assert c["x"] >= R["x"] + 5 - 1e-6 and c["y"] >= R["y"] + 5 - 1e-6  # the margin is measured inside the area
+        assert c["x"] + c["w"] <= R["x"] + R["w"] - 5 + 1e-6 and c["y"] + c["h"] <= R["y"] + R["h"] - 5 + 1e-6
+
+
+def test_the_top_half_of_a4_is_an_a5_area_and_the_rest_is_left_blank():
+    r = L.compute(req(area="top"))
+    assert r.region == {"x": 0.0, "y": 0.0, "w": 210, "h": 148.5}  # A5 landscape
+    assert (r.cols, r.rows, r.count) == (5, 2, 10)
+    assert max(c["y"] + c["h"] for c in r.cells) <= 148.5 - 5  # nothing below the middle of the sheet
+
+
+def test_the_bottom_half_is_the_mirror_so_the_two_halves_make_one_full_sheet():
+    top, bottom = L.compute(req(area="top")), L.compute(req(area="bottom"))
+    assert (top.cols, top.rows) == (bottom.cols, bottom.rows)
+    assert min(c["y"] for c in bottom.cells) >= 148.5 + 5  # all of it in the lower half
+    for t, b in zip(top.cells, bottom.cells):
+        assert abs((b["y"] - t["y"]) - 148.5) < 1e-6 and t["x"] == b["x"]  # the same pattern, one half lower
+    assert top.count + bottom.count >= 2 * top.count
+
+
+def test_left_and_right_halves():
+    left, right = L.compute(req(area="left")), L.compute(req(area="right"))
+    assert max(c["x"] + c["w"] for c in left.cells) <= 105 and min(c["x"] for c in right.cells) >= 105
+    assert left.count == right.count == 12
+
+
+def test_the_sheet_is_never_turned_when_only_part_of_it_is_used():
+    r = L.compute(req(area="top", paper_w=215.9, paper_h=279.4))  # on letter, whole page would pick landscape
+    assert r.orientation == "portrait"
+    assert L.compute(req(paper_w=215.9, paper_h=279.4)).orientation == "landscape"
+    with pytest.raises(L.LayoutError, match="Choose portrait or automatic"):
+        L.compute(req(area="top", orientation="landscape"))
+    with pytest.raises(L.LayoutError, match="half"):
+        L.compute(req(area="middle"))
+
+
+def test_a_grid_or_a_number_works_inside_the_part_in_use():
+    g = L.compute(req(area="top", mode="grid", cols=4, rows=2))
+    assert (g.cols, g.rows, g.count) == (4, 2, 8) and not g.warnings
+    over = L.compute(req(area="top", mode="grid", cols=5, rows=6))  # six rows won't fit in half a page
+    assert over.rows == 2 and any("fit" in w for w in over.warnings)
+    assert L.compute(req(area="bottom", mode="count", count=3)).count == 3
+
+
+def test_a_photo_too_big_for_the_half_is_refused_plainly():
+    with pytest.raises(L.LayoutError, match="doesn't fit"):
+        L.compute(req(area="top", photo_w=100, photo_h=150))  # fits the page, not half of it
+
+
+def test_only_the_margins_on_the_papers_own_edge_are_checked_against_the_printer():
+    mid = L.compute(req(area="top", margin=(5, 5, 0, 5)))  # a 0 bottom margin is the middle of the sheet, not an edge
+    assert not mid.warnings
+    edge = L.compute(req(area="top", margin=(0, 5, 5, 5)))
+    assert any("top margin" in w for w in edge.warnings)
+    full = L.compute(req(margin=(5, 5, 0, 5)))
+    assert any("bottom margin" in w for w in full.warnings)
+
+
+@pytest.mark.parametrize("area,photo,margin,gap", list(itertools.product(
+    ["top", "bottom", "left", "right"], [(35, 45), (50.8, 50.8), (20, 25)], [3, 8], [0, 3])))
+def test_every_half_page_layout_stays_in_its_half_and_never_overlaps(area, photo, margin, gap):
+    try:
+        r = L.compute(req(area=area, photo_w=photo[0], photo_h=photo[1], margin=(margin,) * 4, gap=gap, min_margin=0.0))
+    except L.LayoutError:
+        return
+    R = r.region
+    for c in r.cells:
+        assert R["x"] - 1e-6 <= c["x"] and c["x"] + c["w"] <= R["x"] + R["w"] + 1e-6
+        assert R["y"] - 1e-6 <= c["y"] and c["y"] + c["h"] <= R["y"] + R["h"] + 1e-6
+    for a, b in itertools.combinations(r.cells, 2):
+        sep = max(max(b["x"] - (a["x"] + a["w"]), a["x"] - (b["x"] + b["w"])), max(b["y"] - (a["y"] + a["h"]), a["y"] - (b["y"] + b["h"])))
+        assert sep >= gap - 1e-6
+
+
+def clip_rects(pdf: bytes):
+    return [tuple(float(v) for v in m.groups()) for m in re.finditer(rb"([\d.]+) ([\d.-]+) ([\d.]+) ([\d.]+) re W n", pdf)]
+
+
+def test_the_pdf_draws_nothing_outside_the_part_in_use(rig):
+    pdf = send_many(rig, "pdf", jpeg_n(n=1), area="top", marks=False).data
+    _w, page_h = mediabox(pdf)
+    clips = clip_rects(pdf)
+    assert len(clips) == 10
+    lowest_pdf_y = min(c[1] for c in clips)  # PDF y grows upward: the lowest photo's bottom edge
+    assert lowest_pdf_y > page_h / 2  # every photo sits above the middle of the sheet
+    low = send_many(rig, "pdf", jpeg_n(n=1), area="bottom", marks=False).data
+    assert max(c[1] + c[3] for c in clip_rects(low)) < page_h / 2 + 0.01  # and the bottom half uses only the lower part
+
+
+def test_cut_marks_stay_in_the_part_in_use_too(rig):
+    pdf = send_many(rig, "pdf", jpeg_n(n=1), area="top", marks=True).data
+    _w, page_h = mediabox(pdf)
+    for m in re.finditer(rb"([\d.]+) ([\d.]+) m ([\d.]+) ([\d.]+) l S", pdf):
+        assert float(m[2]) > page_h / 2 - 0.5 and float(m[4]) > page_h / 2 - 0.5  # no mark below the middle of the sheet
+
+
+def test_the_layout_api_reports_the_area_in_use(rig):
+    d = rig.client.post("/api/photosheet/layout", json=rig.settings(area="top"), headers=rig.h).get_json()["data"]
+    assert d["area"] == "top" and d["region"]["h"] == 148.5 and d["count"] == 10
+    assert rig.client.post("/api/photosheet/layout", json=rig.settings(), headers=rig.h).get_json()["data"]["area"] == "full"
+    for bad in ({"area": "diagonal"}, {"area": "top", "orientation": "landscape"}, {"area": 3}):
+        r = rig.client.post("/api/photosheet/layout", json=rig.settings(**bad), headers=rig.h)
+        assert r.status_code == 400 and r.get_json()["error"]["message"], bad
+
+
+def test_printing_a_half_page_sends_a_full_page_with_the_rest_blank(rig):
+    r = send_many(rig, "print", jpeg_n(n=1), opts={"media": "iso_a4_210x297mm"}, printer=PID, area="top")
+    assert r.status_code == 202 and r.get_json()["data"]["count"] == 10
+    doc = rig.backend.submitted[-1]["document"]
+    w, h = mediabox(doc)
+    assert abs(w - 210 / 25.4 * 72) < 0.1 and abs(h - 297 / 25.4 * 72) < 0.1  # still a whole A4 page, so it feeds normally
+    assert min(c[1] for c in clip_rects(doc)) > h / 2
+
+
+def test_presets_remember_the_part_of_the_page():
+    assert pre.clean_settings(good_settings(area="top"))["area"] == "top"
+    assert pre.clean_settings(good_settings())["area"] == "full"
+    for bad in ({"area": "middle"}, {"area": "top", "orientation": "landscape"}):
+        with pytest.raises(pre.PresetError):
+            pre.clean_settings(good_settings(**bad))
+
+
+def test_the_page_has_the_print_on_control():
+    js = (Path(__file__).resolve().parent.parent / "app/tools/photosheet/ui/ui.js").read_text()
+    assert "'Print on'" in js and "Top half only" in js and "stays blank" in js

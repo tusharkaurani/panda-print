@@ -10,6 +10,7 @@
 #     paper       {width, height, media?, label?}   portrait size; `media` is the CUPS paper name, used when the
 #                 printer offers it, otherwise the size is matched
 #     orientation auto | portrait | landscape
+#     area        full | top | bottom | left | right   use only that half of the paper; the rest stays blank
 #     margin, gap mm
 #     mode        fill | grid | count     (grid needs cols and rows; count needs count)
 #     align       center | start

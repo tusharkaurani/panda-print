@@ -71,7 +71,7 @@ def create(ctx: AppContext) -> Tool:
             margin=margin, gap=number(raw, "gap", 2.0, "The gap"),
             mode=str(raw.get("mode", "fill")), cols=int(number(raw, "cols", 0)), rows=int(number(raw, "rows", 0)),
             count=int(number(raw, "count", 0)), orientation=str(raw.get("orientation", "auto")),
-            align=str(raw.get("align", "center")), min_margin=min_margin)
+            align=str(raw.get("align", "center")), min_margin=min_margin, area=str(raw.get("area", "full")))
 
     def compute(raw, min_margin: float, paper_override=None) -> lay.Layout:
         try:
@@ -137,12 +137,26 @@ def create(ctx: AppContext) -> Tool:
             raise BadRequest(f"The {name} were not understood.")
         return value
 
+    def unit(v, default=0.5) -> float:
+        return min(max(float(v), 0.0), 1.0) if isinstance(v, (int, float)) and not isinstance(v, bool) else default
+
+    def photo_looks(raw: dict, n_photos: int) -> list[dict]:
+        """How each photo is cropped or fitted: its own setting, else the sheet-wide one."""
+        base_fit = "fit" if raw.get("fit") == "fit" else "fill"
+        asked = raw.get("photos")
+        if asked is not None and (not isinstance(asked, list) or len(asked) != n_photos or not all(isinstance(a, dict) for a in asked)):
+            raise BadRequest(f"Give each of the {n_photos} photo{'s' if n_photos != 1 else ''} its crop settings, or none.")
+        out = []
+        for i in range(n_photos):
+            a = asked[i] if asked else {}
+            f = a.get("fit", base_fit)
+            if f not in ("fill", "fit"):
+                raise BadRequest("The photo shape handling must be fill or fit.")
+            out.append({"fit": f, "crop_x": unit(a.get("crop_x", raw.get("crop_x", 0.5))), "crop_y": unit(a.get("crop_y", raw.get("crop_y", 0.5)))})
+        return out
+
     def pdf_for(layout_: lay.Layout, images: list, assign: list[int], raw: dict, for_media: bool) -> bytes:
-        fit = "fit" if raw.get("fit") == "fit" else "fill"
-        def unit(key):
-            v = raw.get(key, 0.5)
-            return min(max(float(v), 0.0), 1.0) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.5
-        return pdfsheet.build_sheet(layout_, images, assign, fit=fit, crop_x=unit("crop_x"), crop_y=unit("crop_y"),
+        return pdfsheet.build_sheet(layout_, images, assign, per_photo=photo_looks(raw, len(images)),
                                     marks=bool(raw.get("marks", True)), outline=bool(raw.get("outline", False)),
                                     for_media=for_media, title="Photo sheet")
 
@@ -188,6 +202,7 @@ def create(ctx: AppContext) -> Tool:
         try:
             min_margin = float(raw.get("min_margin", capabilities.DEFAULT_MIN_MARGIN_MM))
             layout_, counts, assign = plan(raw, n_photos, 0.0 if raw.get("borderless") else min_margin)
+            looks = photo_looks(raw, n_photos)
             result = layout_.to_dict()
         except (BadRequest, TypeError, ValueError) as e:
             return fail(e if isinstance(e, BadRequest) else BadRequest("Those numbers weren't understood."))
@@ -195,9 +210,8 @@ def create(ctx: AppContext) -> Tool:
         if result["cells"]:  # how sharp the sharpest-limited photo will be at this size
             try:
                 c = result["cells"][0]
-                fit = "fit" if raw.get("fit") == "fit" else "fill"
-                dpis = [pdfsheet.effective_dpi(pdfsheet.Jpeg(int(i["width"]), int(i["height"]), 3), c["w"], c["h"], fit)
-                        for i, used in zip(imgs, counts) if used]
+                dpis = [pdfsheet.effective_dpi(pdfsheet.Jpeg(int(i["width"]), int(i["height"]), 3), c["w"], c["h"], looks[k]["fit"])
+                        for k, (i, used) in enumerate(zip(imgs, counts)) if used]
                 if dpis:
                     result["dpi"] = round(min(dpis))
             except (KeyError, TypeError, ValueError, ZeroDivisionError):
