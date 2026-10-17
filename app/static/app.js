@@ -4,6 +4,8 @@ import { h, clear } from './lib/dom.js';
 import { icon } from './lib/icons.js';
 import { makeKit } from './lib/kit.js';
 import { errorBox } from './lib/ui.js';
+import { store } from './lib/printer-store.js';
+import { admin, wizard } from './printers.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -72,13 +74,25 @@ async function loadLinks() {
   $('launcher').hidden = !(cfg.links.length || cfg.error || cfg.warnings?.length);
 }
 
-// ---------------------------------------------------------------- tools
-const mounted = new Map();  // id -> {root}
-let tools = [];
+// ---------------------------------------------------------------- printers
+async function loadPrinters() {
+  const res = await api('/printers');
+  if (!res.ok) return false;
+  store.set(res.data.printers, res.data.defaults);
+  return true;
+}
 
-function pickTool() {
-  const wanted = location.hash.slice(1);
-  return tools.find((t) => t.id === wanted) || tools[0];
+// ---------------------------------------------------------------- views
+const mounted = new Map();  // tool id -> {root}
+let tools = [];
+let shown = null;  // which view is on screen: 'setup' | 'printers' | 'tool:<id>'
+
+const visibleTools = () => tools.filter((t) => !t.needs_printer || store.list.length > 0);
+
+function activeTool() {
+  const route = location.hash.slice(1);
+  const list = visibleTools();
+  return list.find((t) => t.id === route) || list[0] || null;
 }
 
 async function mountTool(t) {
@@ -99,34 +113,91 @@ async function mountTool(t) {
   }
 }
 
-function showTool() {
-  const current = pickTool();
-  for (const [id, { root }] of mounted) root.hidden = id !== current.id;
-  document.querySelectorAll('#tool-tabs a').forEach((a) => {
-    a.toggleAttribute('aria-current', a.dataset.tool === current.id);
-    if (a.dataset.tool === current.id) a.setAttribute('aria-current', 'page');
+function paintTabs() {
+  const list = visibleTools();
+  const tabs = $('tool-tabs');
+  tabs.hidden = list.length < 2 || shown === 'setup' || shown === 'printers';
+  const sig = list.map((t) => t.id).join();
+  if (tabs.dataset.sig !== sig) {
+    tabs.dataset.sig = sig;
+    clear(tabs).append(...list.map((t) => h('a', { class: 'tab', href: `#${t.id}`, 'data-tool': t.id }, icon(t.icon || 'wrench', 16), t.title)));
+  }
+  const current = activeTool();
+  tabs.querySelectorAll('a').forEach((a) => {
+    if (current && a.dataset.tool === current.id) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
   });
+}
+
+function paintPrinterBar() {
+  const bar = $('printer-bar');
+  const t = activeTool();
+  bar.hidden = !(t?.needs_printer && store.list.length > 1 && shown?.startsWith('tool:'));
+  if (bar.hidden) return;
+  const select = h('select', { id: 'printer-select', class: 'input', onchange: (e) => store.select(e.target.value) },
+    store.list.map((p) => h('option', { value: p.id, selected: p.id === store.currentId }, p.name)));
+  clear(bar).append(icon('printer', 18), h('label', { for: 'printer-select' }, 'Printer'), select);
+}
+
+function show(view) {
+  const changed = shown !== view;
+  shown = view;
+  if (changed) window.scrollTo(0, 0);
+  $('view-setup').hidden = view !== 'setup';
+  if (view !== 'setup') clear($('view-setup'));  // don't keep a finished wizard around
+  $('view-printers').hidden = view !== 'printers';
+  $('view-tools').hidden = !view.startsWith('tool:');
+  $('launcher').classList.toggle('compact', view === 'setup');
+  return changed;
+}
+
+async function render() {
+  const route = location.hash.slice(1);
+  const has = store.list.length > 0;
+  const link = $('printers-link');
+  link.hidden = !has;
+  link.toggleAttribute('aria-current', has && route === 'printers');
+
+  if (!has) {  // nothing to show without a printer: walk the user through adding one
+    if (show('setup')) {
+      wizard(clear($('view-setup')), { mode: 'first', onDone: async () => { await loadPrinters(); location.hash = ''; render(); } });
+    }
+    return;
+  }
+  if (route === 'printers') {
+    if (show('printers')) {
+      admin(clear($('view-printers')), { onChanged: async () => { await loadPrinters(); render(); } });
+    }
+    paintTabs();
+    return;
+  }
+  const t = activeTool();
+  if (!t) {
+    $('tools').replaceChildren(errorBox({ message: 'No tools are installed.' }));
+    show('tool:none');
+    return;
+  }
+  if (!mounted.has(t.id)) await mountTool(t);
+  show(`tool:${t.id}`);
+  for (const [id, { root }] of mounted) root.hidden = id !== t.id;
+  paintTabs();
+  paintPrinterBar();
   window.dispatchEvent(new Event('pp:tool-shown'));
 }
 
 async function init() {
-  const res = await api('/tools');
-  if (!res.ok || !res.data?.tools) {
-    $('tools').append(errorBox(res.error, () => location.reload()));
+  const [toolsRes] = await Promise.all([api('/tools'), loadPrinters()]);
+  if (!toolsRes.ok || !toolsRes.data?.tools) {
+    $('view-tools').append(errorBox(toolsRes.error, () => location.reload()));
     return;
   }
-  tools = res.data.tools;
-  $('mock-pill').hidden = !res.data.mock;
-  $('version').textContent = `panda-print ${res.data.version}`;
-
-  if (tools.length > 1) {
-    const tabs = $('tool-tabs');
-    tabs.hidden = false;
-    tabs.append(...tools.map((t) => h('a', { class: 'tab', href: `#${t.id}`, 'data-tool': t.id }, icon(t.icon || 'wrench', 16), t.title)));
-  }
-  await Promise.all(tools.map(mountTool));
-  showTool();
-  window.addEventListener('hashchange', showTool);
+  tools = toolsRes.data.tools;
+  $('mock-pill').hidden = !toolsRes.data.mock;
+  $('version').textContent = `panda-print ${toolsRes.data.version}`;
+  $('printers-link').append(icon('printer', 18), h('span', {}, 'Printers'));
+  store.subscribe(() => { paintPrinterBar(); });
+  window.addEventListener('hashchange', render);
+  await render();
 }
 
 loadLinks();

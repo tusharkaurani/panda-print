@@ -5,8 +5,9 @@ It ships with one tool, **Printer Maintenance** (status, ink gauges, lifetime pa
 recent jobs, and a nozzle-check tracker with a "Print nozzle check now" button), plus a **launcher** grid for
 external tools. More tools plug in as self-contained modules.
 
-Built for a Brother DCP-T730DW behind CUPS on a Raspberry Pi, but nothing is hard-wired: every address and
-path is an environment variable.
+Built for a Brother DCP-T730DW behind CUPS on a Raspberry Pi, but no printer is hard-wired: the first visit opens
+a **setup wizard** that finds your printer (or asks for its IP), and a **Printers** page lets you add, edit, test and
+remove printers later. Everything else (ports, paths, timeouts) is an environment variable.
 
 - Python 3.12 + Flask on waitress, no build step, no CDN, no runtime internet. About 30-40 MB RAM.
 - Light and dark themes (follows the OS, with a toggle), mobile friendly.
@@ -14,7 +15,8 @@ path is an environment variable.
 
 ## Try it on your laptop (mock mode)
 
-`MOCK=1` replaces the printer and CUPS with a fake that has realistic data, so the whole UI works offline.
+`MOCK=1` replaces the printers and CUPS with fakes that have realistic data, so the whole UI works offline. It
+starts with one demo printer, and the wizard can "find" two pretend ones (192.168.1.18 and 192.168.1.23).
 Printing a nozzle check in mock mode creates a fake job and bumps the fake page counter a few seconds later.
 
 ```bash
@@ -29,8 +31,24 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 MOCK=1 CONFIG_DIR=config .venv/bin/python -m app
 ```
 
-`MOCK_FAIL=printer,snmp,cups` makes those fake sources fail so you can see the error cards. Mock data lives in
-memory and is regenerated on every start (`MOCK_PERSIST=1` keeps it in `DATA_DIR`).
+`MOCK_SETUP=1` starts with no printers so you can walk through the first-run wizard. `MOCK_FAIL=printer,snmp,cups`
+makes those fake sources fail so you can see the error cards. Mock data lives in memory and is regenerated on every
+start (`MOCK_PERSIST=1` keeps it in `DATA_DIR`).
+
+## Setting up printers
+
+Open the dashboard. With no printer added, you get the wizard, and nothing else is shown until one exists.
+
+1. **Find your printer.** panda-print searches in two places at once: the queues CUPS already has (the printer's address is read from each queue's device URI) and the network itself (mDNS/Bonjour `_ipp._tcp`). Pick one, or type an IP address or host name (pasting `http://192.168.1.18/` works too).
+2. **Connect and name.** It checks three things in parallel and shows each result: the printer over IPP (model, state), the page counter over SNMP, and the CUPS queue (it picks the queue whose device points at the same address). Name and queue are filled in for you; **Advanced settings** has the IPP address, SNMP community/port/OID, the CUPS server, and an optional nozzle-check timer state file. If something fails you can still save ("Add anyway") and fix it later.
+
+The **Printers** page (header) lists every printer with a live check, and lets you edit, re-test and remove them.
+Removing a printer deletes its nozzle-check history (not the printer or its CUPS queue). When there is more than one
+printer, tools show a printer selector. With zero printers the wizard comes back.
+
+Discovery notes: mDNS needs multicast, which works with host networking (the compose example) but usually not in a
+bridged Docker network; the wizard says so and CUPS plus manual entry still work. `PRINTER_IP` (optional) adds a first
+printer automatically at start-up for unattended installs.
 
 ## Run it on the Pi (Docker)
 
@@ -63,12 +81,12 @@ All settings are environment variables; see [.env.example](.env.example) for the
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PORT`, `HOST` | `8095`, `0.0.0.0` | Where the app listens (one port) |
-| `PRINTER_IP` | `192.168.1.18` | Printer address (IPP at `ipp://<ip>/ipp/print` unless `PRINTER_IPP_URL` is set; SNMP on `SNMP_PORT`) |
-| `SNMP_COMMUNITY`, `SNMP_COUNTER_OID` | `public`, `1.3.6.1.2.1.43.10.2.1.4.1.1` | Lifetime page counter (prtMarkerLifeCount) |
-| `CUPS_URL`, `CUPS_QUEUE` | `http://127.0.0.1:631`, `T730` | CUPS server and queue |
+| `SNMP_COMMUNITY`, `SNMP_PORT`, `SNMP_COUNTER_OID` | `public`, `161`, `1.3.6.1.2.1.43.10.2.1.4.1.1` | Defaults prefilled for new printers (page counter is prtMarkerLifeCount) |
+| `CUPS_URL` | `http://127.0.0.1:631` | Default CUPS server for new printers, and where discovery looks |
+| `PRINTER_IP`, `PRINTER_IPP_URL`, `CUPS_QUEUE` | unset | Optional: add this printer automatically on first start if none exists |
 | `IDLE_DAYS` | `7` | Idle days before the host timer prints a check (used for "next check due") |
-| `POLL_INTERVAL` | `300` | Seconds between counter reads and CUPS job syncs |
-| `HOST_STATE_FILE` | `/host-state/state` | The host timer's `"<count> <epoch>"` file (optional, read-only) |
+| `POLL_INTERVAL` | `300` | Seconds between counter reads and CUPS job syncs (every printer) |
+| `HOST_STATE_FILE` | `/host-state/state` | The host timer's `"<count> <epoch>"` file; offered in the wizard (as that printer's timer state file) if it exists and no printer uses it yet |
 | `PRINT_COOLDOWN`, `PRINT_MAX_PER_HOUR` | `120`, `5` | Rate limit for manual nozzle checks |
 | `DATA_DIR`, `CONFIG_DIR` | `./data`, `./config` (image: `/data`, `/config`) | SQLite history, and `links.yml` + `logos/` |
 | `SECRET_KEY` | generated | CSRF signing key; if unset a random key is stored in `DATA_DIR/secret.key` (mode 0600) |
@@ -84,12 +102,12 @@ Changes appear on the page within about a minute, or on reload, with no restart 
 ## How the nozzle tracking works
 
 SNMP gives only the printer's current lifetime page count and IPP `Get-Jobs` only lists queued jobs, so the app
-keeps its own history in SQLite:
+keeps its own history in SQLite, separately for each printer:
 
 1. **Counter polling.** Every `POLL_INTERVAL` seconds (and when a page is viewed and the last read is older than 30 s) the app reads the counter. A rise is recorded with the time it was noticed and the previous read time, so times are accurate to roughly the poll interval. This is more precise than the host timer's state file, which is stamped when its daily run *noticed* the change.
 2. **Telling nozzle checks from other printing.** The app matches counter rises with nozzle checks it knows about: ones it submitted itself, and ones the host timer printed (found in CUPS's completed jobs: job name containing `nozzle-check`, i.e. `NOZZLE_JOB_PATTERN`, not submitted by this app). Anything left over is "someone printed". That is how *last print by someone*, *last automated check* and *last manual run* stay separate.
 3. **Idle clock.** Like the host script, a nozzle check counts as a print and restarts the idle clock, so *next automated check due* is `last print of any kind + IDLE_DAYS`.
-4. **First run.** If `HOST_STATE_FILE` is mounted and its count equals the printer's current count, the idle clock starts from its timestamp (a lower bound: it can lag the real print by up to a day); otherwise from the first reading. Until a print is seen the card says "at least".
+4. **First run.** If the printer has a timer state file set and its count equals the printer's current count, the idle clock starts from its timestamp (a lower bound: it can lag the real print by up to a day); otherwise from the first reading. Until a print is seen the card says "at least".
 
 The idle rule lives in `app/tools/maintenance/idle.py` with no I/O: `decide()` is the host script's `main()` minus side effects, and `parse_host_state()` reads its state format. That is the piece to reuse if you later move the scheduler into the app. **The app never prints automatically**; the host timer remains the only scheduler. A manual print uses IPP `Print-Job` straight to CUPS (no `lp` needed in the container).
 
@@ -97,6 +115,7 @@ The idle rule lives in `app/tools/maintenance/idle.py` with no I/O: `decide()` i
 
 - No login. Put an SSO reverse proxy in front.
 - Every `POST`/`PUT`/`PATCH`/`DELETE` under `/api/` needs an `X-CSRF-Token` header that matches an HttpOnly, `SameSite=Strict` cookie and carries a valid HMAC signature (`GET /api/csrf` issues both). If the browser sends `Origin` or `Referer`, its host must match the request host, `X-Forwarded-Host`, or `TRUSTED_ORIGINS`.
+- The wizard and the Printers page make the server contact addresses you type (printers, CUPS), so they are POSTs behind the same CSRF protection, and link-local and multicast addresses (where cloud metadata services live) are refused. Anyone allowed through your SSO can add a printer, so treat that as an admin-level permission.
 - Manual printing is limited by `PRINT_COOLDOWN` and `PRINT_MAX_PER_HOUR`, counted from the database so restarts don't reset it (answers `429` with `Retry-After`).
 - Strict Content-Security-Policy (no inline script or style, no external hosts except images you point links at), and logo files are served sandboxed.
 - The SNMP community and addresses are configuration, not secrets, but nothing sensitive is committed: `.env`, `data/`, `secret.key` and your logos are git-ignored.
@@ -117,8 +136,8 @@ app/tools/scan/
   ui/ui.css       optional, loaded automatically
 ```
 
-**Backend** (`__init__.py`). `create(ctx)` receives `ctx.settings`, `ctx.db`, `ctx.printer` (the same IPP/SNMP/CUPS
-access, or the mock) and `ctx.clock`, and returns a `Tool`:
+**Backend** (`__init__.py`). `create(ctx)` receives `ctx.settings`, `ctx.db`, `ctx.printers` (the printer registry),
+`ctx.backend_for(printer)` (IPP/SNMP/CUPS access for one printer, or its mock) and `ctx.clock`, and returns a `Tool`:
 
 ```python
 from pathlib import Path
@@ -138,16 +157,18 @@ def create(ctx):
     return Tool(id=TOOL_ID, title="Scanner", description="Scan to PDF", icon="file",
                 blueprint=bp, ui_dir=Path(__file__).parent / "ui",
                 start=None,          # optional callable to launch background threads
-                order=20)            # tab order
+                order=20,            # tab order
+                needs_printer=True)  # hidden until a printer exists; UI gets a printer selector
 ```
 
 - State-changing routes are CSRF-protected automatically; just call them with `kit.api`.
+- A tool about printers keeps its data **per printer** (a `printer_id` column) and puts the id in its routes, like `/api/maintenance/<printer id>/nozzle`. Register `ctx.printers.on_delete(fn)` to remove that data when a printer is removed. See `app/tools/maintenance/` (`store.py`, `runtimes.py`).
 - Return `ok: false` with an `error` for upstream trouble (printer unreachable) so only that card shows an error. Raise `app.core.errors.SourceError("source", "friendly message", "hint")` for that.
 - Static files in `ui/` are served at `/tools/scan/`.
 
 **Frontend** (`ui/ui.js`). `mount(root, kit)` is the whole contract. `kit` has `api(path, {method, body})` (never throws, resolves to `{ok, data, error}`),
 `h()` for building elements, `icon()`, `fmt` (ago/abs/days), `ui` (`card`, `badge`, `gauge`, `stat`, `errorBox`, `skeleton`),
-`toast()`, `poll(fn, ms)` (runs while the tool is on screen) and `toolId`. See `app/tools/maintenance/ui/ui.js` for a full example.
+`toast()`, `poll(fn, ms)` (runs while the tool is on screen), `toolId`, and `printer` (`printer.current` is the selected printer, `printer.subscribe(fn)` fires when the selection or its settings change; reload your cards there). See `app/tools/maintenance/ui/ui.js` for a full example.
 When there is more than one tool the dashboard shows tabs (`#<id>` in the URL). Icons come from `app/static/lib/icons.js`; add a path there if you need a new one.
 
 **Tests.** The `make_app` fixture in `tests/conftest.py` builds the app with the mock printer and a controllable clock.
@@ -157,19 +178,20 @@ When there is more than one tool the dashboard shows tabs (`#<id>` in the URL). 
 ```
 app/
   factory.py            wiring: settings, db, security, tool discovery
-  core/                 db, csrf, rate-limit rule, links.yml loader, tool registry, errors
-  printer/              ipp.py, snmp.py (stdlib clients), live.py, mock.py (the PrinterBackend interface is in __init__.py)
-  static/               index.html, app.css, app.js, lib/ (dom, api, ui kit, icons)
-  tools/maintenance/    idle.py, tracker.py, store.py, normalize.py, service.py, api.py, ui/
+  core/                 db, csrf, rate-limit rule, links.yml loader, tool registry, printer registry + API, errors
+  printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, mock.py, discovery.py (wizard: find + probe)
+  static/               index.html, app.css, app.js, printers.js (wizard + admin), lib/ (dom, api, ui kit, icons)
+  tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/
   tools/_template/      copy me
 config/                 links.yml (starter) and logos/
-tests/                  pytest (config parsing, idle logic, attribution, IPP/SNMP wire formats, API, CSRF, rate limit)
+tests/                  pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)
 Dockerfile  compose.example.yml  .github/workflows/build.yml
 ```
 
 ## Known limits
 
-- IPP/SNMP were written against the protocol specs and the facts about this printer and tested with in-process fakes; they have not yet been run against the real DCP-T730DW. The first thing to check on the Pi is the three cards loading.
+- Verified read-only against the real DCP-T730DW from a Mac on the same LAN: mDNS discovery, the IPP attributes (ink levels, state, model) and the SNMP page counter all work. Not yet exercised against a real CUPS server: the queue list, job list, host-job import and printing are covered by in-process fakes only, so on the Pi check that the print queue card loads before pressing "Print nozzle check now".
+- The nozzle-check timer's state file is per printer, and the host script only serves one printer. Other printers still get full tracking from the page counter and CUPS.
 - If CUPS is unreachable while the host timer prints a check, that page is counted as "someone printed" (the counter can't tell the difference).
 - The page counter is shared by all prints, so a manual check that never prints (for example the printer is offline) can be mistaken for a later print within `ATTRIBUTION_WINDOW` (30 minutes by default).
 - Ink levels are the printer's own estimates.

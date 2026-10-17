@@ -17,7 +17,8 @@ TOOL_ID = Path(__file__).parent.name
 
 def create(ctx: AppContext) -> Tool:
     # ctx.settings: env-derived settings   ctx.db: SQLite (see db.migrate)
-    # ctx.printer: IPP/SNMP/CUPS access    ctx.clock: time.time, overridable in tests
+    # ctx.printers: the printers added in the UI   ctx.backend_for(printer): IPP/SNMP/CUPS access (or mock)
+    # ctx.clock: time.time, overridable in tests
     bp = Blueprint(TOOL_ID, __name__)
 
     @bp.get("/hello")
@@ -35,4 +36,5 @@ def create(ctx: AppContext) -> Tool:
         blueprint=bp,
         ui_dir=Path(__file__).parent / "ui",
         order=100,  # tab order when there are several tools
+        needs_printer=False,  # True: hidden until a printer exists, and the UI gets kit.printer (see README)
     )

@@ -39,3 +39,10 @@ export function clear(el) {
   el.replaceChildren();
   return el;
 }
+
+// Replace an element's children, skipping null/false like h() does (native append would print "false")
+export function fill(el, ...children) {
+  el.replaceChildren();
+  append(el, children);
+  return el;
+}

@@ -8,19 +8,24 @@ export function mount(root, kit) {
   const { h, icon, fmt, ui, api, toast } = kit;
   root.classList.add('mt');
 
-  const printerCard = ui.card({ title: 'Printer', iconName: 'printer', onRefresh: () => load(printerCard, '/maintenance/printer', renderPrinter) });
-  const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', onRefresh: () => load(nozzleCard, '/maintenance/nozzle', renderNozzle) });
-  const queueCard = ui.card({ title: 'Print queue', iconName: 'list', wide: true, onRefresh: () => load(queueCard, '/maintenance/queue', renderQueue) });
+  const printerCard = ui.card({ title: 'Printer', iconName: 'printer', onRefresh: () => load(printerCard, 'printer', renderPrinter) });
+  const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', onRefresh: () => load(nozzleCard, 'nozzle', renderNozzle) });
+  const queueCard = ui.card({ title: 'Print queue', iconName: 'list', wide: true, onRefresh: () => load(queueCard, 'queue', renderQueue) });
   root.append(h('div', { class: 'grid' }, printerCard.el, nozzleCard.el, queueCard.el));
 
   // ------------------------------------------------------------ generic loader
-  async function load(card, path, render) {
+  const base = () => `/maintenance/${kit.printer.current?.id}`;
+
+  async function load(card, what, render) {
+    const id = kit.printer.current?.id;
+    if (!id) return;
     card.busy(true);
-    const res = await api(path);
+    const res = await api(`${base()}/${what}`);
+    if (id !== kit.printer.current?.id) return;  // the selection changed while we waited
     card.busy(false);
     if (!res.ok) {
       card.setBadge(ui.badge('Unavailable', 'bad'));
-      card.set(ui.errorBox(res.error, () => load(card, path, render)));
+      card.set(ui.errorBox(res.error, () => load(card, what, render)));
       return;
     }
     render(res.data);
@@ -91,7 +96,7 @@ export function mount(root, kit) {
     } else {
       printBtn.disabled = false;
       printHint.textContent = 'Prints one small test page (four colour bars). Uses a sheet of paper and a little ink.';
-      if (retryAt) { retryAt = 0; load(nozzleCard, '/maintenance/nozzle', renderNozzle); }
+      if (retryAt) { retryAt = 0; load(nozzleCard, 'nozzle', renderNozzle); }
     }
   }
   setInterval(() => { if (retryAt) refreshPrintButton(); }, 1000);
@@ -152,7 +157,7 @@ export function mount(root, kit) {
   async function doPrint() {
     dialog.close();
     printBtn.disabled = true;
-    const res = await api('/maintenance/nozzle/print', { method: 'POST' });
+    const res = await api(`${base()}/nozzle/print`, { method: 'POST' });
     if (res.ok) {
       toast(`Nozzle check sent to the printer (job #${res.data.job_id}).`);
     } else {
@@ -166,12 +171,19 @@ export function mount(root, kit) {
   }
 
   function refreshAll() {
-    load(nozzleCard, '/maintenance/nozzle', renderNozzle);
-    load(printerCard, '/maintenance/printer', renderPrinter);
-    load(queueCard, '/maintenance/queue', renderQueue);
+    load(nozzleCard, 'nozzle', renderNozzle);
+    load(printerCard, 'printer', renderPrinter);
+    load(queueCard, 'queue', renderQueue);
   }
 
-  kit.poll(() => load(printerCard, '/maintenance/printer', renderPrinter), 30_000);
-  kit.poll(() => load(queueCard, '/maintenance/queue', renderQueue), 30_000);
-  kit.poll(() => load(nozzleCard, '/maintenance/nozzle', renderNozzle), 60_000);
+  // another printer was chosen (or this one's settings were edited): start over
+  kit.printer.subscribe(() => {
+    retryAt = 0;
+    for (const c of [printerCard, nozzleCard, queueCard]) { c.set(ui.skeleton()); c.setBadge(null); c.stamp(''); }
+    refreshAll();
+  });
+
+  kit.poll(() => load(printerCard, 'printer', renderPrinter), 30_000);
+  kit.poll(() => load(queueCard, 'queue', renderQueue), 30_000);
+  kit.poll(() => load(nozzleCard, 'nozzle', renderNozzle), 60_000);
 }

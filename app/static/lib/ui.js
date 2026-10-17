@@ -35,7 +35,7 @@ export function card({ title, iconName, wide = false, onRefresh }) {
     set(...children) { clear(body).append(...children.flat(Infinity).filter(Boolean)); },
     setBadge(node) { clear(badgeSlot); if (node) badgeSlot.append(node); },
     busy(on) { el.setAttribute('aria-busy', on ? 'true' : 'false'); },
-    stamp() { updated.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; },
+    stamp(blank) { updated.textContent = blank === '' ? '' : `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; },
   };
 }
 

@@ -18,6 +18,7 @@
         <span>panda-print</span>
       </a>
       <span id="mock-pill" class="pill" hidden>Demo data</span>
+      <a id="printers-link" class="nav-btn" href="#printers"></a>
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Theme"></button>
     </div>
   </header>
@@ -31,8 +32,13 @@
       <ul id="links-grid" class="tiles"></ul>
     </section>
 
-    <nav id="tool-tabs" class="tabs" aria-label="Tools" hidden></nav>
-    <div id="tools"></div>
+    <div id="view-setup" hidden></div>
+    <div id="view-printers" hidden></div>
+    <div id="view-tools">
+      <nav id="tool-tabs" class="tabs" aria-label="Tools" hidden></nav>
+      <div id="printer-bar" class="printer-bar" hidden></div>
+      <div id="tools"></div>
+    </div>
   </main>
 
   <footer class="wrap foot">
