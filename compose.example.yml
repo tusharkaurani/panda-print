@@ -20,7 +20,7 @@ services:
       # Printers are added in the browser: the first visit opens a setup wizard that finds your
       # printer (from CUPS and the network) or asks for its IP. These only prefill / seed it:
       # CUPS_URL: "http://127.0.0.1:631"
-      # PRINTER_IP: "192.168.1.18"   # optional: add this printer automatically on first start
+      # PRINTER_IP: "192.168.1.50"   # optional: add this printer automatically on first start
       # CUPS_QUEUE: "T730"
       # SNMP_COMMUNITY: "public"
       # NOZZLE_AUTO: "1"           # new printers start with the automatic nozzle check switched on (default: off)

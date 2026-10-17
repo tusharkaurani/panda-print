@@ -74,7 +74,7 @@ _OID_RE = re.compile(r"^\d+(\.\d+){5,}$")
 
 
 def clean_host(value: str) -> str:
-    """Accept '192.168.1.18', 'printer.lan', or a pasted 'http://192.168.1.18/'. Returns '' if invalid."""
+    """Accept '192.168.1.50', 'printer.lan', or a pasted 'http://192.168.1.50/'. Returns '' if invalid."""
     value = (value or "").strip()
     if "://" in value:
         value = urlsplit(value).hostname or ""

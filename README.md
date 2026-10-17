@@ -55,7 +55,7 @@ server and network, with realistic data).
 
 Open the dashboard. With no printer added, you get the wizard, and nothing else is shown until one exists.
 
-1. **Find your printer.** panda-print searches in two places at once: the queues CUPS already has (the printer's address is read from each queue's device URI) and the network itself (mDNS/Bonjour `_ipp._tcp`). Pick one, or type an IP address or host name (pasting `http://192.168.1.18/` works too).
+1. **Find your printer.** panda-print searches in two places at once: the queues CUPS already has (the printer's address is read from each queue's device URI) and the network itself (mDNS/Bonjour `_ipp._tcp`). Pick one, or type an IP address or host name (pasting `http://192.168.1.50/` works too).
 2. **Connect and name.** It checks three things in parallel and shows each result: the printer over IPP (model, state), the page counter over SNMP, and the CUPS queue (it picks the queue whose device points at the same address). Name and queue are filled in for you; **Advanced settings** has the IPP address, SNMP community/port/OID, the CUPS server, and an optional nozzle-check timer state file. If something fails you can still save ("Add anyway") and fix it later.
 
 The **printer dropdown** in the header lists your printers (the first is preselected) and ends with **Manage printers…**,
