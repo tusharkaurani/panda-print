@@ -325,7 +325,7 @@ export async function mount(root, kit) {
       h('span', { class: 'preset-name' }, ...[h('strong', {}, cur.name), S.presetDirty ? h('span', { class: 'hint' }, ' · changed') : null, cur.builtin ? h('span', { class: 'hint' }, ' · comes with the app') : null].filter(Boolean)),
       h('div', { class: 'row-inline' }, ...[
         !cur.builtin && S.presetDirty ? h('button', { class: 'btn small', type: 'button', title: 'Replace this preset with the settings as they are now', onclick: () => saveAs(cur.name) }, 'Save changes') : null,
-        h('button', { class: 'btn small', type: 'button', title: 'Show this preset as text you can paste into presets.yml to ship it with the app', onclick: () => showYaml(cur) }, 'Copy as YAML'),
+        h('button', { class: 'btn small', type: 'button', title: 'Show the settings on the page as text you can paste into presets.yml to ship them with the app', onclick: () => showYaml(cur) }, 'Copy as YAML'),
         !cur.builtin ? h('button', { class: 'btn small danger', type: 'button', title: 'Delete this preset (asks first)', onclick: () => confirmDelete(cur) }, 'Delete') : null].filter(Boolean)));
   }
   async function loadPresets() {
@@ -425,14 +425,17 @@ export async function mount(root, kit) {
     delDialog.showModal();
   }
   const yamlText = h('textarea', { class: 'input yaml', readonly: true, rows: 14, spellcheck: 'false', 'aria-label': 'The preset as YAML' });
-  const yamlDialog = h('dialog', { class: 'wide', 'aria-labelledby': 'ps-yaml-title' }, h('h3', { id: 'ps-yaml-title' }, 'Preset as YAML'),
+  const yamlNote = h('p', { class: 'hint' });
+  const yamlDialog = h('dialog', { class: 'wide', 'aria-labelledby': 'ps-yaml-title' }, h('h3', { id: 'ps-yaml-title' }, 'Preset as YAML'), yamlNote,
     h('p', {}, 'To ship this preset with the app, paste it under “presets:” in app/tools/photosheet/presets.yml (a second preset is added as another “- id: …” entry).'), yamlText,
     h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Copy the text', onclick: async () => {
       try { await navigator.clipboard.writeText(yamlText.value); toast('Copied.'); } catch { yamlText.select(); toast('Press Ctrl+C (Cmd+C) to copy.'); }
     } }, 'Copy'), h('button', { class: 'btn primary', type: 'button', title: 'Close', onclick: () => yamlDialog.close() }, 'Close')));
+  // The YAML is of the settings as they are on the page now (so a preset you changed exports what you see), under the preset's name.
   async function showYaml(p) {
-    try { const r = await fetch(`/api/photosheet/presets/${encodeURIComponent(p.id)}/yaml`, { credentials: 'same-origin' }); yamlText.value = r.ok ? await r.text() : 'Could not load this preset.'; }
-    catch { yamlText.value = 'Could not load this preset.'; }
+    const res = await api('/photosheet/presets/yaml', { method: 'POST', body: { name: p.name, settings: presetSettings() } });
+    yamlText.value = res.ok ? res.data : (res.error?.message || 'Could not make the YAML.');
+    yamlNote.textContent = S.presetDirty ? `This is “${p.name}” with the changes you made on the page (not the saved version).` : `This is “${p.name}” as it is on the page now.`;
     yamlDialog.showModal();
   }
 

@@ -1093,3 +1093,25 @@ def test_a_preset_can_switch_back_from_a_half_page_to_the_whole_page(rig):
     whole = rig.client.post("/api/photosheet/presets", json={"name": "Whole", "settings": good_settings(area="full")}, headers=rig.h).get_json()["data"]
     saved = {p["id"]: p["settings"]["area"] for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]}
     assert saved[half["id"]] == "top" and saved[whole["id"]] == "full"
+
+
+def test_copy_as_yaml_exports_the_settings_on_the_page_not_the_saved_version(rig, tmp_path):
+    pid = rig.client.post("/api/photosheet/presets", json={"name": "Saved as half", "settings": good_settings(area="top")}, headers=rig.h).get_json()["data"]["id"]
+    changed = good_settings(area="full", margin=7)  # the person changed it on the page and has not saved
+    r = rig.client.post("/api/photosheet/presets/yaml", json={"name": "Saved as half", "settings": changed}, headers=rig.h)
+    text = r.get_data(as_text=True)
+    assert r.status_code == 200 and r.mimetype == "text/plain" and "area: full" in text and "area: top" not in text and "margin: 7" in text
+    f = tmp_path / "p.yml"
+    f.write_text(text)
+    back = pre.load_builtin(f)[0]["settings"]
+    assert back["area"] == "full" and back["margin"] == 7.0  # and it loads as a shipped preset
+    saved = rig.client.get(f"/api/photosheet/presets/{pid}/yaml").get_data(as_text=True)
+    assert "area: top" in saved  # the saved version is untouched by exporting
+
+
+def test_the_yaml_of_settings_refuses_bad_settings_and_needs_a_csrf_token(rig):
+    assert rig.client.post("/api/photosheet/presets/yaml", json={"settings": {"photo": {}}}, headers=rig.h).status_code == 400
+    assert rig.client.post("/api/photosheet/presets/yaml", json=[1], headers=rig.h).status_code == 400
+    assert rig.client.post("/api/photosheet/presets/yaml", json={"settings": good_settings()}).status_code == 403
+    ok = rig.client.post("/api/photosheet/presets/yaml", json={"settings": good_settings()}, headers=rig.h)
+    assert ok.status_code == 200 and "name: My preset" in ok.get_data(as_text=True)  # a name is filled in if there isn't one

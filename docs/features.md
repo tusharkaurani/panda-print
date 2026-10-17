@@ -111,5 +111,5 @@ The **Presets** card at the top saves the photo size, unit, paper, margins, layo
 
 - **Save these settings as a preset…** keeps your own, in the database, so every device that uses this panda-print sees them. Saving under an existing name replaces it. Up to 50.
 - Two come with the app: **35 × 45 mm on A4 (as A5 Half)** and **35 × 45 mm on A4 (210 × 297 mm)** (shown the same way, with "comes with the app"; they can't be deleted). They are listed in `app/tools/photosheet/presets.yml`, which is read on demand, so editing it needs no restart.
-- **Copy as YAML** turns any preset into text to paste into `presets.yml` under `presets:`, so a preset you set up here can ship with the code. Lengths in that file are in millimetres; the comments at the top of the file describe each setting.
+- **Copy as YAML** turns the settings on the page (so a preset you have changed exports what you see, not the saved version; the dialog says which) into text to paste into `presets.yml` under `presets:`, so a preset you set up here can ship with the code. Lengths in that file are in millimetres; the comments at the top of the file describe each setting.
 

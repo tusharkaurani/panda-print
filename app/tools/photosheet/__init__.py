@@ -322,6 +322,18 @@ def create(ctx: AppContext) -> Tool:
             return fail(BadRequest("That preset doesn't exist (any more).", 404))
         return jsonify(ok=True)
 
+    @bp.post("/presets/yaml")
+    def yaml_of_settings():
+        """The YAML for settings as they are right now on the page (a preset being edited), without saving anything."""
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return fail(BadRequest("The settings weren't understood."))
+        try:
+            text = pre.to_yaml({"name": pre.clean_name(body.get("name") or "My preset"), "settings": pre.clean_settings(body.get("settings"))})
+        except pre.PresetError as e:
+            return fail(BadRequest(str(e)))
+        return Response(text, mimetype="text/plain")
+
     @bp.get("/presets/<pid>/yaml")
     def preset_yaml(pid):
         found = next((p for p in [*builtin(), *saved.list()] if p["id"] == pid), None)
