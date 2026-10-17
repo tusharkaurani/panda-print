@@ -67,6 +67,8 @@ def _attr(tag: int, name: str, value: Any, first: bool) -> bytes:
         raw = struct.pack(">i", value)
     elif tag == BOOLEAN:
         raw = b"\x01" if value else b"\x00"
+    elif tag == RESOLUTION:  # (across, down, units): units 3 = per inch, 4 = per centimetre
+        raw = struct.pack(">iiB", value[0], value[1], value[2] if len(value) > 2 else 3)
     elif isinstance(value, bytes):
         raw = value
     else:
@@ -82,7 +84,8 @@ def encode_request(op: int, groups: list[tuple[int, list[tuple[int, str, Any]]]]
     for delim, attrs in groups:
         out.append(delim)
         for tag, name, value in attrs:
-            values = value if isinstance(value, (list, tuple)) else [value]
+            one = tag == RESOLUTION and isinstance(value, tuple) and value and isinstance(value[0], int)  # one (x, y, units)
+            values = [value] if one else value if isinstance(value, (list, tuple)) else [value]
             for i, v in enumerate(values):
                 out += _attr(tag, name, v, first=(i == 0))
     out.append(END_OF_ATTRS)

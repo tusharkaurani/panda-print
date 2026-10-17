@@ -106,28 +106,34 @@ export async function drawSheets(kit, item, sheets, { alive = () => true, width 
   sheets.append(noteOf(kit, 'Drawing the pages…'));
   try {
     const res = await fetch(file, { credentials: 'same-origin' });
-    const doc = await openPdf(new Uint8Array(await res.arrayBuffer()));
-    if (!alive()) return;
-    sheets.replaceChildren();
-    const count = Math.min(doc.numPages, maxPages);  // plenty to see what it is; keeps a long book quick
-    const ratio = window.devicePixelRatio || 1;
-    for (let n = 1; n <= count && alive(); n++) {
-      const page = await doc.getPage(n);
-      const base = page.getViewport({ scale: 1 });
-      const cssWidth = Math.max(160, Math.min(560, width));
-      const view = page.getViewport({ scale: (cssWidth / base.width) * ratio });
-      const canvas = h('canvas', { 'aria-label': `Page ${n} of ${item.pages}` });
-      canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height);
-      canvas.style.setProperty('width', `${cssWidth}px`);
-      sheets.append(sheetOf(kit, canvas));
-      await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: view }).promise;
-    }
-    if (doc.numPages > count && alive()) sheets.append(noteOf(kit, `…and ${doc.numPages - count} more pages.`));
-    doc.loadingTask.destroy();
+    await drawPdfBytes(kit, new Uint8Array(await res.arrayBuffer()), sheets, { alive, width, maxPages, pages: item.pages });
   } catch (e) {
     console.warn('preview failed', e);
     if (alive()) sheets.replaceChildren(noteOf(kit, 'This PDF could not be drawn here. You can still download it to look at it.'));
   }
+}
+
+// Draws the pages of a PDF (its bytes) into `sheets`. Used for library pages and for generated sheets.
+export async function drawPdfBytes(kit, bytes, sheets, { alive = () => true, width = 420, maxPages = 12, pages = null } = {}) {
+  const { h } = kit;
+  const doc = await openPdf(bytes);
+  if (!alive()) return;
+  sheets.replaceChildren();
+  const count = Math.min(doc.numPages, maxPages);  // plenty to see what it is; keeps a long book quick
+  const ratio = window.devicePixelRatio || 1;
+  for (let n = 1; n <= count && alive(); n++) {
+    const page = await doc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const cssWidth = Math.max(160, Math.min(560, width));
+    const view = page.getViewport({ scale: (cssWidth / base.width) * ratio });
+    const canvas = h('canvas', { 'aria-label': `Page ${n} of ${pages || doc.numPages}` });
+    canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height);
+    canvas.style.setProperty('width', `${cssWidth}px`);
+    sheets.append(sheetOf(kit, canvas));
+    await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: view }).promise;
+  }
+  if (doc.numPages > count && alive()) sheets.append(noteOf(kit, `…and ${doc.numPages - count} more pages.`));
+  doc.loadingTask.destroy();
 }
 
 // ------------------------------------------------------------------ the Preview dialog

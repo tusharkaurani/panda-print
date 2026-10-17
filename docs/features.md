@@ -89,3 +89,17 @@ Add as many printers as you like (**Manage printers…** in the header menu). Th
 - Two CUPS queues on one physical printer are fine; each keeps its own books.
 
 The tests use fakes only. `test_a_removed_printer_leaves_nothing_in_any_table` fails if a new tool adds a `printer_id` table and forgets `on_delete`, and `test_every_printer_route_answers_404_for_an_unknown_printer_and_never_500` walks the URL map, so a new per-printer route is covered automatically.
+
+## Photo Sheets tab
+
+Lay out copies of a photo you have already edited and cropped (a passport or ID photo, say) on a sheet of paper.
+
+1. **Choose the photo** (JPEG, PNG or WebP; the browser converts it to a high-quality JPEG, so every pixel is kept). Nothing is stored: the photo is sent for each preview, download or print and then forgotten.
+2. **Say how big each copy is:** pick a common size or type the width and height in mm, cm or inches. The common sizes are examples (35 × 45 mm, 2 × 2 in, 50 × 70 mm, ...); check your country's rules.
+3. **Pick the paper.** With a CUPS printer selected the list is the sizes that printer's queue offers (including borderless ones); otherwise common sizes, and a custom size for the PDF. Set the margin and the space between photos, and whether to fill the page, make a grid (for example 5 columns × 6 rows) or print a set number. The sheet direction can be automatic, which picks whichever fits more.
+4. **Finish:** optional cut marks and outlines, and, if the photo's shape differs from the size, crop it (you can move it in its frame) or show all of it on white. The preview updates as you type and says how many fit and how sharp the photo will be (a warning appears under about 250 pixels per inch).
+5. **Download the PDF**, or **Preview and print**. Printing shows the real PDF first, then sends it through the printer's CUPS queue.
+
+How it prints: the PDF page is exactly the paper size and is sent with scaling off (`print-scaling=none`), so each photo comes out at the size you chose. You also pick the paper type (plain, glossy photo, ...), the print quality and the number of copies, from what the queue offers; a resolution picker appears only if the printer offers more than one. A landscape layout is turned onto a portrait page, the way paper is fed into the printer, with the photos still upright on the sheet. Margins closer to the edge than the printer can reach are flagged, unless you choose a borderless paper size. Printing needs CUPS; without it you can still download the PDF. Printing is rate-limited per printer, like Print now.
+
+Not verified on real hardware yet: print one sheet on plain paper and measure a photo with a ruler before cutting a stack. The layout, the PDF and the job options are covered by tests against fakes, and the PDF opens in a normal viewer.

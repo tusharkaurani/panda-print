@@ -71,6 +71,18 @@ class FakePrinter:
         self._pending: list[tuple[float, int, int]] = []  # (done at, job id, pages)
         self.submitted: list[dict] = []  # every document sent through submit_document, for the tests
         self.sides_supported = ("one-sided", "two-sided-long-edge", "two-sided-short-edge")  # what the CUPS queue offers
+        self.options_offered: dict = {  # what the fake CUPS queue offers, modelled on a real inkjet queue
+            "media-supported": ["iso_a4_210x297mm", "om_a-4-borderless_210x297mm", "iso_a5_148x210mm", "na_index-4x6_4x6in",
+                                "oe_4x-6-borderless_4x6in", "na_5x7_5x7in", "na_letter_8.5x11in", "custom_215x345mm_215x345mm"],
+            "media-default": ["iso_a4_210x297mm"],
+            "media-type-supported": ["stationery", "photographic-glossy", "stationery-inkjet", "com.brother-bp-71"],
+            "print-quality-supported": [3, 4, 5], "print-quality-default": [4],
+            "printer-resolution-supported": [(300, 300, "dpi")], "printer-resolution-default": [(300, 300, "dpi")],
+            "print-scaling-supported": ["auto", "auto-fit", "fill", "fit", "none"],
+            "media-left-margin-supported": [300, 0], "media-right-margin-supported": [300, 0],
+            "media-top-margin-supported": [300, 0, 1200], "media-bottom-margin-supported": [300, 0, 1200],
+            "copies-supported": [(1, 9999)],
+        }
         self.printer_sides = ("one-sided", "two-sided-long-edge", "two-sided-short-edge")  # what the printer itself can do (an automatic duplexer?)
 
     # ---- helpers
@@ -157,8 +169,13 @@ class FakePrinter:
             self._tick()
             return [dict(j) for j in self.jobs]
 
+    def print_options(self) -> Attrs:
+        self._need_queue()
+        self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
+        return dict(self.options_offered)
+
     def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript",
-                        sides: str | None = None) -> int:
+                        sides: str | None = None, options: list | None = None) -> int:
         self._need_queue()
         self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
         if mime == "application/postscript" and not document.startswith(b"%!PS"):
@@ -170,7 +187,8 @@ class FakePrinter:
             now = self.clock()
             job_id, self._next_job = self._next_job, self._next_job + 1
             self.jobs.append(self._job(job_id, job_name, user, now, None, 0))
-            self.submitted.append({"job_id": job_id, "name": job_name, "mime": mime, "size": len(document), "pages": pages, "sides": sides})
+            self.submitted.append({"job_id": job_id, "name": job_name, "mime": mime, "size": len(document), "pages": pages, "sides": sides, "document": document,
+                                   "options": {name: value for _tag, name, value in options or []}})
             self._pending.append((now + PRINT_SECONDS, job_id, pages))
             return job_id
 

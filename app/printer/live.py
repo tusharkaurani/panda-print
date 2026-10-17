@@ -21,6 +21,12 @@ QUEUE_ATTRS = [
     "printer-state-reasons", "printer-state-message", "printer-is-accepting-jobs", "queued-job-count",
     "device-uri", "printer-uri-supported", "sides-supported",
 ]
+PRINT_OPTION_ATTRS = [
+    "media-supported", "media-default", "media-type-supported", "print-quality-supported", "print-quality-default",
+    "printer-resolution-supported", "printer-resolution-default", "print-scaling-supported",
+    "media-left-margin-supported", "media-right-margin-supported", "media-top-margin-supported",
+    "media-bottom-margin-supported", "copies-supported", "document-format-supported",
+]
 JOB_ATTRS = [
     "job-id", "job-name", "job-state", "job-state-reasons", "job-originating-user-name",
     "time-at-creation", "time-at-processing", "time-at-completed", "job-media-sheets-completed",
@@ -89,6 +95,19 @@ class LivePrinter:
         raise SourceError("cups", f"CUPS has no queue named '{self.p.cups_queue}' (found: {names}).",
                           "Open the Printers page and pick one of those queues.")
 
+    def print_options(self) -> Attrs:
+        """What the CUPS queue offers for a job: paper sizes and types, quality, resolution, margins, scaling."""
+        self._need_queue()
+        try:
+            resp = self.ipp.request(self._queue_url, ipp.GET_PRINTER_ATTRIBUTES, self._queue_uri,
+                                    [(ipp.KEYWORD, "requested-attributes", PRINT_OPTION_ATTRS)])
+        except Exception as e:
+            raise self._wrap("cups", f"CUPS ({self.p.cups_url})", e) from e
+        groups = resp.of(ipp.PRINTER_ATTRS)
+        if not groups:
+            raise SourceError("cups", "CUPS answered but returned no attributes for the queue.")
+        return groups[0]
+
     def list_jobs(self) -> list[Attrs]:
         self._need_queue()
         jobs: list[Attrs] = []
@@ -104,13 +123,15 @@ class LivePrinter:
         return jobs
 
     def submit_document(self, job_name: str, document: bytes, user: str, mime: str = "application/postscript",
-                        sides: str | None = None) -> int:
+                        sides: str | None = None, options: list[tuple[int, str, object]] | None = None) -> int:
         self._need_queue()
-        # PDFs and pictures are scaled to fit the paper (CUPS converts them for the printer); PostScript is left alone
-        job_attrs = [(ipp.KEYWORD, "print-scaling", "fit")] if mime != "application/postscript" else []
+        # PDFs and pictures are scaled to fit the paper (CUPS converts them for the printer); PostScript is left alone.
+        # `options` are extra job attributes (paper, quality, ...); one of them may replace the default scaling.
+        asked = {name for _tag, name, _v in options or []}
+        job_attrs = [(ipp.KEYWORD, "print-scaling", "fit")] if mime != "application/postscript" and "print-scaling" not in asked else []
         if sides:  # one-sided / two-sided-long-edge / two-sided-short-edge
             job_attrs.append((ipp.KEYWORD, "sides", sides))
-        job_attrs = job_attrs or None
+        job_attrs = [*job_attrs, *(options or [])] or None
         try:
             resp = self.ipp.request(self._queue_url, ipp.PRINT_JOB, self._queue_uri, [
                 (ipp.NAME, "requesting-user-name", user),

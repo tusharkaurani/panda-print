@@ -100,6 +100,8 @@ app/
   printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, discovery.py (wizard: find + probe)
   static/               index.html, app.css, app.js, printers.js (wizard + admin), lib/ (dom, api, ui kit, icons)
   tools/maintenance/    idle.py, schedule.py, pages.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/ (overview.js, nozzle.js, pages.js, shared.js)
+  tools/photosheet/     layout.py (sheet maths), pdfsheet.py (JPEG reader + PDF writer), capabilities.py (what a CUPS queue offers), ui/
+  tools/utilities/      catalog.yml + loader, cards ui
   tools/_template/      copy me
 config/                 links.yml (starter) and logos/
 tests/                  fakes.py (fake printer/CUPS/network) and pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)

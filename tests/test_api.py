@@ -12,7 +12,7 @@ def test_health(client):
 def test_index_and_tool_registry(client):
     assert b"panda-print" in client.get("/").data
     tools = client.get("/api/tools").get_json()["tools"]
-    assert [t["id"] for t in tools] == ["maintenance", "utilities"]
+    assert [t["id"] for t in tools] == ["maintenance", "photosheet", "utilities"]
     assert all(tab["description"] for tab in tools[0]["tabs"])  # each tab says what it holds on hover
     assert client.get(tools[0]["entry"]).status_code == 200
     assert client.get("/tools/maintenance/../../settings.py").status_code == 404

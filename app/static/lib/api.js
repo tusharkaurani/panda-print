@@ -23,6 +23,9 @@ export async function api(path, { method = 'GET', body } = {}, retried = false) 
       }
     }
     const res = await fetch('/api' + path, init);
+    if (res.ok && (res.headers.get('Content-Type') || '').startsWith('application/pdf')) {  // a generated file, not JSON
+      return { ok: true, status: res.status, data: await res.blob(), error: null, retryAfter: 0 };
+    }
     let json = null;
     try { json = await res.json(); } catch { /* not JSON */ }
     if (res.status === 403 && method !== 'GET' && !retried) return api(path, { method, body }, true);
