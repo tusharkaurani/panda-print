@@ -90,6 +90,10 @@
 .chip { padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; font-size: 13.5px; cursor: pointer; transition: border-color .15s, background .15s; }
 .chip:hover { border-color: var(--accent); }
 .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.preset-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
-.preset-bar .row-inline { gap: 8px; }
-.input.yaml { font-family: var(--mono); font-size: 12.5px; resize: vertical; }
+.chip-wrap { display: inline-flex; align-items: center; }
+.chip-wrap.mine .chip { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 10px; }
+.chip-x { display: grid; place-items: center; width: 28px; align-self: stretch; border: 1px solid var(--line); border-left: 0; border-radius: 0 99px 99px 0; background: var(--surface); color: var(--muted); cursor: pointer; }
+.chip-x:hover { color: var(--bad); border-color: var(--bad); }
+/* what a preset just filled in lights up for a moment */
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 28%, transparent); } to { background: transparent; } }
+.ps .flash { animation: flash 1.6s ease-out; border-radius: 10px; }

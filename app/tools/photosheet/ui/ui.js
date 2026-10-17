@@ -5,7 +5,6 @@ import { drawPdfBytes } from '/tools/maintenance/preview.js';
 
 const UNITS = { mm: { f: 1, dp: 1, step: 0.5 }, cm: { f: 10, dp: 2, step: 0.1 }, in: { f: 25.4, dp: 3, step: 0.05 } };
 const KEY = 'pp-photosheet';
-const SHOW_YAML = false;  // "Copy as YAML" (to ship a preset with the code) is hidden for now; the API and the dialog are still there
 const MAX_SIDE = 7000;  // px: bigger pictures are scaled down before they are sent
 
 export async function mount(root, kit) {
@@ -15,7 +14,7 @@ export async function mount(root, kit) {
   // ------------------------------------------------------------------ state
   const S = {
     unit: 'mm', photoW: 35, photoH: 45, margin: 5, gap: 2, orientation: 'auto', mode: 'fill', cols: 5, rows: 6, count: 12,
-    fit: 'fill', area: 'full', marks: true, outline: false, paper: 'a4', presetId: '', presetDirty: false, customW: 210, customH: 297,
+    fit: 'fill', area: 'full', marks: true, outline: false, paper: 'a4', customW: 210, customH: 297,
     mediaType: '', quality: '', resolution: '', copies: 1,
   };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage is optional */ }
@@ -305,34 +304,26 @@ export async function mount(root, kit) {
   // ------------------------------------------------------------------ presets: saved choices (not the photos)
   let presets = [];
   const presetChips = h('div', { class: 'chips' });
-  const presetBar = h('div', { class: 'preset-bar', hidden: true });
-  const presetBox = h('section', { class: 'card ps-card' }, h('h3', { class: 'ps-head' }, icon('list', 18), 'Presets'), presetChips, presetBar,
-    h('div', { class: 'actions left' }, h('button', { class: 'btn small', type: 'button', title: 'Save the photo size, paper and other choices (not the photos) as a preset to use again', onclick: () => openSave() }, icon('check', 15), 'Save these settings as a preset…')));
+  const presetBox = h('section', { class: 'card ps-card' }, h('h3', { class: 'ps-head' }, icon('list', 18), 'Presets'),
+    h('p', { class: 'hint' }, 'A preset fills in the settings below, as a quick start. Change anything afterwards; nothing is saved unless you save it as a new preset.'), presetChips,
+    h('div', { class: 'actions left' }, h('button', { class: 'btn small', type: 'button', title: 'Save the photo size, paper and other choices below (not the photos) as a new preset to use again', onclick: () => openSave() }, icon('check', 15), 'Save these settings as a preset…')));
 
-  const nameOf = (id) => presets.find((p) => p.id === id)?.name || '';
   function describe(p) {
     const x = p.settings;
     const u = (v) => `${+(v / UNITS[x.unit || 'mm'].f).toFixed(UNITS[x.unit || 'mm'].dp)}`;
     const how = x.mode === 'grid' ? `${x.cols} × ${x.rows}` : x.mode === 'count' ? `${x.count} photos` : 'fill the page';
-    return `${u(x.photo.width)} × ${u(x.photo.height)} ${x.unit || 'mm'} · ${x.paper.label || `${x.paper.width} × ${x.paper.height} mm`} · ${how}`;
+    const part = x.area && x.area !== 'full' ? `${x.area} half only` : 'whole page';
+    return `${u(x.photo.width)} × ${u(x.photo.height)} ${x.unit || 'mm'} · ${x.paper.label || `${x.paper.width} × ${x.paper.height} mm`} · ${part} · ${how}`;
   }
   function paintPresets() {
-    presetChips.replaceChildren(...[...presets.map((p) => h('button', { class: `chip${p.id === S.presetId && !S.presetDirty ? ' on' : ''}`, type: 'button', title: describe(p), onclick: () => applyPreset(p) }, p.name)),
+    presetChips.replaceChildren(...[...presets.map((p) => h('span', { class: `chip-wrap${p.builtin ? '' : ' mine'}` },
+        h('button', { class: 'chip', type: 'button', title: describe(p), onclick: () => applyPreset(p) }, p.name),
+        p.builtin ? null : h('button', { class: 'chip-x', type: 'button', 'aria-label': `Delete the preset ${p.name}`, title: 'Delete this preset (asks first)', onclick: () => confirmDelete(p) }, icon('x', 12)))),
       presets.length ? null : h('span', { class: 'hint' }, 'No presets yet. Set things up, then save them here.')].filter(Boolean));  // (a native replaceChildren would print "null")
-    const cur = presets.find((p) => p.id === S.presetId);
-    presetBar.hidden = !cur;
-    if (!cur) return;
-    presetBar.replaceChildren(
-      h('span', { class: 'preset-name' }, ...[h('strong', {}, cur.name), S.presetDirty ? h('span', { class: 'hint' }, ' · changed') : null, cur.builtin ? h('span', { class: 'hint' }, ' · comes with the app') : null].filter(Boolean)),
-      h('div', { class: 'row-inline' }, ...[
-        !cur.builtin && S.presetDirty ? h('button', { class: 'btn small', type: 'button', title: 'Replace this preset with the settings as they are now', onclick: () => saveAs(cur.name) }, 'Save changes') : null,
-        SHOW_YAML ? h('button', { class: 'btn small', type: 'button', title: 'Show the settings on the page as text you can paste into presets.yml to ship them with the app', onclick: () => showYaml(cur) }, 'Copy as YAML') : null,
-        !cur.builtin ? h('button', { class: 'btn small danger', type: 'button', title: 'Delete this preset (asks first)', onclick: () => confirmDelete(cur) }, 'Delete') : null].filter(Boolean)));
   }
   async function loadPresets() {
     const res = await api('/photosheet/presets');
     presets = res.ok ? res.data.presets : [];
-    if (S.presetId && !presets.some((p) => p.id === S.presetId)) { S.presetId = ''; S.presetDirty = false; }
     paintPresets();
   }
 
@@ -357,9 +348,10 @@ export async function mount(root, kit) {
     if (inputs.area) inputs.area.value = S.area;
     syncFields(); syncMode(); syncArea(); syncPaper(); syncPrinter();
   }
+  const controlState = () => new Map([...root.querySelectorAll('input[id], select[id]')].map((el) => [el.id, el.type === 'checkbox' ? el.checked : el.value]));
   function applyPreset(p) {
     const x = p.settings;
-    applying = true;
+    const before = controlState();
     Object.assign(S, { photoW: x.photo.width, photoH: x.photo.height, unit: x.unit || 'mm', orientation: x.orientation || 'auto', area: x.area || 'full', margin: x.margin ?? 5, gap: x.gap ?? 2,
       mode: x.mode || 'fill', align: x.align || 'center', fit: x.fit || 'fill', marks: x.marks !== false, outline: Boolean(x.outline), copies: x.copies || 1 });
     if (x.cols) S.cols = x.cols;
@@ -372,14 +364,16 @@ export async function mount(root, kit) {
     S.mediaType = printer?.media_types?.some((t) => t.value === x.media_type) ? x.media_type : '';
     S.quality = printer?.qualities?.some((q) => q.value === x.quality) ? String(x.quality) : '';
     S.resolution = x.resolution && printer?.resolutions?.some((r) => r.value.join() === x.resolution.join()) ? x.resolution.join('x') : '';
-    S.presetId = p.id; S.presetDirty = false;
     for (const img of images) { img.fit = S.fit; img.cropX = 0.5; img.cropY = 0.5; }  // a preset's fit applies to every photo, centred
     paintPhotos();
     syncAll();
     changed();
-    applying = false;
-    paintPresets();
-    toast(`Applied “${p.name}”.`);
+    // show what the preset filled in: the controls whose value changed light up for a moment
+    const after = controlState();
+    for (const [id, value] of after) {
+      if (before.get(id) !== value) { const f = document.getElementById(id)?.closest('.field, .check-row'); if (f) { f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); setTimeout(() => f.classList.remove('flash'), 1600); } }
+    }
+    toast(`Filled in the settings from “${p.name}”.`);
   }
 
   const saveName = h('input', { class: 'input', maxlength: 60, placeholder: 'For example: 35 × 45 mm on A4', id: 'ps-preset-name', 'aria-label': 'Preset name', oninput: () => { saveNote(); } });
@@ -395,8 +389,7 @@ export async function mount(root, kit) {
     saveReplace.textContent = clash ? `A preset called “${clash.name}” already exists. Saving replaces it.` : '';
   }
   function openSave() {
-    const base = presets.find((p) => p.id === S.presetId);
-    saveName.value = base && !base.builtin ? base.name : `${shown(S.photoW)} × ${shown(S.photoH)} ${S.unit} on ${currentPaper().label}`.slice(0, 60);
+    saveName.value = `${shown(S.photoW)} × ${shown(S.photoH)} ${S.unit} on ${currentPaper().label}`.slice(0, 60);
     saveNote();
     saveDialog.showModal();
     saveName.select();
@@ -404,10 +397,8 @@ export async function mount(root, kit) {
   async function saveAs(name, fromDialog = false) {
     const res = await api('/photosheet/presets', { method: 'POST', body: { name, settings: presetSettings() } });
     if (!res.ok) { if (fromDialog) saveMsg.textContent = res.error?.message || 'Could not save.'; else toast(res.error?.message || 'Could not save.', 'bad'); return; }
-    S.presetId = res.data.id; S.presetDirty = false;
     if (fromDialog) saveDialog.close();
     toast(res.data.replaced ? `Preset “${res.data.name}” updated.` : `Preset “${res.data.name}” saved.`);
-    save();
     await loadPresets();
   }
   const delDialog = h('dialog', { 'aria-labelledby': 'ps-del-title' }, h('h3', { id: 'ps-del-title' }, 'Delete this preset?'), h('p', { id: 'ps-del-text' }),
@@ -419,27 +410,11 @@ export async function mount(root, kit) {
       delDialog.close();
       const res = await api(`/photosheet/presets/${p.id}`, { method: 'DELETE' });
       if (!res.ok) { toast(res.error?.message || 'Could not delete.', 'bad'); return; }
-      if (S.presetId === p.id) { S.presetId = ''; S.presetDirty = false; save(); }
       toast('Preset deleted.');
       await loadPresets();
     };
     delDialog.showModal();
   }
-  const yamlText = h('textarea', { class: 'input yaml', readonly: true, rows: 14, spellcheck: 'false', 'aria-label': 'The preset as YAML' });
-  const yamlNote = h('p', { class: 'hint' });
-  const yamlDialog = h('dialog', { class: 'wide', 'aria-labelledby': 'ps-yaml-title' }, h('h3', { id: 'ps-yaml-title' }, 'Preset as YAML'), yamlNote,
-    h('p', {}, 'To ship this preset with the app, paste it under “presets:” in app/tools/photosheet/presets.yml (a second preset is added as another “- id: …” entry).'), yamlText,
-    h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Copy the text', onclick: async () => {
-      try { await navigator.clipboard.writeText(yamlText.value); toast('Copied.'); } catch { yamlText.select(); toast('Press Ctrl+C (Cmd+C) to copy.'); }
-    } }, 'Copy'), h('button', { class: 'btn primary', type: 'button', title: 'Close', onclick: () => yamlDialog.close() }, 'Close')));
-  // The YAML is of the settings as they are on the page now (so a preset you changed exports what you see), under the preset's name.
-  async function showYaml(p) {
-    const res = await api('/photosheet/presets/yaml', { method: 'POST', body: { name: p.name, settings: presetSettings() } });
-    yamlText.value = res.ok ? res.data : (res.error?.message || 'Could not make the YAML.');
-    yamlNote.textContent = S.presetDirty ? `This is “${p.name}” with the changes you made on the page (not the saved version).` : `This is “${p.name}” as it is on the page now.`;
-    yamlDialog.showModal();
-  }
-
   // ------------------------------------------------------------------ assemble the form
   const form = h('div', { class: 'ps-form' },
     presetBox,
@@ -569,9 +544,7 @@ export async function mount(root, kit) {
   };
 
   let timer = 0;
-  let applying = false;  // true while a preset is being applied, so that doesn't count as a change to it
   function changed() {
-    if (!applying && S.presetId && !S.presetDirty) { S.presetDirty = true; paintPresets(); }
     save();
     clearTimeout(timer);
     timer = setTimeout(refreshLayout, 120);
@@ -636,7 +609,7 @@ export async function mount(root, kit) {
     h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Close without printing', onclick: () => dialog.close() }, 'Cancel'), goBtn));
   let dlgToken = 0;
   dialog.addEventListener('close', () => { if (dialog.open) return; dlgToken += 1; sheets.replaceChildren(); });
-  root.append(dialog, saveDialog, delDialog, yamlDialog);
+  root.append(dialog, saveDialog, delDialog);
 
   const printOptions = () => ({ media: currentPaper().keyword, media_type: S.mediaType || null, quality: S.quality ? Number(S.quality) : null,
     resolution: S.resolution ? S.resolution.split('x').map(Number) : null, copies: Number(S.copies) || 1 });

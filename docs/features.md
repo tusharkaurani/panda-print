@@ -108,9 +108,7 @@ Not verified on real hardware yet: print one sheet on plain paper and measure a 
 
 ### Presets
 
-The **Presets** card at the top saves the photo size, unit, paper, margins, layout, finishing and print choices (not the photos), so the usual job is one click. Applying a preset fills in the form; paper type and quality are applied only if the selected printer offers them, and the paper is matched by its CUPS name or its size. A preset you change shows as "changed", and **Save changes** replaces it.
+Presets are a quick start, like autofill. Click one and the settings below are filled in (the controls that changed light up for a moment), then change anything you like. A preset holds the photo size, unit, paper, margins, layout, part of the page, finishing and print choices, never the photos. Paper type and quality are filled in only if the selected printer offers them, and the paper is matched by its CUPS name or its size. Nothing you change afterwards is saved back to a preset.
 
-- **Save these settings as a preset…** keeps your own, in the database, so every device that uses this panda-print sees them. Saving under an existing name replaces it. Up to 50.
-- Two come with the app: **35 × 45 mm on A4 (as A5)** (the top half of A4) and **35 × 45 mm on A4 (210 × 297 mm)** (shown the same way, with "comes with the app"; they can't be deleted). They are listed in `app/tools/photosheet/presets.yml`, which is read on demand, so editing it needs no restart.
-- To ship a preset with the code, add it to `presets.yml` by hand (the comments at the top describe each setting). A **Copy as YAML** button that writes the text for you from the settings on the page exists in the code but is switched off for now (`SHOW_YAML` at the top of `app/tools/photosheet/ui/ui.js`).
-
+- **Save these settings as a preset…** keeps the current settings as a new preset of your own, in the database, so every device that uses this panda-print sees it. Saving under an existing name replaces it (up to 50). A saved preset has a small ✕ on its button to delete it.
+- Two come with the app: **35 × 45 mm on A4 (as A5)** (the top half of A4) and **35 × 45 mm on A4 (210 × 297 mm)**. They can't be deleted. They are listed in `app/tools/photosheet/presets.yml`, which is read on demand, so editing it needs no restart; the comments at the top describe each setting. The server can write the text for a preset you saved (`GET /api/photosheet/presets/<id>/yaml`), if you want to ship it with the code.
