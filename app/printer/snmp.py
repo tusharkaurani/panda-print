@@ -104,7 +104,10 @@ def get_counter(host: str, oid: str, community: str = "public", port: int = 161,
     packet = build_get(oid, community, rid)
     deadline = time.monotonic() + timeout
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.sendto(packet, (host, port))
+        # connect() so a closed port fails at once (ICMP "port unreachable" becomes
+        # ConnectionRefusedError) and datagrams from other senders are ignored
+        s.connect((host, port))
+        s.send(packet)
         while True:
             left = deadline - time.monotonic()
             if left <= 0:

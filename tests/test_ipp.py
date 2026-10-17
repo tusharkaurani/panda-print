@@ -1,11 +1,9 @@
 import dataclasses
 import struct
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
 import pytest
 
 from app.core.errors import SourceError
+from conftest import FakeCups
 from app.printer import ipp
 from app.core.printers import Printer
 from app.printer.live import LivePrinter
@@ -49,52 +47,6 @@ def test_decodes_collections_and_additional_values():
 def test_truncated_response_is_an_ipp_error():
     with pytest.raises(ipp.IppError):
         ipp.decode_response(b"\x01\x01")
-
-
-class FakeCups(BaseHTTPRequestHandler):
-    seen: list = []
-
-    def log_message(self, *a):
-        pass
-
-    def do_POST(self):
-        req = self.rfile.read(int(self.headers["Content-Length"]))
-        op = struct.unpack(">H", req[2:4])[0]
-        parsed = ipp.decode_response(req)  # same wire layout as a request
-        self.seen.append((self.path, op, parsed.of(ipp.OPERATION_ATTRS)[0], req))
-        op_group = (ipp.OPERATION_ATTRS, [(ipp.CHARSET, "attributes-charset", "utf-8")])
-        groups, status = [op_group], 0
-        if op == ipp.GET_PRINTER_ATTRIBUTES:
-            groups.append((ipp.PRINTER_ATTRS, [(ipp.NAME, "printer-name", "Brother"),
-                                               (ipp.ENUM, "printer-state", 3),
-                                               (ipp.INTEGER, "marker-levels", [94, 95, 94, 95]),
-                                               (ipp.KEYWORD, "marker-names", ["M", "C", "Y", "BK"])]))
-        elif op == ipp.CUPS_GET_PRINTERS:
-            for name in ("Other", "T730"):
-                groups.append((ipp.PRINTER_ATTRS, [(ipp.NAME, "printer-name", name), (ipp.ENUM, "printer-state", 3)]))
-        elif op == ipp.GET_JOBS:
-            which = parsed.of(ipp.OPERATION_ATTRS)[0]["which-jobs"][0]
-            jid = 10 if which == "completed" else 11
-            groups.append((ipp.JOB_ATTRS, [(ipp.INTEGER, "job-id", jid), (ipp.NAME, "job-name", which)]))
-        elif op == ipp.PRINT_JOB:
-            groups.append((ipp.JOB_ATTRS, [(ipp.INTEGER, "job-id", 77)]))
-        if self.path.endswith("/printers/MISSING"):
-            status = 0x0406
-        body = ipp.encode_request(status, groups, parsed.request_id)
-        self.send_response(200)
-        self.send_header("Content-Type", "application/ipp")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-
-@pytest.fixture
-def cups():
-    FakeCups.seen = []
-    server = HTTPServer(("127.0.0.1", 0), FakeCups)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield server.server_port
-    server.shutdown()
 
 
 def live(port, cups_queue="T730"):

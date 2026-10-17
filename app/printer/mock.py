@@ -163,8 +163,9 @@ class MockPrinter:
 class MockAccess:
     """Mock mode's network: two pretend printers can be found, everything else times out."""
 
-    def __init__(self, settings: Settings, clock: Callable[[], float] | None = None):
+    def __init__(self, settings: Settings, clock: Callable[[], float] | None = None, delay: float = 1.0):
         self.s, self.clock = settings, clock or time.time
+        self.delay = delay  # a real scan or probe takes a moment; this lets the UI show its progress states
         self._backends: dict[str, tuple[Printer, MockPrinter]] = {}
 
     def backend(self, printer: Printer) -> MockPrinter:
@@ -176,7 +177,7 @@ class MockAccess:
         return backend
 
     def discover(self, cups_url: str | None = None) -> dict:
-        time.sleep(0.8)  # a real scan takes a moment; lets the UI show its progress state
+        time.sleep(self.delay * 0.8)
         found = []
         for ip, dev in MOCK_DEVICES.items():
             c = {"name": dev["model"], "model": dev["model"], "ip": ip, "ipp_url": f"ipp://{ip}/{dev['rp']}"}
@@ -193,7 +194,7 @@ class MockAccess:
         errors.pop("name", None)
         if errors:
             return {"ok": False, "errors": errors}
-        time.sleep(0.5)
+        time.sleep(self.delay * 0.5)
         dev = MOCK_DEVICES.get(clean["ip"])
         queues = [{"name": d["queue"], "info": d["model"], "device_uri": f"ipp://{ip}/{d['rp']}"}
                   for ip, d in MOCK_DEVICES.items() if d["queue"] == "T730"]

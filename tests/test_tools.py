@@ -42,7 +42,7 @@ def test_broken_tools_are_reported_and_do_not_stop_the_app(extra_tools, settings
             bp.get('/ping')(lambda: jsonify(ok=True, data='pong'))
             return Tool(id='fine', title='Fine', description='', icon='info', blueprint=bp, order=1)
     """)
-    app = create_app(settings, access=MockAccess(settings, clock), start_background=False, clock=clock)
+    app = create_app(settings, access=MockAccess(settings, clock, delay=0), start_background=False, clock=clock)
     c = app.test_client()
     tools = {t["id"]: t for t in c.get("/api/tools").get_json()["tools"]}
     assert "boom" in tools["broken"]["error"]
@@ -55,7 +55,7 @@ def test_broken_tools_are_reported_and_do_not_stop_the_app(extra_tools, settings
 
 
 def test_template_is_a_working_tool_but_is_never_auto_loaded(settings, clock):
-    app = create_app(settings, access=MockAccess(settings, clock), start_background=False, clock=clock)
+    app = create_app(settings, access=MockAccess(settings, clock, delay=0), start_background=False, clock=clock)
     assert "_template" not in [t["id"] for t in app.test_client().get("/api/tools").get_json()["tools"]]
 
     # what copying the template does: the same code under another folder name

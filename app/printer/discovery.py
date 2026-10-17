@@ -21,6 +21,10 @@ def _first(attrs, name, default=None):
     return v[0] if v else default
 
 
+def timeout_for(settings: Settings) -> float:
+    return min(settings.net_timeout, PROBE_TIMEOUT)
+
+
 def device_host(device_uri: str) -> str:
     """The IP/host in a CUPS device URI (ipp://, socket://, lpd://...), or '' (usb:, dnssd names...)."""
     parts = urlsplit(device_uri)
@@ -36,7 +40,7 @@ def stub(settings: Settings, cups_url: str) -> Printer:
 def cups_candidates(settings: Settings, cups_url: str) -> tuple[list[dict], str | None]:
     """Queues CUPS already has, with the printer address read from their device URI."""
     try:
-        queues = LivePrinter(settings, stub(settings, cups_url), PROBE_TIMEOUT).cups_queues()
+        queues = LivePrinter(settings, stub(settings, cups_url), timeout_for(settings)).cups_queues()
     except SourceError as e:
         return [], f"Couldn't read the CUPS queue list: {e.message}"
     out = []
@@ -79,7 +83,7 @@ def _probe_ipp(settings: Settings, printer: Printer) -> dict:
     last: SourceError | None = None
     for url in urls:
         try:
-            attrs = LivePrinter(settings, replace(printer, ipp_url=url), PROBE_TIMEOUT).printer_info()
+            attrs = LivePrinter(settings, replace(printer, ipp_url=url), timeout_for(settings)).printer_info()
         except SourceError as e:
             last = e
             if e.kind in ("timeout", "dns"):
@@ -95,14 +99,14 @@ def _probe_ipp(settings: Settings, printer: Printer) -> dict:
 
 def _probe_snmp(settings: Settings, printer: Printer) -> dict:
     try:
-        return {"ok": True, "value": LivePrinter(settings, printer, PROBE_TIMEOUT).read_counter()}
+        return {"ok": True, "value": LivePrinter(settings, printer, timeout_for(settings)).read_counter()}
     except SourceError as e:
         return {"ok": False, "error": e.to_dict()}
 
 
 def _probe_cups(settings: Settings, printer: Printer) -> dict:
     try:
-        queues = LivePrinter(settings, printer, PROBE_TIMEOUT).cups_queues()
+        queues = LivePrinter(settings, printer, timeout_for(settings)).cups_queues()
     except SourceError as e:
         return {"ok": False, "error": e.to_dict(), "queues": [], "suggested": ""}
     listed = [{"name": _first(q, "printer-name"), "info": _first(q, "printer-info", ""),
