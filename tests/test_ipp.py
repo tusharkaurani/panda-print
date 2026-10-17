@@ -1,0 +1,141 @@
+import dataclasses
+import struct
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import pytest
+
+from app.core.errors import SourceError
+from app.printer import ipp
+from app.printer.live import LivePrinter
+from app.settings import Settings
+from app.tools.maintenance.service import NOZZLE_PS
+
+
+def test_request_roundtrips_through_the_decoder():
+    body = ipp.encode_request(
+        ipp.GET_JOBS,
+        [(ipp.OPERATION_ATTRS, [(ipp.CHARSET, "attributes-charset", "utf-8"),
+                                (ipp.KEYWORD, "requested-attributes", ["job-id", "job-name"]),
+                                (ipp.INTEGER, "limit", 5), (ipp.BOOLEAN, "my-jobs", False)])],
+        request_id=7)
+    r = ipp.decode_response(body)
+    attrs = r.of(ipp.OPERATION_ATTRS)[0]
+    assert r.status == ipp.GET_JOBS and r.request_id == 7
+    assert attrs["requested-attributes"] == ["job-id", "job-name"]
+    assert attrs["limit"] == [5] and attrs["my-jobs"] == [False]
+
+
+def test_decodes_collections_and_additional_values():
+    def attr(tag, name, value):
+        return struct.pack(">BH", tag, len(name)) + name.encode() + struct.pack(">H", len(value)) + value
+
+    col = (attr(ipp.BEG_COLLECTION, "media-col", b"")
+           + attr(ipp.MEMBER_NAME, "", b"media-size")
+           + attr(ipp.BEG_COLLECTION, "", b"")
+           + attr(ipp.MEMBER_NAME, "", b"x-dimension") + attr(ipp.INTEGER, "", struct.pack(">i", 21000))
+           + attr(ipp.END_COLLECTION, "", b"")
+           + attr(ipp.END_COLLECTION, "", b""))
+    data = (struct.pack(">BBHI", 1, 1, 0, 1) + bytes([ipp.PRINTER_ATTRS]) + col
+            + attr(ipp.KEYWORD, "printer-state-reasons", b"none") + attr(ipp.KEYWORD, "", b"toner-low-warning")
+            + attr(0x13, "no-value-attr", b"") + bytes([ipp.END_OF_ATTRS]))
+    printer = ipp.decode_response(data).of(ipp.PRINTER_ATTRS)[0]
+    assert printer["media-col"] == [{"media-size": [{"x-dimension": [21000]}]}]
+    assert printer["printer-state-reasons"] == ["none", "toner-low-warning"]
+    assert printer["no-value-attr"] == [None]
+
+
+def test_truncated_response_is_an_ipp_error():
+    with pytest.raises(ipp.IppError):
+        ipp.decode_response(b"\x01\x01")
+
+
+class FakeCups(BaseHTTPRequestHandler):
+    seen: list = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        req = self.rfile.read(int(self.headers["Content-Length"]))
+        op = struct.unpack(">H", req[2:4])[0]
+        parsed = ipp.decode_response(req)  # same wire layout as a request
+        self.seen.append((self.path, op, parsed.of(ipp.OPERATION_ATTRS)[0], req))
+        op_group = (ipp.OPERATION_ATTRS, [(ipp.CHARSET, "attributes-charset", "utf-8")])
+        groups, status = [op_group], 0
+        if op == ipp.GET_PRINTER_ATTRIBUTES:
+            groups.append((ipp.PRINTER_ATTRS, [(ipp.NAME, "printer-name", "Brother"),
+                                               (ipp.ENUM, "printer-state", 3),
+                                               (ipp.INTEGER, "marker-levels", [94, 95, 94, 95]),
+                                               (ipp.KEYWORD, "marker-names", ["M", "C", "Y", "BK"])]))
+        elif op == ipp.CUPS_GET_PRINTERS:
+            for name in ("Other", "T730"):
+                groups.append((ipp.PRINTER_ATTRS, [(ipp.NAME, "printer-name", name), (ipp.ENUM, "printer-state", 3)]))
+        elif op == ipp.GET_JOBS:
+            which = parsed.of(ipp.OPERATION_ATTRS)[0]["which-jobs"][0]
+            jid = 10 if which == "completed" else 11
+            groups.append((ipp.JOB_ATTRS, [(ipp.INTEGER, "job-id", jid), (ipp.NAME, "job-name", which)]))
+        elif op == ipp.PRINT_JOB:
+            groups.append((ipp.JOB_ATTRS, [(ipp.INTEGER, "job-id", 77)]))
+        if self.path.endswith("/printers/MISSING"):
+            status = 0x0406
+        body = ipp.encode_request(status, groups, parsed.request_id)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/ipp")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def cups():
+    FakeCups.seen = []
+    server = HTTPServer(("127.0.0.1", 0), FakeCups)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server.server_port
+    server.shutdown()
+
+
+def live(port, **kw):
+    s = Settings(printer_ipp_url=f"ipp://127.0.0.1:{port}/ipp/print", cups_url=f"http://127.0.0.1:{port}",
+                 net_timeout=2, **kw)
+    return LivePrinter(s)
+
+
+def test_live_printer_reads_attributes_queue_and_jobs(cups):
+    p = live(cups)
+    info = p.printer_info()
+    assert info["marker-levels"] == [94, 95, 94, 95] and info["marker-names"] == ["M", "C", "Y", "BK"]
+    assert p.queue_info()["printer-name"] == ["T730"]  # picked our queue out of the list
+    assert sorted(j["job-id"][0] for j in p.list_jobs()) == [10, 11]  # completed + not-completed
+    # the printer was asked at its own IPP path, CUPS at the root
+    paths = [s[0] for s in FakeCups.seen]
+    assert paths[0] == "/ipp/print" and paths[1] == "/"
+
+
+def test_live_printer_submits_postscript_via_print_job(cups):
+    p = live(cups)
+    assert p.submit_nozzle("panda-print nozzle check (manual)", NOZZLE_PS, "panda-print") == 77
+    path, op, attrs, raw = FakeCups.seen[-1]
+    assert path == "/printers/T730" and op == ipp.PRINT_JOB
+    assert attrs["document-format"] == ["application/postscript"]
+    assert attrs["job-name"] == ["panda-print nozzle check (manual)"]
+    assert attrs["printer-uri"] == [f"ipp://127.0.0.1:{cups}/printers/T730"]
+    assert raw.endswith(NOZZLE_PS)  # the document follows the IPP header
+
+
+def test_missing_queue_is_a_friendly_error(cups):
+    with pytest.raises(SourceError, match="no queue named 'Nope'.*Other, T730"):
+        live(cups, cups_queue="Nope").queue_info()
+
+
+def test_ipp_error_status_is_explained(cups):
+    with pytest.raises(SourceError, match="not found"):
+        live(cups, cups_queue="MISSING").submit_nozzle("x", NOZZLE_PS, "u")
+
+
+def test_unreachable_printer_is_a_friendly_error():
+    p = live(1)  # nothing listens on port 1
+    with pytest.raises(SourceError) as e:
+        p.printer_info()
+    assert e.value.source == "printer" and "refused" in e.value.message
