@@ -235,3 +235,10 @@ def test_security_headers(client):
     r = client.get("/")
     assert "script-src 'self'" in r.headers["Content-Security-Policy"]
     assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_build_id_is_exposed_so_open_pages_can_spot_a_restart(make_app):
+    app, _ = make_app()
+    c = app.test_client()
+    build = c.get("/api/health").get_json()["build"]
+    assert build and c.get("/api/tools").get_json()["build"] == build  # the same id everywhere within one run

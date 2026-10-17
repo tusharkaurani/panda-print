@@ -57,6 +57,7 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
     csrf = csrf_mod.Csrf(csrf_mod.load_secret(settings.secret_key, settings.data_dir), settings.trusted_origins)
     links = LinksConfig(settings.links_file, settings.logos_dir, ROOT / "defaults" / "links.yml")
     slots = discover(ctx, only_tools)
+    build = str(int(time.time()))  # changes whenever the server is (re)started: open pages use it to spot an update
     app.extensions["panda"] = {"ctx": ctx, "slots": slots, "links": links, "csrf": csrf}
     app.register_blueprint(printers_blueprint(ctx), url_prefix="/api/printers")
 
@@ -97,7 +98,7 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
 
     @app.get("/api/health")
     def health():
-        return jsonify(ok=True, version=__version__)
+        return jsonify(ok=True, version=__version__, build=build)
 
     @app.get("/api/csrf")
     def csrf_token():
@@ -120,7 +121,7 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
                             "tabs": [{"id": tab.id, "title": tab.title, "icon": tab.icon or t.icon} for tab in t.tabs]})
             else:
                 out.append({"id": s.id, "title": s.title, "error": s.error})
-        return jsonify(tools=out, version=__version__)
+        return jsonify(tools=out, version=__version__, build=build)
 
     @app.get("/api/links")
     def get_links():

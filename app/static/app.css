@@ -408,3 +408,7 @@ dialog.drag { outline: 3px dashed var(--accent); outline-offset: -8px; }
 .input.mini { width: 72px; min-height: 36px; padding: 6px 10px; }
 .btn.small.danger { color: var(--bad); }
 @media (max-width: 560px) { .pageactions, .confirm { margin-left: 0; } .thumb { width: 44px; height: 44px; } }
+
+/* shown when the server was updated under an open page */
+.update-banner { position: sticky; top: 60px; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--info-bg); color: var(--info); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--line); }

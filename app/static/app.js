@@ -200,6 +200,14 @@ async function render() {
   window.dispatchEvent(new Event('pp:tool-shown'));
 }
 
+// If the server is restarted with a new version while this page is open, say so instead of showing a page
+// whose styles and scripts no longer match it.
+let build = null;
+async function checkBuild() {
+  const res = await api('/health');
+  if (res.ok && build && res.data?.build && res.data.build !== build) $('update-banner').hidden = false;
+}
+
 async function init() {
   const [toolsRes] = await Promise.all([api('/tools'), loadPrinters()]);
   if (!toolsRes.ok || !toolsRes.data?.tools) {
@@ -207,6 +215,8 @@ async function init() {
     return;
   }
   tools = toolsRes.data.tools;
+  build = toolsRes.data.build;
+  $('update-reload').addEventListener('click', () => location.reload());
   buildViews();
   $('version').textContent = `panda-print ${toolsRes.data.version}`;
   $('printer-pick').prepend(icon('printer', 18));
@@ -221,6 +231,6 @@ async function init() {
   loadLinks();
 }
 
-setInterval(() => { if (!document.hidden) loadLinks(); }, 60_000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) loadLinks(); });
+setInterval(() => { if (!document.hidden) { loadLinks(); checkBuild(); } }, 30_000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadLinks(); checkBuild(); } });
 init();
