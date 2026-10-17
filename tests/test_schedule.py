@@ -61,7 +61,7 @@ def test_quiet_hours_follow_the_configured_time_zone():
 
 def test_does_nothing_when_the_counter_cannot_be_read():
     p = make_plan(counter_ok=False)
-    assert p.action == "blocked" and "counter" in p.reason  # idle time unknown: don't guess
+    assert p.action == "blocked" and "page count" in p.reason  # idle time unknown: don't guess
 
 
 def test_waits_an_hour_after_a_failed_attempt():

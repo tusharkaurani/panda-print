@@ -111,7 +111,7 @@ export function createPagesDialog(kit, { base, onChange }) {
     return h('li', { class: `pagecard${item.enabled ? '' : ' off'}` },
       thumb(item),
       h('div', { class: 'pagemain' },
-        h('div', { class: 'pagename' }, item.name, data.rotate && data.next.id === item.id && ui.badge(data.next.plain ? 'Next up (plain turn)' : 'Next up', 'ok')),
+        h('div', { class: 'pagename' }, item.name, data.rotate && data.next.id === item.id && ui.badge(data.next.plain ? 'Next up (standard page)' : 'Next up', 'ok')),
         h('div', { class: 'pagemeta' }, meta)),
       ask === 'print' ? confirm('print', 'Print it now?', () => printPage(item))
         : ask === 'delete' ? confirm('delete', 'Delete this page?', () => deletePage(item))
@@ -136,10 +136,10 @@ export function createPagesDialog(kit, { base, onChange }) {
     const every = h('input', { class: 'input mini', type: 'number', min: 0, max: 50, step: 1, value: data.plain_every, 'aria-label': 'Standard test page every N prints',
       onchange: (e) => setPlainEvery(e.target, message) });
     body.replaceChildren(...[
-      h('p', { class: 'sub' }, 'With “Rotate my pages” on, each print takes the next page in this list, then loops. Pages are shared by every printer; the order and the switches here are for this printer only.'),
-      !data.rotate && h('div', { class: 'notice info' }, icon('info', 18), h('div', {}, 'Rotation is off, so only the standard test page prints. Choose “Rotate my pages” on the Automation card to use this list.')),
+      h('p', { class: 'sub' }, 'With “Rotate my pages” on, each print uses the next page in this list, then starts over. All printers share the pages; the order and switches are for this printer only.'),
+      !data.rotate && h('div', { class: 'notice info' }, icon('info', 18), h('div', {}, 'Rotation is off, so only the standard test page prints. Turn on “Rotate my pages” in the Automation card to use this list.')),
       h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {},
-        'A page only moves the inks it uses. A black-and-white page won’t exercise cyan, magenta or yellow, so keep a colourful page in the list, or print the standard test page every few prints (below).')),
+        'A page only uses the inks it contains. A black-and-white page won’t move cyan, magenta or yellow, so include a colourful page, or print the standard test page every few prints (below).')),
       h('div', { class: 'addrow' },
         h('button', { class: 'btn primary', type: 'button', title: 'Add PDF, PNG or JPEG files to the library', onclick: () => picker.click() }, icon('file', 16), 'Add pages…'), picker,
         h('span', { class: 'hint' }, `PDF, PNG or JPEG, up to ${data.limits.max_file_mb} MB each (or drop files here).`)),

@@ -50,8 +50,8 @@ KEYS = [f.name for f in fields(Automation)]
 
 # (minimum, maximum) for the numeric fields
 BOUNDS = {"idle_days": (0.5, 365.0), "check_minutes": (1.0, 1440.0), "attribution_minutes": (1.0, 1440.0)}
-LABELS = {"idle_days": "Idle days", "check_minutes": "Counter check interval",
-          "job_pattern": "Job name", "attribution_minutes": "Matching window"}
+LABELS = {"idle_days": "Days idle", "check_minutes": "Page count check",
+          "job_pattern": "Job name", "attribution_minutes": "Match time"}
 
 
 def defaults(settings: Settings) -> Automation:
@@ -109,7 +109,7 @@ def validate(payload: dict) -> tuple[dict, dict[str, str]]:
         if key == "job_pattern":
             text = str(raw if raw is not None else "").strip()
             if not text:
-                errors[key] = "Enter part of the job name the timer's check page has (for example nozzle-check)."
+                errors[key] = "Enter part of the job name, for example nozzle-check."
             elif len(text) > 80 or any(ord(ch) < 32 for ch in text):
                 errors[key] = "Use up to 80 plain characters."
             else:

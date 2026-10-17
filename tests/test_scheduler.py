@@ -97,7 +97,7 @@ def test_nothing_is_printed_when_the_page_counter_cannot_be_read(rig):
     rig.clock.advance(60)
     rig.service.tracker.poll()
     p = rig.service.run_schedule()
-    assert p.action == "blocked" and "counter" in p.reason and rig.auto_jobs() == []
+    assert p.action == "blocked" and "page count" in p.reason and rig.auto_jobs() == []
 
 
 def test_someone_printing_just_before_the_check_is_due_cancels_it(rig):
@@ -114,7 +114,7 @@ def test_a_printer_that_stops_answering_just_before_the_check_is_not_printed_to(
     rig.configure(enabled=True, idle_days=2, run_at="00:00")
     rig.printer.fail = ("snmp",)  # the last reading is recent, but now the counter can't be read
     p = rig.service.run_schedule()
-    assert p.action == "blocked" and "counter" in p.reason and rig.auto_jobs() == [] and rig.rows() == []
+    assert p.action == "blocked" and "page count" in p.reason and rig.auto_jobs() == [] and rig.rows() == []
 
 
 def test_a_stuck_check_does_not_restart_the_idle_clock_or_pile_up(rig):
