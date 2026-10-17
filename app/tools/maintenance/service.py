@@ -63,8 +63,16 @@ class Service:
                 "error": self.store.get("counter_error")}
 
     # ------------------------------------------------------------ queue card
+    @property
+    def cups_configured(self) -> bool:
+        """CUPS is optional: a printer without a queue still shows its status, ink and page count."""
+        return bool((self.config.cups_queue or "").strip())
+
     def queue_status(self) -> dict:
+        if not self.cups_configured:
+            return {"configured": False, "jobs": [], "direct": [], "jobs_error": None}
         data = normalize.queue(self._queue_cache.get(self.printer.queue_info))
+        data["configured"] = True
         data["jobs"], data["jobs_error"] = [], None
         # prints that never went through CUPS (phone straight to the printer, copies), seen on the page counter
         data["direct"] = [{"ts": r["ts"], "since_ts": r["since_ts"], "pages": r["delta"]}
@@ -106,7 +114,8 @@ class Service:
         return schedule.plan(
             enabled=cfg.enabled, now=now, last_print_ts=last_print["ts"] if last_print else None,
             idle_days=cfg.idle_days, run_at=cfg.run_at, tz=schedule.tz_for(self.s.timezone), counter_ok=counter_ok,
-            last_app_check_ts=sent["ts"] if sent else None, last_failure_ts=failure["ts"] if failure else None)
+            last_app_check_ts=sent["ts"] if sent else None, last_failure_ts=failure["ts"] if failure else None,
+            can_print=self.cups_configured)
 
     def run_schedule(self) -> schedule.Plan:
         """One look at whether this printer's automatic check is due; prints it if so. Called every few seconds
@@ -151,6 +160,7 @@ class Service:
         host, host_err = self.tracker.host_state()
         first_seen = self.store.get("first_seen_ts")
         return {
+            "cups": {"configured": self.cups_configured},
             "idle_days_threshold": threshold,
             "last_print": last_print,
             "days_since_last_print": idle.idle_days(last_print["ts"], now) if last_print else None,
@@ -165,7 +175,7 @@ class Service:
                 "last_poll": float(self.store.get("last_poll_ts") or 0) or None,
                 "poll_interval": settings.check_seconds,
                 "counter_error": self.store.get("counter_error"),
-                "cups_error": self.store.get("cups_error"),
+                "cups_error": self.store.get("cups_error") if self.cups_configured else None,
             },
             "host_state": {
                 "configured": host is not None or host_err is not None,
@@ -198,7 +208,8 @@ class Service:
         # the on/off switch is not one of the settings: it is neither counted as "changed" nor cleared by a reset
         settings_changed = sorted(k for k in overrides if k not in CHOICES)
         return {"values": auto.effective(base, overrides).to_dict(), "defaults": base.to_dict(),
-                "customised": settings_changed, "timezone": schedule.tz_label(self.s.timezone)}
+                "customised": settings_changed, "timezone": schedule.tz_label(self.s.timezone),
+                "cups_configured": self.cups_configured}
 
     def save_automation(self, payload: dict) -> dict:
         """Set this printer's automation settings. Raises ValidationError(fields) for bad input.
@@ -259,7 +270,7 @@ class Service:
                           "thumb": False if p is None else p["thumb"]})
         nxt = self._next(cfg)
         names = {i["id"]: i["name"] for i in items}
-        return {"rotate": cfg.rotate, "plain_every": cfg.plain_every, "items": items,
+        return {"cups_configured": self.cups_configured, "rotate": cfg.rotate, "plain_every": cfg.plain_every, "items": items,
                 "next": {"id": nxt.id, "name": names.get(nxt.id, pages.STANDARD_NAME), "plain": nxt.plain},
                 "count": int(self.store.get("rotation_count") or 0), "limits": self.library.limits()}
 
@@ -323,6 +334,9 @@ class Service:
     def request_print(self, page_id: str | None = None) -> dict:
         """Print now (the API's manual print): the next page in the rotation, or `page_id` if given (which
         leaves the rotation where it was). Raises RateLimited, SourceError or PageError."""
+        if not self.cups_configured:
+            raise SourceError("cups", "No CUPS print queue is set for this printer, so it can't print.",
+                              "Install CUPS, add the printer to it, then choose its queue under Printers → Edit.")
         with self._print_lock:  # serialise: check + submit + record is one step
             now = self.clock()
             verdict = ratelimit.check(self.rule, self.store.manual_attempt_times(now - self.rule.window), now)

@@ -8,16 +8,17 @@ import { toast } from './lib/ui.js';
 
 const spinner = () => h('span', { class: 'spin', role: 'img', 'aria-label': 'Checking' });
 
-// One row of the connection check: state is 'run' | 'ok' | 'bad'
+// One row of the connection check: state is 'run' | 'ok' | 'bad' | 'skip' (optional and not set up)
 function checkRow(title, state, detail, hint) {
-  const mark = state === 'run' ? spinner() : icon(state === 'ok' ? 'check' : 'alert', 18);
+  const mark = state === 'run' ? spinner() : icon(state === 'ok' ? 'check' : state === 'skip' ? 'info' : 'alert', 18);
   return h('li', { class: `check ${state}` },
     h('span', { class: 'mark' }, mark),
     h('div', {}, h('strong', {}, title), detail && h('div', { class: 'sub' }, detail), hint && h('div', { class: 'sub' }, hint)));
 }
 
 // The three checks as list items, from a probe result (null while running)
-export function probeRows(probe, running) {
+// `queue` is the CUPS queue chosen for the printer: CUPS is optional, so a missing CUPS only matters if one is chosen.
+export function probeRows(probe, running, queue = '') {
   if (running) {
     return [checkRow('Printer', 'run', 'Looking for the printer…'),
       checkRow('Page counter', 'run', 'Reading the page counter…'),
@@ -26,12 +27,16 @@ export function probeRows(probe, running) {
   if (!probe) return [];
   const { ipp, snmp, cups } = probe;
   const bad = (title, r) => checkRow(title, 'bad', r.error?.message, r.error?.hint);
-  const queue = cups.ok && cups.suggested ? ` Queue: ${cups.suggested}.` : '';
+  const suggestion = cups.ok && cups.suggested ? ` Queue: ${cups.suggested}.` : '';
   return [
     ipp.ok ? checkRow('Printer', 'ok', `${ipp.model || 'Printer'} · ${ipp.state}`) : bad('Printer', ipp),
     snmp.ok ? checkRow('Page counter', 'ok', `${snmp.value.toLocaleString()} pages printed so far`)
       : bad('Page counter', snmp),
-    cups.ok ? checkRow('Print queue', 'ok', `CUPS is reachable.${queue}`) : bad('Print queue', cups),
+    cups.ok && !queue ? checkRow('Print queue (optional)', 'skip', 'CUPS is reachable, but no queue is chosen for this printer.', 'Choose one with Edit to get recent jobs, Print now and automatic printing.')
+      : cups.ok ? checkRow('Print queue', 'ok', `CUPS is reachable.${suggestion}`)
+      : queue ? bad('Print queue', cups)
+      : checkRow('Print queue (optional)', 'skip', 'CUPS wasn’t found, which is fine. You still get status, ink levels and the page count.',
+          'Install CUPS to add the print queue, recent jobs, Print now and automatic printing.'),
   ];
 }
 
@@ -198,7 +203,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
   }
 
   function paintChecks() {
-    clear(checksBox).append(...probeRows(s.probe, s.probing));
+    clear(checksBox).append(...probeRows(s.probe, s.probing, draft.cups_queue));
 
     // queue picker: a list when CUPS answered, otherwise a plain text box
     clear(queueBox);
@@ -212,12 +217,12 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
     } else {
       const input = h('input', { id: 'f-cups_queue', class: 'input', value: draft.cups_queue, placeholder: 'T730', autocomplete: 'off',
         spellcheck: 'false', oninput: (e) => { draft.cups_queue = e.target.value; showError('cups_queue', ''); } });
-      inputs.cups_queue = input; queueBox.append(input, h('p', { class: 'hint' }, 'Optional. Needed for recent jobs and printing.'));
+      inputs.cups_queue = input; queueBox.append(input, h('p', { class: 'hint' }, 'Optional. Leave blank if you don’t use CUPS; choose a queue to get recent jobs and printing.'));
     }
     errEls.cups_queue = h('p', { class: 'msg', role: 'alert' });
     queueBox.append(errEls.cups_queue);
 
-    const allOk = s.probe && s.probe.ipp.ok && s.probe.snmp.ok && s.probe.cups.ok;
+    const allOk = s.probe && s.probe.ipp.ok && s.probe.snmp.ok && (s.probe.cups.ok || !draft.cups_queue);  // CUPS is optional
     fill(actionsBox,
       mode !== 'edit'
         ? h('button', { class: 'btn', type: 'button', title: 'Go back to choosing a printer', onclick: () => { probeToken++; s.step = 'find'; paint(); if (!s.found && !s.scanning) scan(); } }, 'Back')
@@ -276,9 +281,9 @@ export function admin(root, { onChanged }) {
     const r = results.get(p.id);
     if (!r || r === 'running') return { badge: ui.badge('Checking…'), rows: r ? probeRows(null, true) : [] };
     if (!r.ipp) return { badge: ui.badge('Unknown', 'warn'), rows: [] };
-    const ok = [r.ipp, r.snmp, r.cups].filter((c) => c.ok).length;
-    const badge = !r.ipp.ok ? ui.badge('Can’t reach', 'bad') : ok === 3 ? ui.badge('Online', 'ok') : ui.badge('Partly working', 'warn');
-    return { badge, rows: probeRows(r, false) };
+    const needed = [r.ipp, r.snmp, ...(p.cups_queue ? [r.cups] : [])];  // CUPS only counts if a queue is chosen
+    const badge = !r.ipp.ok ? ui.badge('Can’t reach', 'bad') : needed.every((c) => c.ok) ? ui.badge('Online', 'ok') : ui.badge('Partly working', 'warn');
+    return { badge, rows: probeRows(r, false, p.cups_queue) };
   }
 
   function printerCard(p) {
@@ -290,7 +295,7 @@ export function admin(root, { onChanged }) {
         h('dl', { class: 'kv' },
           h('dt', {}, 'Address'), h('dd', {}, p.ip),
           model && h('dt', {}, 'Model'), model && h('dd', {}, model),
-          h('dt', {}, 'Print queue'), h('dd', {}, p.cups_queue || 'None'),
+          h('dt', {}, 'Print queue'), h('dd', {}, p.cups_queue || 'Not set up (status only)'),
           p.host_state_file && h('dt', {}, 'Timer state'), p.host_state_file && h('dd', {}, p.host_state_file)),
         rows.length > 0 && h('ul', { class: 'checks compact' }, rows),
         h('div', { class: 'actions left' },

@@ -185,7 +185,7 @@ def test_print_that_went_through_cups_is_not_called_direct(make_app, clock):
     c = app.test_client()
     c.get(f"/api/maintenance/{PID}/nozzle")
     now = clock()
-    printer.jobs.append(printer._job(60, "Invoice.pdf", "tushar", now + 5, now + 30, 2))
+    printer.jobs.append(printer._job(60, "Invoice.pdf", "alex", now + 5, now + 30, 2))
     printer.counter += 2
     clock.advance(120)
     d = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]
@@ -273,3 +273,14 @@ def test_every_button_in_the_ui_says_what_it_does_on_hover():
                 if "title" not in line[m.start():] and "title" not in line[:m.start()].split("h('")[-1]:
                     missing.append(f"{path.relative_to(root)}:{n}")
     assert not missing, f"buttons without a title: {missing}"
+
+
+def test_the_repository_has_what_an_open_source_project_needs():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    for name in ("LICENSE", "THIRD-PARTY.md", "SECURITY.md", "CONTRIBUTING.md", "README.md", "app/static/vendor/pdfjs/LICENSE"):
+        assert (root / name).is_file() and (root / name).stat().st_size > 200, name
+    assert "MIT License" in (root / "LICENSE").read_text()
+    assert "pdf.js" in (root / "THIRD-PARTY.md").read_text()
+    for secret in (".env", "secret.key"):
+        assert secret in (root / ".gitignore").read_text()

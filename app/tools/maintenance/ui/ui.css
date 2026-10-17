@@ -8,3 +8,30 @@
 .mt .msg { color: var(--bad); font-size: 13px; }
 .mt .footnote { color: var(--muted); font-size: 13px; }
 .mt .footnote p + p { margin-top: 6px; }
+
+/* ---- "CUPS isn't set up": a faded sketch of the card, then what CUPS adds and how to set it up */
+.mt .cups-panel { display: grid; }
+.mt .ghost { display: grid; gap: 10px; max-height: 124px; overflow: hidden; opacity: .9; pointer-events: none;
+  -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent); }
+.mt .ghost-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.mt .ghost-dot { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--track); }
+.mt .ghost-lines { flex: 1; display: grid; gap: 6px; }
+.mt .ghost-bar { display: block; height: 9px; border-radius: 5px; background: var(--track); }
+.mt .ghost-bar.w30 { width: 30%; } .mt .ghost-bar.w35 { width: 35%; } .mt .ghost-bar.w40 { width: 40%; } .mt .ghost-bar.w60 { width: 60%; }
+.mt .ghost-pill { flex: none; width: 52px; height: 20px; border-radius: 10px; background: var(--track); }
+.mt .ghost-switch { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.mt .ghost-knob { flex: none; width: 40px; height: 22px; border-radius: 11px; background: var(--track); }
+.mt .ghost-fields { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.mt .ghost-field { display: grid; gap: 8px; }
+.mt .ghost-input { display: block; height: 34px; border-radius: 10px; background: var(--track); }
+.mt .cups-copy { position: relative; margin-top: -26px; display: grid; gap: 10px; justify-items: start; }
+.mt .cups-copy h4 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0; text-transform: none; }
+.mt .cups-copy h4 svg { color: var(--info); }
+.mt .cups-copy p { margin: 0; color: var(--muted); font-size: 14px; max-width: 62ch; }
+.mt .unlocks { list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.mt .unlocks li { display: flex; align-items: flex-start; gap: 8px; }
+.mt .unlocks svg { flex: none; margin-top: 3px; color: var(--ok); }
+.mt .steps { padding-left: 20px; display: grid; gap: 8px; margin-top: 8px; font-size: 14px; color: var(--muted); max-width: 70ch; }
+.mt .steps pre { margin-top: 6px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text); font-family: var(--mono); font-size: 13px; overflow-x: auto; }
+.mt .steps code { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.mt .cups-copy a.btn { text-decoration: none; }

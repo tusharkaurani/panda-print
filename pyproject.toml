@@ -1,7 +1,10 @@
 [project]
 name = "panda-print"
 version = "0.1.0"
-description = "Self-hosted dashboard for a home printer"
+description = "Self-hosted dashboard for a home printer: status, ink, page counts and optional automatic printing through CUPS"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

@@ -199,7 +199,7 @@ def test_editing_a_printer_rebuilds_its_runtime(client):
     h = csrf_headers(client)
     client.put(f"/api/printers/{PID}", json={"cups_queue": ""}, headers=h)
     q = client.get(f"/api/maintenance/{PID}/queue").get_json()
-    assert q["ok"] is False and "No CUPS queue" in q["error"]["message"]
+    assert q["ok"] is True and q["data"]["configured"] is False  # CUPS is optional: a note, not an error
     client.put(f"/api/printers/{PID}", json={"cups_queue": "T730"}, headers=h)
     assert client.get(f"/api/maintenance/{PID}/queue").get_json()["ok"] is True
 

@@ -42,10 +42,15 @@ def allocate(delta: int, pages_left: list[int]) -> tuple[list[int], int]:
     return credited, remaining
 
 
+class _NoCups(Exception):
+    """Internal: skip the CUPS part of a poll."""
+
+
 class Tracker:
     def __init__(self, settings: Settings, store: Store, printer, clock, host_state_file: str = "",
-                 lock: threading.Lock | None = None):
+                 lock: threading.Lock | None = None, cups: bool = True):
         self.s, self.store, self.printer, self.clock = settings, store, printer, clock
+        self.cups = cups  # False: this printer has no CUPS queue, so the job list isn't asked for (CUPS is optional)
         self.host_state_file = Path(host_state_file) if host_state_file else None
         self._newest_document: float | None = None  # newest finished non-nozzle job seen in CUPS
         # How many real (non-nozzle) CUPS jobs were active since the previous counter read, or None
@@ -65,11 +70,15 @@ class Tracker:
             self.store.put("last_poll_ts", now)
             self._cups_active = None
             try:
+                if not self.cups:
+                    raise _NoCups()
                 jobs = self.printer.list_jobs()
                 self.import_host_checks(jobs)
                 self._newest_document = self.newest_document_ts(jobs)
                 prev = self.store.get("last_count_ts")
                 self._cups_active = self.documents_active_since(jobs, (float(prev) if prev else now) - DIRECT_SLACK)
+                self.store.put("cups_error", None)
+            except _NoCups:
                 self.store.put("cups_error", None)
             except SourceError as e:
                 self.store.put("cups_error", e.message)

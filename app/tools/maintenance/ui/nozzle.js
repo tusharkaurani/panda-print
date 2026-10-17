@@ -2,7 +2,7 @@
 // drive how checks are tracked. This is the file to extend with more nozzle-check features.
 import { createPagesDialog } from './pages.js';
 import { drawSheets } from './preview.js';
-import { cardLoader } from './shared.js';
+import { cardLoader, cupsPanel } from './shared.js';
 
 // who sent a nozzle check: the Run now button, this app's schedule, or an older timer seen in the CUPS history
 const SOURCE = { manual: 'Printed by you', auto: 'Printed automatically', host: 'Printed by another timer' };
@@ -16,9 +16,10 @@ export function mount(root, kit) {
   // ------------------------------------------------------------ Print now (top right of the card)
   // The button and its dialog are created once; the card bodies are rebuilt on every refresh.
   let waitUntil = 0;  // the manual-print rate limit: when the next one is allowed
+  let cupsOff = false;  // this printer has no CUPS queue, so nothing here can print
   let rotation = null;  // this printer's pages and what prints next (Service.rotation_status)
   const runLabel = h('span', {}, 'Print now');
-  const runBtn = h('button', { class: 'btn small', type: 'button', title: 'Show the page that will print, then confirm', onclick: () => openRun() }, icon('droplet', 15), runLabel);
+  const runBtn = h('button', { class: 'btn small primary', type: 'button', title: 'Show the page that will print, then confirm', onclick: () => openRun() }, icon('droplet', 15), runLabel);
 
   const nozzleCard = ui.card({ title: 'Nozzle care', iconName: 'droplet', wide: true, onRefresh: () => refresh(), actions: [runBtn] });
   const autoCard = ui.card({ title: 'Automation', iconName: 'clock', wide: true, onRefresh: () => refreshAuto() });
@@ -34,9 +35,9 @@ export function mount(root, kit) {
 
   function paintRun() {
     const left = Math.ceil((waitUntil - Date.now()) / 1000);
-    runBtn.disabled = left > 0;
-    runLabel.textContent = left > 0 ? `Print again in ${fmt.countdown(left)}` : 'Print now';
-    runBtn.title = left > 0 ? 'Printing is limited so a page can’t be sent twice by accident. Try again shortly.'
+    runBtn.disabled = left > 0 || cupsOff;
+    runLabel.textContent = left > 0 && !cupsOff ? `Print again in ${fmt.countdown(left)}` : 'Print now';
+    runBtn.title = cupsOff ? 'Needs CUPS. The Automation card below says how to set it up.' : left > 0 ? 'Printing is limited so a page can’t be sent twice by accident. Try again shortly.'
       : 'Shows the page that will print, then asks you to confirm. The idle clock starts over.';
   }
   setInterval(() => { if (waitUntil > Date.now()) paintRun(); }, 1000);
@@ -101,8 +102,10 @@ export function mount(root, kit) {
 
   function renderNozzle(d) {
     const lp = d.last_print, nx = d.next_check, a = d.automation;
+    cupsOff = d.cups?.configured === false;
     // the next check is summarised by this badge, so it has no card of its own
-    nozzleCard.setBadge(!a.enabled
+    nozzleCard.setBadge(cupsOff ? ui.badge('Printing needs CUPS')
+      : !a.enabled
       ? (nx?.overdue ? ui.badge('Print due · auto print off', 'warn') : ui.badge('Auto print off'))
       : a.state === 'blocked' ? ui.badge('Auto print waiting', 'warn')
       : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Printing soon' : `Next print ${a.next_run_label || fmt.when(a.next_run_at)}`, 'ok') : null);
@@ -112,20 +115,20 @@ export function mount(root, kit) {
 
     const t = d.tracking;
     const problems = [t.counter_error && `Can’t read the page count: ${t.counter_error}`, t.cups_error && `Can’t reach CUPS: ${t.cups_error}`,
-      a.enabled && a.state === 'blocked' && `Auto print is waiting: ${a.reason}`].filter(Boolean);
+      a.enabled && a.state === 'blocked' && !cupsOff && `Auto print is waiting: ${a.reason}`].filter(Boolean);
 
     nozzleCard.set(
       problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
-      h('div', { class: 'stats four' },
+      h('div', { class: cupsOff ? 'stats two' : 'stats four' },
         ui.stat('Last print', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
           lp && `${fmt.abs(lp.ts)} · ${KIND[lp.kind] || ''}`),
         ui.stat('Idle for', fmt.days(d.days_since_last_print),
-          a.enabled ? `Prints after ${d.idle_days_threshold} idle days` : 'Auto print is off'),
-        ui.stat('Last auto print', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet',
+          cupsOff ? 'Auto print needs CUPS' : a.enabled ? `Prints after ${d.idle_days_threshold} idle days` : 'Auto print is off'),
+        !cupsOff && ui.stat('Last auto print', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet',
           d.last_auto ? `${fmt.abs(d.last_auto.ts)} · ${BY[d.last_auto.source] || ''}` : 'Nothing yet'),
-        ui.stat('Last manual print', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
+        !cupsOff && ui.stat('Last manual print', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
           d.last_manual ? (d.last_manual.state === 'failed' ? 'Failed: ' + (d.last_manual.message || '') : fmt.abs(d.last_manual.ts)) : null)),
-      h('div', {}, h('h4', {}, 'Recent prints'),
+      cupsOff ? null : h('div', {}, h('h4', {}, 'Recent prints'),
         d.history.length ? h('ul', { class: 'rows' }, d.history.map(checkRow)) : h('p', { class: 'empty' }, 'Nothing printed yet.')),
       h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'How it works'),
         h('div', { class: 'footnote', style: { 'margin-top': '10px' } },
@@ -148,6 +151,12 @@ export function mount(root, kit) {
   ];
 
   function renderAutomation(d) {
+    if (d.cups_configured === false) {  // CUPS is optional: show what it would unlock
+      autoCard.setBadge(ui.badge('CUPS not set up'));
+      autoCard.set(cupsPanel(kit, { title: 'Add CUPS to print automatically', ghost: 'form',
+        unlocks: ['Automatic printing when the printer sits unused, so the ink keeps flowing', 'Print now, with a preview of the page', 'Your own pages (PDF, PNG, JPEG) to print instead of a test pattern', 'The print queue and recent jobs on the Overview tab'] }));
+      return;
+    }
     const custom = d.customised.length > 0;
     autoCard.setBadge(ui.badge(d.values.enabled ? 'On' : 'Off', d.values.enabled ? 'ok' : ''));
     const inputs = {}, errors = {};

@@ -25,14 +25,14 @@ FINAL_COUNT = 174
 # (days ago, kind, pages, job name, user). "external" = someone printed a document,
 # "host" = the host's daily timer printed a nozzle check, "manual" = from this dashboard.
 HISTORY = [
-    (33.0, "external", 6, "Council tax bill.pdf", "tushar"),
-    (30.0, "external", 3, "Recipe printout.pdf", "tushar"),
+    (33.0, "external", 6, "Council tax bill.pdf", "alex"),
+    (30.0, "external", 3, "Recipe printout.pdf", "alex"),
     (23.0, "host", 1, "nozzle-check.ps", "root"),
     (16.0, "host", 1, "nozzle-check.ps", "root"),
-    (12.0, "external", 5, "Holiday booking.pdf", "tushar"),
-    (11.9, "external", 4, "Boarding pass - LHR.pdf", "tushar"),
+    (12.0, "external", 5, "Holiday booking.pdf", "alex"),
+    (11.9, "external", 4, "Boarding pass - LHR.pdf", "alex"),
     (6.0, "manual", 1, "panda-print nozzle check (manual)", "panda-print"),
-    (2.6, "external", 2, "Invoice-2291.pdf", "tushar"),
+    (2.6, "external", 2, "Invoice-2291.pdf", "alex"),
 ]
 FIRST_JOB_ID = 31
 

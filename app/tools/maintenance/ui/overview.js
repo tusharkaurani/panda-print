@@ -1,5 +1,5 @@
 // Overview tab: the printer itself (state, ink, page counter, specs) and its CUPS queue with recent prints.
-import { JOB_BADGE, cardLoader, reasonKind } from './shared.js';
+import { JOB_BADGE, cardLoader, cupsPanel, reasonKind } from './shared.js';
 
 export function mount(root, kit) {
   const { h, icon, fmt, ui } = kit;
@@ -78,6 +78,12 @@ export function mount(root, kit) {
   }
 
   function renderQueue(d) {
+    if (d.configured === false) {  // CUPS is optional: say what it adds instead of an error
+      queueCard.setBadge(ui.badge('CUPS not set up'));
+      queueCard.set(cupsPanel(kit, { title: 'Add CUPS to see the print queue',
+        unlocks: ['The print queue and recent print jobs', 'Print now, with a preview', 'Automatic printing to keep the ink flowing', 'Your own pages (PDF, PNG, JPEG) to print instead of a test pattern'] }));
+      return;
+    }
     queueCard.setBadge(ui.badge(d.state.label, ui.healthKind(d.state.health)));
     const waiting = d.queued_jobs?.length ?? d.queued;
     // one timeline: CUPS jobs and direct prints, newest first

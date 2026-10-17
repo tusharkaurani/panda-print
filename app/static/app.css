@@ -307,6 +307,7 @@ select.input { appearance: auto; }
 .check .mark { flex: none; margin-top: 2px; display: grid; place-items: center; }
 .check.ok .mark { color: var(--ok); }
 .check.bad .mark { color: var(--warn); }
+.check.skip .mark { color: var(--info); }
 .checks.compact .check { padding: 6px 10px; font-size: 13.5px; }
 .checks.compact .check .sub { font-size: 12.5px; }
 .card .sub { overflow-wrap: anywhere; }

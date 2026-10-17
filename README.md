@@ -5,13 +5,29 @@ It ships with one tool, **Printer Maintenance** (status, ink gauges, lifetime pa
 recent prints, and a nozzle-check tracker that can also print the nozzle check for you when a printer has sat idle), plus a **launcher** grid for
 external tools. More tools plug in as self-contained modules.
 
-Built for a Brother DCP-T730DW behind CUPS on a Raspberry Pi, but no printer is hard-wired: the first visit opens
+Built for a Brother DCP-T730DW behind CUPS on a Raspberry Pi (the only printer verified on real hardware; others should work through standard IPP and SNMP but are untested), and no printer is hard-wired: the first visit opens
 a **setup wizard** that finds your printer (or asks for its IP), and a **Printers** page lets you add, edit, test and
 remove printers later. Everything else (ports, paths, timeouts) is an environment variable.
 
 - Python 3.12 + Flask on waitress, no build step, no CDN, no runtime internet. About 30-40 MB RAM.
 - Light and dark themes (follows the OS, with a toggle), mobile friendly.
 - One port (default 8095). No login: it expects an SSO reverse proxy in front. State-changing requests are CSRF-protected and printing is rate-limited.
+
+## CUPS is optional
+
+panda-print talks to the printer directly (IPP for status and ink, SNMP for the page count). **CUPS**, the print service on
+a Pi, Mac or Linux box, is only needed for printing. CUPS can run on the same machine or on another one on your network.
+
+| Without CUPS you get | With CUPS you also get |
+|---|---|
+| Printer status and ink levels | The print queue and recent print jobs |
+| Lifetime page count, and any print noticed from it | Telling a print from a computer apart from one sent straight to the printer |
+| Last print, idle time | **Print now** (with a preview) |
+| Several printers, quick links, the Print Utilities tab | Automatic printing when the printer sits unused, and your own pages in rotation |
+
+A printer is "without CUPS" when it has no print queue. Cards that need CUPS show a faded sketch of what they would hold, what
+CUPS adds and how to set it up (install CUPS, add the printer to it, then choose the queue under **Printers → Edit**). Nothing is
+shown as an error for a choice you haven't made. A queue that is set but unreachable still shows an error with a retry.
 
 ## Run it locally
 
@@ -300,9 +316,15 @@ Dockerfile  compose.example.yml  .github/workflows/build.yml
 
 ## Known limits
 
-- Verified read-only against the real DCP-T730DW from a Mac on the same LAN: mDNS discovery, the IPP attributes (ink levels, state, model) and the SNMP page counter all work. Not yet exercised against a real CUPS server: the queue list, job list, host-job import and printing are covered by in-process fakes only, so on the Pi check that the print queue card loads before pressing "Print nozzle check now".
+- Verified read-only against the real DCP-T730DW (from a Mac on the same LAN) and the real CUPS on the Pi: mDNS discovery, the IPP attributes (ink levels, state, model), the SNMP page counter, and the CUPS queue and job list. Not yet exercised on real hardware: printing a PDF, PNG or JPEG through CUPS (covered by in-process fakes), so on the Pi check that the print queue card loads and try **Print now** once.
 - An old host timer's state file is optional and per printer; it only helps the very first reading. Nothing else depends on it.
 - If CUPS is unreachable while another timer prints a check, that page is counted as "someone printed" (the counter can't tell the difference).
 - "Printed without CUPS" needs no real CUPS job at all in the window. If a CUPS print and a direct print land between two reads, both are attributed to CUPS.
 - The page counter is shared by all prints, so a check that never prints (for example the printer is offline) can be mistaken for a later print within the matching window (30 minutes by default).
 - Ink levels are the printer's own estimates.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party software and trademarks are listed in [THIRD-PARTY.md](THIRD-PARTY.md). Security notes are in
+[SECURITY.md](SECURITY.md) and how to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md). panda-print is not affiliated with Brother, the CUPS project or any
+site it links to.

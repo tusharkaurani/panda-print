@@ -108,7 +108,7 @@ def test_a_printer_with_no_cups_queue_still_shows_status_and_fails_to_print_poli
     bare = fleet.add("Spare", "192.168.1.60", "")
     assert fleet.get(bare, "printer").get_json()["ok"] is True
     q = fleet.get(bare, "queue").get_json()
-    assert q["ok"] is False and "No CUPS queue" in q["error"]["message"]
+    assert q["ok"] is True and q["data"]["configured"] is False  # CUPS is optional: not an error card
     r = fleet.client.post(f"/api/maintenance/{bare}/nozzle/print", json={}, headers=fleet.h)
     assert r.status_code in (400, 502) and "queue" in r.get_json()["error"]["message"].lower()
     fleet.configure(bare, enabled=True, idle_days=0.5, run_at="00:00")

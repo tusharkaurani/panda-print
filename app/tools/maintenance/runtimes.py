@@ -48,7 +48,7 @@ class Runtimes:
         backend = ctx.backend_for(printer)
         store = Store(ctx.db, printer.id)
         track_lock, print_lock = self._locks.setdefault(printer.id, (threading.Lock(), threading.Lock()))
-        tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file, track_lock)
+        tracker = Tracker(ctx.settings, store, backend, ctx.clock, printer.host_state_file, track_lock, cups=bool(printer.cups_queue))
         return Runtime(printer, store, tracker, Service(ctx, printer, backend, store, tracker, self.library, print_lock))
 
     def all(self) -> list[Runtime]:

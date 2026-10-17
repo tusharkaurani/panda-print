@@ -75,9 +75,11 @@ def earliest_run(idle_due: float, now: float, run_at: str, tz: tzinfo) -> float:
 
 
 def plan(*, enabled: bool, now: float, last_print_ts: float | None, idle_days: float, run_at: str, tz: tzinfo,
-         counter_ok: bool, last_app_check_ts: float | None, last_failure_ts: float | None) -> Plan:
+         counter_ok: bool, last_app_check_ts: float | None, last_failure_ts: float | None, can_print: bool = True) -> Plan:
     if not enabled:
         return Plan("off")
+    if not can_print:  # printing goes through CUPS; without a queue there is nothing to print with
+        return Plan("blocked", "CUPS isn't set up for this printer, so it can't print.")
     if last_print_ts is None:
         return Plan("blocked", "Waiting for the first page count.")
     next_run = earliest_run(last_print_ts + idle_days * DAY, now, run_at, tz)
