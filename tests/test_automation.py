@@ -185,7 +185,7 @@ def test_time_labels_use_the_configured_zone():
     assert schedule.format_local(ts, "Asia/Kolkata") == "Fri 15 Jan, 13:30 IST"
     assert schedule.format_local(ts, "America/New_York") == "Fri 15 Jan, 03:00 EST"
     assert schedule.tz_label("Europe/London") == "Europe/London"
-    assert schedule.tz_label("Not/AZone") == "UTC"  # a bad TZ falls back loudly (it is logged) but safely
+    assert schedule.tz_label("Not/AZone").startswith("UTC (TZ 'Not/AZone'")  # a bad TZ falls back to UTC, and says so
 
 
 def test_next_check_is_shown_in_the_container_zone(make_app):

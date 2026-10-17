@@ -139,6 +139,8 @@ The idle rule lives in `app/tools/maintenance/idle.py` (the old host script's lo
 
 ## Automatic nozzle check (Nozzle Check tab)
 
+Two words to keep apart: a **nozzle check** is a test page that is *printed*; **reading** the page total prints nothing and is how the app notices prints (every 5 minutes by default). The tab's cards: *Last page printed* (anything, from any device), *Idle for* (time since then), *Last automatic check* (a check printed by this app or by another timer found in the CUPS history) and *Last manual check* (one you started with Run a check now).
+
 Inkjet nozzles clog when a printer sits unused. panda-print can print one small test page (four colour bars) when a
 printer has gone a set number of days without printing anything. It replaces a cron or systemd timer on the host: if
 you used one, retire it once you switch this on (otherwise both would print).

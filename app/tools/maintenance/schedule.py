@@ -31,7 +31,9 @@ class Plan:
 
 
 def tz_for(name: str) -> tzinfo:
-    """The clock the 'don't print before' time refers to: TZ if set (and valid), else this machine's."""
+    """The clock the 'don't print before' time refers to: TZ if set (and valid), else this machine's.
+    In a container that is whatever the TZ variable says, and UTC when it is not set."""
+    name = (name or "").strip().lstrip(":")  # libc also accepts ":Europe/London"
     if name:
         try:
             return ZoneInfo(name)
@@ -42,9 +44,15 @@ def tz_for(name: str) -> tzinfo:
 
 
 def tz_label(name: str) -> str:
-    """A short name for the clock in use, for the UI: 'Europe/London', or 'UTC' / 'IST' for the machine's own."""
-    tz = tz_for(name)
-    return getattr(tz, "key", None) or datetime.now(tz).tzname() or "UTC"
+    """A short name for the clock in use, for the UI: 'Europe/London', or 'UTC' / 'IST' for the machine's own.
+    An unusable TZ says so rather than silently showing UTC."""
+    clean = (name or "").strip().lstrip(":")
+    if clean:
+        try:
+            return ZoneInfo(clean).key
+        except Exception:
+            return f"UTC (TZ '{clean}' isn't a known time zone)"
+    return datetime.now().astimezone().tzname() or "UTC"
 
 
 def format_local(ts: float, name: str) -> str:

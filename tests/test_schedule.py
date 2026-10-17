@@ -84,5 +84,14 @@ def test_no_baseline_yet_means_wait_for_the_first_reading():
 
 def test_time_zone_names():
     assert str(schedule.tz_for("Europe/London")) == "Europe/London"
+    assert str(schedule.tz_for(":Europe/London")) == "Europe/London"  # the form libc accepts too
+    assert str(schedule.tz_for("  Asia/Kolkata ")) == "Asia/Kolkata"
     assert schedule.tz_for("Not/AZone") is UTC
     assert schedule.tz_for("") is not None  # the machine's own
+
+
+def test_an_unusable_tz_is_called_out_in_the_label_not_hidden():
+    assert schedule.tz_label("Europe/London") == "Europe/London"
+    assert schedule.tz_label(":Europe/London") == "Europe/London"
+    bad = schedule.tz_label("Mars/Olympus")
+    assert bad.startswith("UTC") and "Mars/Olympus" in bad and "isn't a known" in bad

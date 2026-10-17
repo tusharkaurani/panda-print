@@ -2,8 +2,10 @@
 // drive how checks are tracked. This is the file to extend with more nozzle-check features.
 import { cardLoader } from './shared.js';
 
-const SOURCE = { manual: 'Manual check', auto: 'Automated check', host: 'Automated check (host timer)' };
-const KIND = { external: 'A document was printed', direct: 'Printed straight to the printer', nozzle: 'A nozzle check', baseline: 'Earliest known activity' };
+// who sent a nozzle check: the Run now button, this app's schedule, or an older timer seen in the CUPS history
+const SOURCE = { manual: 'Manual check', auto: 'Automatic check · panda-print', host: 'Automatic check · another timer' };
+const BY = { manual: 'by you', auto: 'by panda-print', host: 'by another timer' };
+const KIND = { external: 'A document', direct: 'Sent straight to the printer', nozzle: 'A nozzle check', baseline: 'Earliest known activity' };
 
 export function mount(root, kit) {
   const { h, icon, fmt, ui, api, toast } = kit;
@@ -69,8 +71,8 @@ export function mount(root, kit) {
     const lp = d.last_print, nx = d.next_check, a = d.automation;
     // the next check is summarised by this badge, so it has no card of its own
     nozzleCard.setBadge(!a.enabled
-      ? (nx?.overdue ? ui.badge('Check due · auto off', 'warn') : ui.badge('Auto check off'))
-      : a.state === 'blocked' ? ui.badge('Auto check waiting', 'warn')
+      ? (nx?.overdue ? ui.badge('Check due · automatic check off', 'warn') : ui.badge('Automatic check off'))
+      : a.state === 'blocked' ? ui.badge('Automatic check waiting', 'warn')
       : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Check starting' : `Next check ${a.next_run_label || fmt.when(a.next_run_at)}`, 'ok') : null);
 
     waitUntil = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
@@ -83,18 +85,20 @@ export function mount(root, kit) {
     nozzleCard.set(
       problems.length ? h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, problems.map((p) => h('div', {}, p)))) : null,
       h('div', { class: 'stats four' },
-        ui.stat('Last print (any device)', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
+        ui.stat('Last page printed', lp ? `${lp.approximate ? 'At least ' : ''}${fmt.ago(lp.ts)}` : '–',
           lp && `${fmt.abs(lp.ts)} · ${KIND[lp.kind] || ''}`),
-        ui.stat('Days since last print', fmt.days(d.days_since_last_print),
+        ui.stat('Idle for', fmt.days(d.days_since_last_print),
           a.enabled ? `Automatic check after ${d.idle_days_threshold} idle days` : 'Automatic check is off'),
-        ui.stat('Last automated check', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet', d.last_auto ? fmt.abs(d.last_auto.ts) : 'Not seen since tracking began'),
-        ui.stat('Last manual run', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
+        ui.stat('Last automatic check', d.last_auto ? fmt.ago(d.last_auto.ts) : 'None yet',
+          d.last_auto ? `${fmt.abs(d.last_auto.ts)} · ${BY[d.last_auto.source] || ''}` : 'None seen since tracking began'),
+        ui.stat('Last manual check', d.last_manual ? fmt.ago(d.last_manual.ts) : 'Never',
           d.last_manual ? (d.last_manual.state === 'failed' ? 'Failed: ' + (d.last_manual.message || '') : fmt.abs(d.last_manual.ts)) : null)),
       h('div', {}, h('h4', {}, 'Recent checks'),
         d.history.length ? h('ul', { class: 'rows' }, d.history.map(checkRow)) : h('p', { class: 'empty' }, 'No nozzle checks recorded yet.')),
       h('details', { class: 'more' }, h('summary', {}, icon('chevron', 16), 'How this is tracked'),
         h('div', { class: 'footnote', style: { 'margin-top': '10px' } },
-          h('p', {}, `The dashboard reads the printer’s lifetime page counter every ${fmt.minutes(t.poll_interval / 60)} and notes when it changes, so prints from any device are counted and times are accurate to about that interval.`),
+          h('p', {}, 'A nozzle check is a test page that gets printed. Reading the printer’s page total is different: it prints nothing, it is only how the dashboard notices prints.'),
+          h('p', {}, `The page total is read every ${fmt.minutes(t.poll_interval / 60)}. When it rises, that is a print, so prints from any device are counted and their times are accurate to about that interval.`),
           h('p', {}, 'Nozzle checks are told apart from other printing by matching them with the CUPS job list. Pages that appear on the counter with no CUPS job behind them are shown as printed straight to the printer.'),
           t.since && h('p', {}, `Tracking since ${fmt.abs(t.since)}; last counter check ${t.last_poll ? fmt.ago(t.last_poll) : 'not yet'}.`),
           d.host_state.configured && (d.host_state.error

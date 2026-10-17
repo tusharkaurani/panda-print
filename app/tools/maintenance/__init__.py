@@ -10,7 +10,7 @@ from pathlib import Path
 
 from app.core.context import AppContext
 from app.core.tool import Tool, ToolTab
-from app.tools.maintenance import automation, store
+from app.tools.maintenance import automation, schedule, store
 from app.tools.maintenance.api import build_blueprint
 from app.tools.maintenance.runtimes import Runtimes
 
@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 
 def create(ctx: AppContext) -> Tool:
     store.migrate(ctx.db)
+    log.info("nozzle check clock: %s", schedule.tz_label(ctx.settings.timezone))
     runtimes = Runtimes(ctx)
 
     def poll_forever() -> None:
