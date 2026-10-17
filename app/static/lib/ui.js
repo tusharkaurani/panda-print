@@ -60,11 +60,12 @@ export function gauge(ink) {
   if (!firstTime) fill.setAttribute('stroke-dasharray', full);
   else requestAnimationFrame(() => requestAnimationFrame(() => fill.setAttribute('stroke-dasharray', full)));
   const label = known ? `${ink.name} ink, about ${ink.percent} percent (the printer's own estimate)` : `${ink.name} ink level unknown`;
-  return h('div', { class: `gauge ${ink.key}${known ? '' : ' unknown'}${ink.percent === 0 ? ' zero' : ''}` },
+  // a plain HTML tooltip (SVG <title> tooltips are unreliable across browsers)
+  const tip = known ? `${ink.name}: about ${ink.percent}%. Levels are the printer's own estimate.` : `${ink.name}: the printer didn't report a level.`;
+  return h('div', { class: `gauge ${ink.key}${known ? '' : ' unknown'}${ink.percent === 0 ? ' zero' : ''}`, title: tip },
     svg('svg', { viewBox: '0 0 100 100', role: 'img', 'aria-label': label },
       svg('circle', { class: 'track', cx: 50, cy: 50, r: R, fill: 'none', 'stroke-width': 11 }),
       fill,
-      svg('title', {}, label),  // hover explanation: the level is the printer's own estimate
       svg('text', { x: 50, y: 58, 'text-anchor': 'middle' }, known ? `${ink.percent}%` : '?')),
     h('div', { class: 'name' }, ink.name),
     ink.empty ? badge('Empty', 'bad') : ink.low ? badge('Low', 'warn') : null);
