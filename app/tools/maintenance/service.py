@@ -167,7 +167,9 @@ class Service:
             "automation": {
                 "enabled": settings.enabled, "run_at": settings.run_at, "state": plan.action,
                 "reason": plan.reason, "next_run_at": plan.next_run_at,
-                "timezone": str(schedule.tz_for(self.s.timezone)),
+                # the time as the container's clock shows it, so it matches the "don't print before" time
+                "next_run_label": schedule.format_local(plan.next_run_at, self.s.timezone) if plan.next_run_at else None,
+                "timezone": schedule.tz_label(self.s.timezone),
             },
         }
 
@@ -182,8 +184,10 @@ class Service:
     def automation_status(self) -> dict:
         base = auto.defaults(self.s)
         overrides = self.store.automation_overrides()
+        # the on/off switch is not one of the settings: it is neither counted as "changed" nor cleared by a reset
+        settings_changed = sorted(k for k in overrides if k != "enabled")
         return {"values": auto.effective(base, overrides).to_dict(), "defaults": base.to_dict(),
-                "customised": sorted(overrides), "timezone": str(schedule.tz_for(self.s.timezone))}
+                "customised": settings_changed, "timezone": schedule.tz_label(self.s.timezone)}
 
     def save_automation(self, payload: dict) -> dict:
         """Set this printer's automation settings. Raises ValidationError(fields) for bad input.
@@ -197,7 +201,9 @@ class Service:
         return self.automation_status()
 
     def reset_automation(self) -> dict:
-        self.store.set_automation_overrides({})
+        """Back to the defaults for every setting. The on/off switch stays as it is."""
+        overrides = self.store.automation_overrides()
+        self.store.set_automation_overrides({k: v for k, v in overrides.items() if k == "enabled"})
         return self.automation_status()
 
     # ------------------------------------------------------------ printing

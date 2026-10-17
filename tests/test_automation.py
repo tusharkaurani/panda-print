@@ -151,3 +151,58 @@ def test_settings_are_per_printer_and_die_with_the_printer(client):
     client.delete("/api/printers/hall", headers=h)
     assert ctx.db.one("SELECT COUNT(*) AS n FROM mt_automation WHERE printer_id='hall'")["n"] == 0
     assert client.get(url()).get_json()["data"]["values"]["idle_days"] == 2.0
+
+
+# ------------------------------------------------------------------ the on/off switch is not a "setting"
+
+def test_reset_to_defaults_leaves_the_switch_alone(client):
+    h = csrf_headers(client)
+    client.put(url(), json={"enabled": True}, headers=h)
+    client.put(url(), json={"idle_days": 3, "run_at": "07:30"}, headers=h)
+    d = client.delete(url(), headers=h).get_json()["data"]
+    assert d["values"]["idle_days"] == 7.0 and d["values"]["run_at"] == "10:00"  # settings back to the defaults
+    assert d["values"]["enabled"] is True and d["customised"] == []              # the switch stays on
+    assert client.get(url()).get_json()["data"]["values"]["enabled"] is True
+
+
+def test_reset_leaves_the_switch_off_too(client):
+    h = csrf_headers(client)
+    client.put(url(), json={"idle_days": 3}, headers=h)
+    assert client.delete(url(), headers=h).get_json()["data"]["values"]["enabled"] is False
+
+
+def test_flipping_the_switch_does_not_count_as_a_changed_setting(client):
+    d = client.put(url(), json={"enabled": True}, headers=csrf_headers(client)).get_json()["data"]
+    assert d["values"]["enabled"] is True and d["customised"] == []  # so "Reset to defaults" stays disabled
+
+
+# ------------------------------------------------------------------ times are in the container's time zone
+
+def test_time_labels_use_the_configured_zone():
+    from app.tools.maintenance import schedule
+    ts = 1_800_000_000  # Fri 15 Jan 2027, 08:00 UTC
+    assert schedule.format_local(ts, "UTC") == "Fri 15 Jan, 08:00 UTC"
+    assert schedule.format_local(ts, "Asia/Kolkata") == "Fri 15 Jan, 13:30 IST"
+    assert schedule.format_local(ts, "America/New_York") == "Fri 15 Jan, 03:00 EST"
+    assert schedule.tz_label("Europe/London") == "Europe/London"
+    assert schedule.tz_label("Not/AZone") == "UTC"  # a bad TZ falls back loudly (it is logged) but safely
+
+
+def test_next_check_is_shown_in_the_container_zone(make_app):
+    app, _ = make_app(timezone="Asia/Kolkata")
+    c = app.test_client()
+    h = csrf_headers(c)
+    c.put(url(), json={"enabled": True, "run_at": "00:00", "idle_days": 7}, headers=h)
+    a = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["automation"]
+    assert a["timezone"] == "Asia/Kolkata" and a["next_run_label"].endswith("IST")
+    assert c.get(url()).get_json()["data"]["timezone"] == "Asia/Kolkata"
+
+
+@pytest.mark.parametrize("tz,expected", [("Asia/Kolkata", "print"), ("UTC", "wait")])
+def test_quiet_hours_use_the_container_zone_not_utc(make_app, tz, expected):
+    """08:00 UTC is 13:30 in Kolkata: past a 10:00 limit there, but before it in UTC."""
+    app, _ = make_app(timezone=tz, print_cooldown=0)
+    c = app.test_client()
+    c.put(url(), json={"enabled": True, "idle_days": 2, "run_at": "10:00"}, headers=csrf_headers(c))
+    a = c.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["automation"]
+    assert a["state"] == expected, a

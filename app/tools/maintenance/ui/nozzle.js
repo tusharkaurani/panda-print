@@ -71,7 +71,7 @@ export function mount(root, kit) {
     nozzleCard.setBadge(!a.enabled
       ? (nx?.overdue ? ui.badge('Check due · auto off', 'warn') : ui.badge('Auto check off'))
       : a.state === 'blocked' ? ui.badge('Auto check waiting', 'warn')
-      : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Check starting' : `Next check ${fmt.when(a.next_run_at)}`, 'ok') : null);
+      : a.next_run_at ? ui.badge(a.next_run_at <= Date.now() / 1000 + 60 ? 'Check starting' : `Next check ${a.next_run_label || fmt.when(a.next_run_at)}`, 'ok') : null);
 
     waitUntil = d.print.allowed ? 0 : Date.now() + d.print.retry_after * 1000;
     paintRun();
@@ -107,15 +107,21 @@ export function mount(root, kit) {
   const FIELDS = [
     ['idle_days', 'Idle days before a check is due', 'number', 'days', 'How long the printer can sit unused before a nozzle check is printed.'],
     ['run_at', 'Don’t print before', 'time', '', 'Quiet hours: a check that falls due earlier waits until this time of day.'],
-    ['check_minutes', 'Read the page counter every', 'number', 'minutes', 'How often the dashboard looks for new prints.'],
-    ['attribution_minutes', 'Match a check to the counter within', 'number', 'minutes', 'How long after a check is sent the page counter may rise and still count as that check.'],
-    ['job_pattern', 'Recognise older checks by name', 'text', '', 'CUPS jobs whose name contains this text are nozzle-check pages printed by another timer.'],
+    ['check_minutes', 'Read the page counter every', 'number', 'minutes', 'How often the dashboard asks the printer for its page total, to notice new prints. It only sets how quickly prints are noticed, not when the check prints.'],
+    ['attribution_minutes', 'A new page counts as the check if it prints within', 'number', 'minutes', 'After a check is sent, the printer’s page total goes up by one. A rise within this time is credited to the check; a later one is treated as someone else’s print.'],
+    ['job_pattern', 'Also recognise checks whose job name has', 'text', '', 'Nozzle-check pages sent to CUPS by another timer carry this text in their job name, so they are listed here and not mistaken for someone printing.'],
   ];
 
   function renderAutomation(d) {
     const custom = d.customised.length > 0;
     autoCard.setBadge(ui.badge(d.values.enabled ? 'On' : 'Off', d.values.enabled ? 'ok' : ''));
     const inputs = {}, errors = {};
+    const saveBtn = h('button', { class: 'btn primary', type: 'submit', disabled: true }, 'Save settings');
+    // Save is only available when something differs from what is saved
+    const same = (key, type) => (type === 'number'
+      ? Number(inputs[key].value) === Number(d.values[key])
+      : String(inputs[key].value).trim() === String(d.values[key]));
+    const syncSave = () => { saveBtn.disabled = FIELDS.every(([key, , type]) => same(key, type)); };
 
     // The switch saves at once, like any switch; it only ever prints when a check is really due.
     const toggle = h('input', { id: 'auto-enabled', type: 'checkbox', role: 'switch', checked: d.values.enabled ? true : null,
@@ -130,9 +136,9 @@ export function mount(root, kit) {
     const field = ([key, label, type, unit, hint]) => {
       const shown = d.defaults[key];
       inputs[key] = h('input', { id: `auto-${key}`, class: 'input', type, value: d.values[key], step: type === 'number' ? 'any' : null,
-        autocomplete: 'off', spellcheck: 'false', oninput: () => { errors[key].textContent = ''; inputs[key].removeAttribute('aria-invalid'); } });
+        autocomplete: 'off', spellcheck: 'false', oninput: () => { errors[key].textContent = ''; inputs[key].removeAttribute('aria-invalid'); syncSave(); } });
       errors[key] = h('p', { class: 'msg', role: 'alert' });
-      const extra = key === 'run_at' ? ` Clock: ${d.timezone}.` : '';
+      const extra = key === 'run_at' ? ` Uses the container’s time zone (${d.timezone}); set TZ to change it.` : '';
       return h('div', { class: 'field' },
         h('label', { for: `auto-${key}` }, label),
         h('div', { class: 'input-unit' }, inputs[key], unit && h('span', { class: 'unit' }, unit)),
@@ -171,7 +177,7 @@ export function mount(root, kit) {
       h('form', { class: 'autoform', onsubmit: save },
         h('div', { class: 'autogrid' }, FIELDS.map(field)),
         h('div', { class: 'actions left' },
-          h('button', { class: 'btn primary', type: 'submit' }, 'Save settings'),
+          saveBtn,
           h('button', { class: 'btn', type: 'button', disabled: !custom, onclick: reset }, 'Reset to defaults'),
           custom && h('span', { class: 'sub' }, `Changed from the defaults: ${d.customised.length} setting${d.customised.length === 1 ? '' : 's'}.`))),
       h('div', { class: 'runnow' }, runBtn, runHint));

@@ -158,12 +158,12 @@ The card's settings (all per printer, defaults from the environment so a new pri
 | --- | --- | --- |
 | Print the nozzle check automatically | off | The switch (`NOZZLE_AUTO`) |
 | Idle days before a check is due | 7 | Drives the automatic check and the "Next check" badge |
-| Don't print before | 10:00 | Quiet hours, in the server's time zone (`NOZZLE_CHECK_TIME`, `TZ`) |
+| Don't print before | 10:00 | Quiet hours, in the container's time zone: `TZ` if set, else the container's default (UTC in the image) (`NOZZLE_CHECK_TIME`) |
 | Read the page counter every | 5 minutes | How often prints are noticed |
-| Match a check to the counter within | 30 minutes | How long a check may wait for the counter to move |
-| Recognise older checks by name | `nozzle-check` | Spots nozzle-check pages printed by another timer in the CUPS job list |
+| A new page counts as the check if it prints within | 30 minutes | After a check is sent the page total rises by one; a rise within this time is credited to the check, a later one is treated as someone else's print |
+| Also recognise checks whose job name has | `nozzle-check` | Spots nozzle-check pages sent to CUPS by another timer, so they aren't mistaken for someone printing |
 
-Only values you change are stored; the rest keep following the defaults, and **Reset to defaults** clears the overrides.
+Only values you change are stored; the rest keep following the defaults. **Save settings** is only enabled when something changed, and **Reset to defaults** puts the settings back (it leaves the on/off switch as it is, because the switch isn't one of the settings). Times on the card, including the "Next check" badge, are shown in the container's time zone.
 The logic is in `app/tools/maintenance/schedule.py` (pure rules, with tests) and `Service.run_schedule`.
 
 ## Security model

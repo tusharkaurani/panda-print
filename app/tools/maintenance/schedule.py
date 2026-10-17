@@ -41,6 +41,17 @@ def tz_for(name: str) -> tzinfo:
     return datetime.now().astimezone().tzinfo or timezone.utc
 
 
+def tz_label(name: str) -> str:
+    """A short name for the clock in use, for the UI: 'Europe/London', or 'UTC' / 'IST' for the machine's own."""
+    tz = tz_for(name)
+    return getattr(tz, "key", None) or datetime.now(tz).tzname() or "UTC"
+
+
+def format_local(ts: float, name: str) -> str:
+    """'Sat 24 Oct, 10:00 IST': a moment in the container's own time zone."""
+    return datetime.fromtimestamp(ts, tz_for(name)).strftime("%a %d %b, %H:%M %Z").strip()
+
+
 def parse_hhmm(text: str) -> tuple[int, int]:
     m = re.match(r"^(\d{1,2}):(\d{2})$", text or "")
     return (int(m.group(1)), int(m.group(2))) if m else (10, 0)
