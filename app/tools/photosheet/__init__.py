@@ -13,7 +13,7 @@ from app.core.context import AppContext
 from app.core.errors import SourceError
 from app.core.tool import Tool
 from app.printer import ipp
-from app.tools.photosheet import capabilities, layout as lay, pdfsheet
+from app.tools.photosheet import capabilities, layout as lay, pdfsheet, presets as pre
 
 HERE = Path(__file__).parent
 JOB_NAME = "panda-print photo sheet"
@@ -30,6 +30,8 @@ class BadRequest(Exception):
 
 def create(ctx: AppContext) -> Tool:
     ctx.db.migrate("photosheet", MIGRATIONS)
+    ctx.db.migrate("photosheet-presets", pre.MIGRATIONS)
+    saved = pre.UserPresets(ctx.db, ctx.clock)
     db, settings, clock = ctx.db, ctx.settings, ctx.clock
     wipe = lambda pid: db.execute("DELETE FROM ps_prints WHERE printer_id=?", (pid,))
     ctx.printers.on_delete(wipe)  # a removed printer's print log goes with it
@@ -106,7 +108,16 @@ def create(ctx: AppContext) -> Tool:
         if (not isinstance(asked, list) or len(asked) != n_photos
                 or any(isinstance(c, bool) or not isinstance(c, int) or not 1 <= c <= lay.MAX_COPIES for c in asked)):
             raise BadRequest(f"Give each of the {n_photos} photo{'s' if n_photos != 1 else ''} a number of copies from 1 to {lay.MAX_COPIES}.")
-        counts = lay.allocate(asked, layout_.count, bool(raw.get("fill_page", True))) if n_photos > 1 else [layout_.count]
+        pin = raw.get("pin")
+        if n_photos == 1:
+            counts = [layout_.count]
+        elif isinstance(pin, dict):  # one photo's number was set: the others give or take, keeping their own ratio
+            try:
+                counts = lay.pin_count(lay.allocate(asked, layout_.count, True), layout_.count, pin.get("index"), pin.get("count"))
+            except lay.LayoutError as e:
+                raise BadRequest(str(e)) from None
+        else:
+            counts = lay.allocate(asked, layout_.count, bool(raw.get("fill_page", True)))
         left_off = sum(1 for c in counts if c == 0)
         if left_off:
             layout_.warnings.append(f"Only {layout_.count} photo{'s' if layout_.count != 1 else ''} fit, so {left_off} of your {n_photos} photos "
@@ -269,6 +280,42 @@ def create(ctx: AppContext) -> Tool:
         except BadRequest as e:
             return fail(e)
         return jsonify(ok=True, data={"job_id": job_id, "count": result.count, "warnings": result.warnings}), 202
+
+    # ------------------------------------------------------------------ presets
+    def builtin() -> list[dict]:
+        return pre.load_builtin(HERE / "presets.yml")  # small and read on demand, so editing the file needs no restart
+
+    @bp.get("/presets")
+    def get_presets():
+        return jsonify(ok=True, data={"presets": [*builtin(), *saved.list()]})
+
+    @bp.post("/presets")
+    def post_preset():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return fail(BadRequest("The preset wasn't understood."))
+        try:
+            made = saved.save(body.get("name"), body.get("settings"))
+        except pre.PresetError as e:
+            return fail(BadRequest(str(e)))
+        return jsonify(ok=True, data=made), 200 if made["replaced"] else 201
+
+    @bp.delete("/presets/<pid>")
+    def delete_preset(pid):
+        if pid.startswith("builtin-"):
+            return fail(BadRequest("Presets that come with the app can't be deleted.", 403))
+        if not saved.delete(pid):
+            return fail(BadRequest("That preset doesn't exist (any more).", 404))
+        return jsonify(ok=True)
+
+    @bp.get("/presets/<pid>/yaml")
+    def preset_yaml(pid):
+        found = next((p for p in [*builtin(), *saved.list()] if p["id"] == pid), None)
+        if found is None:
+            return fail(BadRequest("That preset doesn't exist (any more).", 404))
+        resp = Response(pre.to_yaml(found), mimetype="text/plain")
+        resp.headers["Content-Disposition"] = f'inline; filename="{pre.slug(found["name"])}.yml"'
+        return resp
 
     return Tool(
         id="photosheet", title="Photo Sheets", description="Lay out passport and ID photos at an exact size on a sheet of paper",

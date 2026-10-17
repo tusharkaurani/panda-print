@@ -670,3 +670,202 @@ def test_the_preview_card_stays_in_view_css_is_in_place():
     assert "align-self: stretch" in css and "position: sticky" in css  # the column is as tall as the form, so the card stays pinned
     assert "max-height: calc(100vh" in css  # and it is never taller than the screen
     assert "display: contents" in css  # on a phone the strip is pinned inside the page-long column
+
+
+# ------------------------------------------------------------------ setting one photo's number: the total stays the same
+
+def test_setting_one_photos_number_makes_the_others_give_or_take():
+    assert L.pin_count([10, 10, 10], 30, 0, 14) == [14, 8, 8]
+    assert L.pin_count([10, 10, 10], 30, 0, 6) == [6, 12, 12]
+    assert L.pin_count([15, 8, 7], 30, 0, 20) == [20, 5, 5]  # the others keep the ratio they had between themselves
+    assert L.pin_count([15, 8, 7], 30, 1, 10) == [14, 10, 6]
+
+
+def test_the_number_is_kept_within_what_leaves_everyone_a_place():
+    assert L.pin_count([10, 10, 10], 30, 0, 99) == [28, 1, 1]
+    assert L.pin_count([10, 10, 10], 30, 0, 0) == [1, 15, 14]
+    assert L.pin_count([15, 15], 30, 1, 0) == [29, 1]
+    assert L.pin_count([1, 1, 1, 1], 3, 0, 2) == [2, 1, 0, 0]  # fewer places than photos: zero is allowed
+
+
+@pytest.mark.parametrize("bad", [(5, 1), (-1, 1), (0, 1.5), (0, "3"), (0, True)])
+def test_pinning_needs_a_real_photo_and_a_whole_number(bad):
+    with pytest.raises((L.LayoutError, TypeError)):
+        L.pin_count([5, 5], 10, *bad)
+
+
+def test_pinning_always_adds_up_and_keeps_the_others_in_order():
+    import random
+    rnd = random.Random(11)
+    for _ in range(500):
+        k = rnd.randint(2, 7)
+        slots = rnd.randint(1, 50)
+        start = L.allocate([rnd.randint(1, 9) for _ in range(k)], slots)
+        i = rnd.randrange(k)
+        want = rnd.randint(-2, slots + 3)
+        got = L.pin_count(start, slots, i, want)
+        assert sum(got) == slots and len(got) == k and min(got) >= 0
+        if slots >= k:
+            assert min(got) >= 1
+        others_before = [start[j] for j in range(k) if j != i]
+        others_after = [got[j] for j in range(k) if j != i]
+        for a in range(len(others_before)):
+            for b in range(len(others_before)):
+                if others_before[a] > others_before[b] and slots >= k:
+                    assert others_after[a] >= others_after[b], (start, i, want, got)  # the order among the others is kept
+
+
+def test_the_layout_api_applies_a_pinned_number(rig):
+    body = {**rig.settings(), "images": [{"width": 700, "height": 900}] * 3, "counts": [10, 10, 10]}
+    d = rig.client.post("/api/photosheet/layout", json={**body, "pin": {"index": 0, "count": 20}}, headers=rig.h).get_json()["data"]
+    assert d["counts"] == [20, 5, 5] and sum(d["counts"]) == d["count"] == 30 and d["assign"].count(0) == 20
+    for bad in ({"index": 9, "count": 3}, {"index": 0, "count": "x"}, {"index": -1, "count": 3}):
+        r = rig.client.post("/api/photosheet/layout", json={**body, "pin": bad}, headers=rig.h)
+        assert r.status_code == 400, bad
+    one = rig.client.post("/api/photosheet/layout", json={**rig.settings(), "images": [{"width": 700, "height": 900}], "pin": {"index": 0, "count": 3}}, headers=rig.h)
+    assert one.get_json()["data"]["counts"] == [30]  # a single photo just fills the sheet
+
+
+def test_the_split_stays_in_ratio_when_the_sheet_size_changes(rig):
+    """The shares the person set are kept as a ratio, so a different paper re-shares the new total the same way."""
+    shares = [20, 5, 5]  # as the page stores them after the person set the split
+    imgs = [{"width": 700, "height": 900}] * 3
+    a4 = rig.client.post("/api/photosheet/layout", json={**rig.settings(), "images": imgs, "counts": shares}, headers=rig.h).get_json()["data"]
+    small = rig.client.post("/api/photosheet/layout", json={**rig.settings(paper={"width": 101.6, "height": 152.4}), "images": imgs, "counts": shares}, headers=rig.h).get_json()["data"]
+    assert a4["counts"] == [20, 5, 5] and small["count"] == 6 and sum(small["counts"]) == 6 and small["counts"][0] > small["counts"][1] >= 1
+
+
+# ------------------------------------------------------------------ presets
+
+from app.tools.photosheet import presets as pre
+
+
+def good_settings(**kw):
+    s = {"photo": {"width": 35, "height": 45}, "unit": "mm", "paper": {"width": 210, "height": 297, "media": "iso_a4_210x297mm", "label": "A4"},
+         "orientation": "auto", "margin": 5, "gap": 2, "mode": "fill", "align": "center", "fit": "fill", "marks": True, "outline": False,
+         "media_type": "stationery", "quality": 4}
+    s.update(kw)
+    return s
+
+
+def test_the_presets_that_ship_with_the_app_are_valid():
+    built = pre.load_builtin(Path(pre.__file__).with_name("presets.yml"))
+    assert len(built) >= 3 and all(p["builtin"] and p["id"].startswith("builtin-") for p in built)
+    assert len({p["id"] for p in built}) == len(built)
+    for p in built:  # each one lays out on its own paper
+        s = p["settings"]
+        L.compute(L.Request(s["paper"]["width"], s["paper"]["height"], s["photo"]["width"], s["photo"]["height"], (s["margin"],) * 4, s["gap"], s["mode"],
+                            s.get("cols", 0), s.get("rows", 0), s.get("count", 0), s["orientation"], s["align"], 0.0))
+
+
+@pytest.mark.parametrize("change", [
+    {"unit": "furlong"}, {"orientation": "sideways"}, {"mode": "everything"}, {"align": "middle"}, {"fit": "stretch"}, {"marks": "yes"},
+    {"photo": {"width": 1, "height": 45}}, {"photo": {"width": 35}}, {"photo": "35x45"}, {"paper": {"width": 5, "height": 297}}, {"paper": None},
+    {"margin": -1}, {"margin": "wide"}, {"gap": 999}, {"mode": "grid"}, {"mode": "grid", "cols": 0, "rows": 3}, {"mode": "count"}, {"mode": "count", "count": 9999},
+    {"quality": 9}, {"quality": "high"}, {"resolution": [300]}, {"resolution": [300, "x"]}, {"copies": 0}, {"copies": 21}, {"extra": 1},
+    {"media_type": 5}, {"media_type": "x" * 100}])
+def test_a_preset_that_cannot_work_is_refused(change):
+    with pytest.raises(pre.PresetError):
+        pre.clean_settings(good_settings(**change))
+
+
+def test_a_preset_is_reduced_to_what_the_form_understands():
+    out = pre.clean_settings(good_settings(mode="grid", cols=5, rows=6, resolution=[300, 300], copies=2))
+    assert out["cols"] == 5 and out["rows"] == 6 and out["resolution"] == [300, 300] and out["copies"] == 2 and out["paper"]["media"] == "iso_a4_210x297mm"
+    assert "count" not in out and pre.clean_settings(good_settings(margin=0))["margin"] == 0.0
+    assert pre.clean_settings({"photo": {"width": 35, "height": 45}, "paper": {"width": 210, "height": 297}})["margin"] == 5.0  # sensible defaults
+
+
+def test_names_are_tidied_and_limited():
+    assert pre.clean_name("  My   preset  ") == "My preset"
+    for bad in ("", "   ", None, "x" * 61):
+        with pytest.raises(pre.PresetError):
+            pre.clean_name(bad)
+
+
+def test_a_bad_entry_in_the_shipped_file_is_skipped_not_fatal(tmp_path):
+    f = tmp_path / "presets.yml"
+    f.write_text("presets:\n  - id: ok\n    name: Fine\n    settings: " + json.dumps(good_settings()) + "\n  - id: ok\n    name: Duplicate\n    settings: " + json.dumps(good_settings())
+                 + "\n  - name: Broken\n    settings: {photo: {width: 1}}\n  - just a string\n  - name: ''\n    settings: {}\n")
+    assert [p["name"] for p in pre.load_builtin(f)] == ["Fine"]
+    assert pre.load_builtin(tmp_path / "missing.yml") == []
+    (tmp_path / "bad.yml").write_text("presets: [unclosed")
+    assert pre.load_builtin(tmp_path / "bad.yml") == []
+
+
+def test_a_preset_survives_the_round_trip_through_yaml(tmp_path):
+    made = {"id": "x", "name": "Round trip", "settings": pre.clean_settings(good_settings(mode="grid", cols=5, rows=5))}
+    f = tmp_path / "presets.yml"
+    f.write_text(pre.to_yaml(made))
+    back = pre.load_builtin(f)
+    assert len(back) == 1 and back[0]["name"] == "Round trip" and back[0]["settings"] == made["settings"]
+
+
+def test_the_presets_list_has_the_shipped_ones_and_mine(rig):
+    d = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]
+    assert [p["builtin"] for p in d][:3] == [True, True, True]
+    made = rig.client.post("/api/photosheet/presets", json={"name": "Mine", "settings": good_settings()}, headers=rig.h)
+    assert made.status_code == 201 and made.get_json()["data"]["id"] == "user-mine" and made.get_json()["data"]["replaced"] is False
+    d = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]
+    assert d[-1]["name"] == "Mine" and d[-1]["builtin"] is False and d[-1]["settings"]["photo"]["width"] == 35.0
+
+
+def test_saving_under_an_existing_name_replaces_it(rig):
+    rig.client.post("/api/photosheet/presets", json={"name": "Mine", "settings": good_settings()}, headers=rig.h)
+    r = rig.client.post("/api/photosheet/presets", json={"name": "mine", "settings": good_settings(photo={"width": 40, "height": 50})}, headers=rig.h)
+    assert r.status_code == 200 and r.get_json()["data"]["replaced"] is True
+    mine = [p for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"] if not p["builtin"]]
+    assert len(mine) == 1 and mine[0]["name"] == "mine" and mine[0]["settings"]["photo"]["width"] == 40.0
+
+
+def test_preset_refusals_are_plain_400s(rig):
+    for body in ({"name": "", "settings": good_settings()}, {"name": "x", "settings": {}}, {"name": "x", "settings": good_settings(unit="furlong")}, {"name": "x"}, [1]):
+        r = rig.client.post("/api/photosheet/presets", json=body, headers=rig.h)
+        assert r.status_code == 400 and r.get_json()["error"]["message"], body
+
+
+def test_deleting_presets(rig):
+    pid = rig.client.post("/api/photosheet/presets", json={"name": "Temp", "settings": good_settings()}, headers=rig.h).get_json()["data"]["id"]
+    assert rig.client.delete(f"/api/photosheet/presets/{pid}", headers=rig.h).status_code == 200
+    assert rig.client.delete(f"/api/photosheet/presets/{pid}", headers=rig.h).status_code == 404
+    shipped = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"][0]["id"]
+    r = rig.client.delete(f"/api/photosheet/presets/{shipped}", headers=rig.h)
+    assert r.status_code == 403 and "come with the app" in r.get_json()["error"]["message"]
+    assert rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"][0]["id"] == shipped  # still there
+
+
+def test_the_number_of_saved_presets_is_limited(rig):
+    for n in range(pre.MAX_USER_PRESETS):
+        assert rig.client.post("/api/photosheet/presets", json={"name": f"P{n}", "settings": good_settings()}, headers=rig.h).status_code == 201
+    r = rig.client.post("/api/photosheet/presets", json={"name": "One too many", "settings": good_settings()}, headers=rig.h)
+    assert r.status_code == 400 and "up to 50" in r.get_json()["error"]["message"]
+    assert rig.client.post("/api/photosheet/presets", json={"name": "p3", "settings": good_settings()}, headers=rig.h).status_code == 200  # replacing is still fine
+
+
+def test_a_preset_can_be_copied_out_as_yaml_to_ship_it(rig, tmp_path):
+    pid = rig.client.post("/api/photosheet/presets", json={"name": "Ship me", "settings": good_settings(mode="grid", cols=5, rows=6)}, headers=rig.h).get_json()["data"]["id"]
+    r = rig.client.get(f"/api/photosheet/presets/{pid}/yaml")
+    assert r.status_code == 200 and r.mimetype == "text/plain" and "name: Ship me" in r.get_data(as_text=True)
+    f = tmp_path / "p.yml"
+    f.write_text(r.get_data(as_text=True))
+    assert pre.load_builtin(f)[0]["settings"]["cols"] == 5  # pasted into presets.yml it loads as a shipped preset
+    shipped = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"][0]["id"]
+    assert rig.client.get(f"/api/photosheet/presets/{shipped}/yaml").status_code == 200  # the shipped ones export too
+    assert rig.client.get("/api/photosheet/presets/nope/yaml").status_code == 404
+
+
+def test_presets_belong_to_everyone_not_to_a_printer(rig):
+    rig.client.post("/api/photosheet/presets", json={"name": "Shared", "settings": good_settings()}, headers=rig.h)
+    rig.client.delete(f"/api/printers/{PID}", headers=rig.h)
+    assert "Shared" in [p["name"] for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]]
+
+
+def test_preset_changes_need_a_csrf_token(rig):
+    assert rig.client.post("/api/photosheet/presets", json={"name": "x", "settings": good_settings()}).status_code == 403
+    assert rig.client.delete("/api/photosheet/presets/user-x").status_code == 403
+
+
+def test_a_damaged_saved_preset_is_ignored_not_shown(rig):
+    rig.ctx.db.execute("INSERT INTO ps_presets(id, name, data, created_at) VALUES('user-bad','Bad','{not json',1)")
+    names = [p["name"] for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]]
+    assert "Bad" not in names and len(names) >= 3

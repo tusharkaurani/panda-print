@@ -235,3 +235,19 @@ def allocate(requested: list[int], slots: int, fill: bool = True) -> list[int]:
 def assignment(counts: list[int]) -> list[int]:
     """Which photo goes in each place, in reading order: all copies of the first photo, then the second, ..."""
     return [i for i, c in enumerate(counts) for _ in range(c)]
+
+
+def pin_count(current: list[int], slots: int, index: int, count: int) -> list[int]:
+    """Set one photo's number of copies; the others give or take so the total stays `slots`, keeping the ratio
+    they had between themselves. The photo stays within what leaves everyone else at least one place."""
+    k = len(current)
+    if not 0 <= index < k:
+        raise LayoutError("That photo isn't on the sheet.")
+    if isinstance(count, bool) or not isinstance(count, int):
+        raise LayoutError("The number of copies must be a whole number.")
+    low = 1 if slots >= k else 0
+    count = max(low, min(count, slots - low * (k - 1)))
+    others = [max(current[j], 1) for j in range(k) if j != index]  # their shares, as they stand
+    rest = allocate(others, slots - count) if others and slots - count > 0 else [0] * len(others)
+    it = iter(rest)
+    return [count if j == index else next(it) for j in range(k)]

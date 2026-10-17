@@ -14,12 +14,12 @@ export async function mount(root, kit) {
   // ------------------------------------------------------------------ state
   const S = {
     unit: 'mm', photoW: 35, photoH: 45, margin: 5, gap: 2, orientation: 'auto', mode: 'fill', cols: 5, rows: 6, count: 12,
-    fit: 'fill', cropX: 0.5, cropY: 0.5, marks: true, outline: false, fillPage: true, paper: 'a4', customW: 210, customH: 297,
+    fit: 'fill', cropX: 0.5, cropY: 0.5, marks: true, outline: false, paper: 'a4', presetId: '', presetDirty: false, customW: 210, customH: 297,
     mediaType: '', quality: '', resolution: '', copies: 1,
   };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage is optional */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage is optional */ } };
-  let images = [];        // the photos: {orig (ImageBitmap), width, height, name, copies, jpegs: {quality: Blob}}
+  let images = [];        // the photos: {orig (ImageBitmap), width, height, name, share, jpegs: {quality: Blob}}; `share` is the ratio the person set
   let config = null;      // GET /photosheet/config
   let layout = null;      // the last good answer of POST /photosheet/layout
   let printer = null;     // this printer's choices, if CUPS is set up
@@ -70,9 +70,9 @@ export async function mount(root, kit) {
   const dropzone = h('button', { class: 'drop', type: 'button', title: 'Choose one or more edited photos (JPEG, PNG or WebP)', onclick: () => picker.click() },
     icon('image', 28), h('strong', {}, 'Choose your photos'), h('span', { class: 'hint' }, 'or drop them here. Use photos you already edited and cropped to your size. Pick several to share one sheet.'));
   const photoList = h('ul', { class: 'photo-list', hidden: true });
-  const fillBox = h('div', { class: 'fill-box', hidden: true });
+  const splitBox = h('div', { class: 'split-box', hidden: true });
   const addMore = h('button', { class: 'btn small', type: 'button', title: 'Add more photos to this sheet', hidden: true, onclick: () => picker.click() }, icon('image', 15), 'Add photos');
-  const photoBox = h('div', { class: 'photo-box' }, dropzone, photoList, addMore, fillBox);
+  const photoBox = h('div', { class: 'photo-box' }, dropzone, photoList, splitBox, addMore);
   for (const ev of ['dragover', 'dragenter']) photoBox.addEventListener(ev, (e) => { e.preventDefault(); photoBox.classList.add('over'); });
   for (const ev of ['dragleave', 'drop']) photoBox.addEventListener(ev, () => photoBox.classList.remove('over'));
   photoBox.addEventListener('drop', (e) => { e.preventDefault(); const f = [...(e.dataTransfer?.files || [])]; if (f.length) loadImages(f); });
@@ -86,7 +86,9 @@ export async function mount(root, kit) {
       try { bitmap = await createImageBitmap(file); } catch { toast(`This browser can’t read ${file.name}. Try a JPEG or PNG.`, 'bad'); continue; }
       const k = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
       const width = Math.round(bitmap.width * k), height = Math.round(bitmap.height * k);
-      images.push({ orig: bitmap, width, height, name: file.name, copies: 1, jpegs: {} });
+      // a new photo starts with an average share, so it gets an average number of places
+      const avg = images.length ? Math.max(1, Math.round(images.reduce((n, i) => n + i.share, 0) / images.length)) : 1;
+      images.push({ orig: bitmap, width, height, name: file.name, share: avg, jpegs: {} });
     }
     paintPhotos();
     changed();
@@ -111,30 +113,88 @@ export async function mount(root, kit) {
     }
     return null;
   }
-  const resultText = (i) => (layout?.counts && layout.counts.length === images.length ? layout.counts[i] : null);
+  // The total on the sheet is fixed by the layout (how many photos fit). Each photo's number can be set; the others
+  // give or take so the total stays the same and they keep the ratio they had between themselves.
+  const counts = () => (layout?.counts && layout.counts.length === images.length ? layout.counts : null);
+  let queue = Promise.resolve();  // edits are applied one after another, each from the answer to the one before
+  function pin(index, count) {
+    queue = queue.then(async () => { await refreshLayout({ pin: { index, count } }); });
+  }
+  function setCounts(next) {  // an explicit split, as when a handle is dragged
+    queue = queue.then(async () => { await refreshLayout({ counts: next }); });
+  }
+  const palette = (i) => `c${i % 8}`;
+
   function paintPhotos() {
     const some = images.length > 0;
     dropzone.hidden = some; photoList.hidden = !some; addMore.hidden = !some;
-    fillBox.hidden = images.length < 2;
     photoList.replaceChildren(...images.map((img, i) => {
       const thumb = document.createElement('canvas');
-      thumb.width = 48; thumb.height = Math.max(1, Math.round(48 * img.height / img.width));
+      thumb.width = 44; thumb.height = Math.max(1, Math.round(44 * img.height / img.width));
       thumb.getContext('2d').drawImage(img.orig, 0, 0, thumb.width, thumb.height);
-      const copies = h('input', { class: 'input mini', type: 'number', min: 1, max: 600, step: 1, value: img.copies, 'aria-label': `Copies of ${img.name}`, title: 'Copies of this photo, as a share of the sheet',
-        oninput: () => { const v = parseInt(copies.value, 10); if (Number.isFinite(v) && v >= 1) { img.copies = v; changed(); } } });
-      return h('li', { class: 'photo-row' }, thumb,
+      const row = h('li', { class: `photo-row ${images.length > 1 ? palette(i) : ''}` }, thumb,
         h('div', { class: 'photo-meta' }, h('strong', { title: img.name }, img.name), h('span', { class: 'hint' }, `${img.width} × ${img.height} px`)),
-        images.length > 1 ? h('label', { class: 'copies' }, h('span', { class: 'hint' }, 'Copies'), copies, h('span', { class: 'result', 'data-i': i }, '')) : null,
+        images.length > 1 ? stepper(i, img) : null,
         h('button', { class: 'icon-mini', type: 'button', 'aria-label': `Remove ${img.name}`, title: 'Remove this photo', onclick: () => { images.splice(i, 1); paintPhotos(); changed(); } }, icon('x', 16)));
+      return row;
     }));
-    fillBox.replaceChildren(check('fillPage', 'Fill the whole page', 'Copies are a ratio: 1, 1, 1 shares the page equally; 2, 1, 1 gives the first photo half of it. Switch off to print exactly the copies you typed.'));
-    paintResults();
+    paintSplit();
   }
-  function paintResults() {
-    for (const el of photoList.querySelectorAll('.result')) {
-      const n = resultText(Number(el.dataset.i));
-      el.textContent = n == null ? '' : n === 0 ? '→ not on the sheet' : `→ ${n} on the sheet`;
-    }
+
+  function stepper(i, img) {
+    const n = counts()?.[i];
+    const total = layout?.count || 0;
+    const low = total >= images.length ? 1 : 0;
+    const input = h('input', { class: 'input mini', type: 'number', min: low, max: Math.max(low, total - low * (images.length - 1)), step: 1, value: n ?? '', 'data-i': i,
+      'aria-label': `Copies of ${img.name}`, title: 'How many of this photo are on the sheet. The others change so the total stays the same.',
+      onchange: () => { const v = parseInt(input.value, 10); if (Number.isFinite(v)) pin(i, v); else paintPhotos(); } });
+    const btn = (text, delta, label) => h('button', { class: 'icon-mini', type: 'button', 'aria-label': `${label} ${img.name}`, title: `${label}; another photo gives one up so the total stays ${total}`,
+      disabled: n == null || (delta < 0 ? n <= low : n >= total - low * (images.length - 1)), onclick: () => pin(i, n + delta) }, text);
+    return h('div', { class: 'stepper' }, btn('−', -1, 'One fewer of'), input, btn('+', 1, 'One more of'));
+  }
+
+  // One bar for the whole sheet, a section per photo. Drag the handle between two sections to move places from one photo
+  // to its neighbour (the total never changes); arrow keys do the same one place at a time.
+  function paintSplit() {
+    const c = counts();
+    splitBox.hidden = images.length < 2 || !c;
+    if (splitBox.hidden) return;
+    const total = c.reduce((a, b) => a + b, 0);
+    const low = total >= images.length ? 1 : 0;
+    const bar = h('div', { class: 'splitbar', role: 'group', 'aria-label': 'How the sheet is shared between the photos' });
+    c.forEach((n, i) => {
+      bar.append(h('div', { class: `seg ${palette(i)}`, 'data-i': i, title: `${images[i].name}: ${n}` }, h('span', {}, n >= 2 || total <= 30 ? String(n) : '')));
+      bar.lastChild.style.setProperty('flex-grow', String(Math.max(n, 0.0001)));
+      if (i < c.length - 1) {
+        const handle = h('button', { class: 'handle', type: 'button', title: 'Drag to move places from one photo to the next', role: 'slider', 'aria-label': `Move places between ${images[i].name} and ${images[i + 1].name}`,
+          'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': c.slice(0, i + 1).reduce((a, b) => a + b, 0) });
+        const move = (next) => { const r = [...c]; const d = next - c.slice(0, i + 1).reduce((a, b) => a + b, 0); r[i] += d; r[i + 1] -= d;
+          if (r[i] >= low && r[i + 1] >= low && d !== 0) setCounts(r); };
+        handle.addEventListener('keydown', (e) => {
+          const here = c.slice(0, i + 1).reduce((a, b) => a + b, 0);
+          if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); move(here + 1); }
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); move(here - 1); }
+        });
+        handle.addEventListener('pointerdown', (e) => {
+          e.preventDefault(); try { handle.setPointerCapture(e.pointerId); } catch { /* the move listeners still work */ } handle.classList.add('drag');
+          const rect = bar.getBoundingClientRect(), before = c.slice(0, i).reduce((a, b) => a + b, 0), after = before + c[i] + c[i + 1];
+          const onMove = (ev) => {
+            const edge = Math.round(((ev.clientX - rect.left) / rect.width) * total);
+            const next = Math.max(before + low, Math.min(after - low, edge));
+            const r = [...c]; r[i] = next - before; r[i + 1] = after - next;
+            bar.querySelectorAll('.seg').forEach((el, k) => { el.style.setProperty('flex-grow', String(Math.max(r[k], 0.0001))); el.firstChild.textContent = r[k] >= 2 || total <= 30 ? String(r[k]) : ''; });
+            handle.dataset.next = JSON.stringify(r);
+          };
+          const onUp = () => {
+            handle.removeEventListener('pointermove', onMove); handle.removeEventListener('pointerup', onUp); handle.classList.remove('drag');
+            if (handle.dataset.next) { const r = JSON.parse(handle.dataset.next); delete handle.dataset.next; if (r.join() !== c.join()) setCounts(r); }
+          };
+          handle.addEventListener('pointermove', onMove); handle.addEventListener('pointerup', onUp);
+        });
+        bar.append(handle);
+      }
+    });
+    splitBox.replaceChildren(h('div', { class: 'hint' }, `${total} places on the sheet. Drag the dividers, or use + and −: the total stays ${total}.`), bar);
   }
 
   // ------------------------------------------------------------------ 2. photo size
@@ -205,8 +265,141 @@ export async function mount(root, kit) {
   }
   const sectionHead = (name, text) => h('h3', { class: 'ps-head' }, icon(name, 18), text);
 
+  // ------------------------------------------------------------------ presets: saved choices (not the photos)
+  let presets = [];
+  const presetChips = h('div', { class: 'chips' });
+  const presetBar = h('div', { class: 'preset-bar', hidden: true });
+  const presetBox = h('section', { class: 'card ps-card' }, h('h3', { class: 'ps-head' }, icon('list', 18), 'Presets'), presetChips, presetBar,
+    h('div', { class: 'actions left' }, h('button', { class: 'btn small', type: 'button', title: 'Save the photo size, paper and other choices (not the photos) as a preset to use again', onclick: () => openSave() }, icon('check', 15), 'Save these settings as a preset…')));
+
+  const nameOf = (id) => presets.find((p) => p.id === id)?.name || '';
+  function describe(p) {
+    const x = p.settings;
+    const u = (v) => `${+(v / UNITS[x.unit || 'mm'].f).toFixed(UNITS[x.unit || 'mm'].dp)}`;
+    const how = x.mode === 'grid' ? `${x.cols} × ${x.rows}` : x.mode === 'count' ? `${x.count} photos` : 'fill the page';
+    return `${u(x.photo.width)} × ${u(x.photo.height)} ${x.unit || 'mm'} · ${x.paper.label || `${x.paper.width} × ${x.paper.height} mm`} · ${how}`;
+  }
+  function paintPresets() {
+    presetChips.replaceChildren(...[...presets.map((p) => h('button', { class: `chip${p.id === S.presetId && !S.presetDirty ? ' on' : ''}`, type: 'button', title: describe(p), onclick: () => applyPreset(p) }, p.name)),
+      presets.length ? null : h('span', { class: 'hint' }, 'No presets yet. Set things up, then save them here.')].filter(Boolean));  // (a native replaceChildren would print "null")
+    const cur = presets.find((p) => p.id === S.presetId);
+    presetBar.hidden = !cur;
+    if (!cur) return;
+    presetBar.replaceChildren(
+      h('span', { class: 'preset-name' }, ...[h('strong', {}, cur.name), S.presetDirty ? h('span', { class: 'hint' }, ' · changed') : null, cur.builtin ? h('span', { class: 'hint' }, ' · comes with the app') : null].filter(Boolean)),
+      h('div', { class: 'row-inline' }, ...[
+        !cur.builtin && S.presetDirty ? h('button', { class: 'btn small', type: 'button', title: 'Replace this preset with the settings as they are now', onclick: () => saveAs(cur.name) }, 'Save changes') : null,
+        h('button', { class: 'btn small', type: 'button', title: 'Show this preset as text you can paste into presets.yml to ship it with the app', onclick: () => showYaml(cur) }, 'Copy as YAML'),
+        !cur.builtin ? h('button', { class: 'btn small danger', type: 'button', title: 'Delete this preset (asks first)', onclick: () => confirmDelete(cur) }, 'Delete') : null].filter(Boolean)));
+  }
+  async function loadPresets() {
+    const res = await api('/photosheet/presets');
+    presets = res.ok ? res.data.presets : [];
+    if (S.presetId && !presets.some((p) => p.id === S.presetId)) { S.presetId = ''; S.presetDirty = false; }
+    paintPresets();
+  }
+
+  // the choices as a preset stores them (lengths in mm; print options only when chosen)
+  function presetSettings() {
+    const paper = currentPaper();
+    const out = { photo: { width: S.photoW, height: S.photoH }, unit: S.unit,
+      paper: { width: paper.width, height: paper.height, ...(paper.keyword ? { media: paper.keyword } : {}), label: paper.label },
+      orientation: S.orientation, margin: S.margin, gap: S.gap, mode: S.mode, align: S.align, fit: S.fit, marks: S.marks, outline: S.outline, copies: Number(S.copies) || 1 };
+    if (S.mode === 'grid') { out.cols = S.cols; out.rows = S.rows; }
+    if (S.mode === 'count') out.count = S.count;
+    if (S.mediaType) out.media_type = S.mediaType;
+    if (S.quality) out.quality = Number(S.quality);
+    if (S.resolution) out.resolution = S.resolution.split('x').map(Number);
+    return out;
+  }
+  function syncAll() {  // put every form control in step with the state
+    unitSelect.value = S.unit;
+    for (const k of ['orientation', 'align', 'fit', 'mode']) if (inputs[k]) inputs[k].value = S[k];
+    for (const k of ['cols', 'rows', 'count']) if (inputs[k]) inputs[k].value = S[k];
+    for (const k of ['marks', 'outline']) { const el = document.getElementById(`ps-${k}`); if (el) el.checked = Boolean(S[k]); }
+    syncFields(); syncMode(); syncPaper(); syncPrinter();
+  }
+  function applyPreset(p) {
+    const x = p.settings;
+    applying = true;
+    Object.assign(S, { photoW: x.photo.width, photoH: x.photo.height, unit: x.unit || 'mm', orientation: x.orientation || 'auto', margin: x.margin ?? 5, gap: x.gap ?? 2,
+      mode: x.mode || 'fill', align: x.align || 'center', fit: x.fit || 'fill', marks: x.marks !== false, outline: Boolean(x.outline), copies: x.copies || 1 });
+    if (x.cols) S.cols = x.cols;
+    if (x.rows) S.rows = x.rows;
+    if (x.count) S.count = x.count;
+    const list = papers();
+    const found = list.find((m) => x.paper.media && m.keyword === x.paper.media) || list.find((m) => Math.abs(m.width - x.paper.width) < 0.6 && Math.abs(m.height - x.paper.height) < 0.6);
+    if (found) S.paper = found.id; else { S.paper = 'custom'; S.customW = x.paper.width; S.customH = x.paper.height; }
+    // print choices only if this printer offers them
+    S.mediaType = printer?.media_types?.some((t) => t.value === x.media_type) ? x.media_type : '';
+    S.quality = printer?.qualities?.some((q) => q.value === x.quality) ? String(x.quality) : '';
+    S.resolution = x.resolution && printer?.resolutions?.some((r) => r.value.join() === x.resolution.join()) ? x.resolution.join('x') : '';
+    S.presetId = p.id; S.presetDirty = false;
+    syncAll();
+    changed();
+    applying = false;
+    paintPresets();
+    toast(`Applied “${p.name}”.`);
+  }
+
+  const saveName = h('input', { class: 'input', maxlength: 60, placeholder: 'For example: 35 × 45 mm on A4', id: 'ps-preset-name', 'aria-label': 'Preset name', oninput: () => { saveNote(); } });
+  const saveMsg = h('p', { class: 'msg', role: 'alert' });
+  const saveReplace = h('p', { class: 'hint' });
+  const saveGo = h('button', { class: 'btn primary', type: 'button', title: 'Save the preset', onclick: () => saveAs(saveName.value, true) }, 'Save preset');
+  const saveDialog = h('dialog', { 'aria-labelledby': 'ps-save-title' }, h('h3', { id: 'ps-save-title' }, 'Save as a preset'),
+    h('p', {}, 'Keeps the photo size, paper, margins, layout, finishing and print choices. The photos themselves are not saved.'), saveName, saveReplace, saveMsg,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Close without saving', onclick: () => saveDialog.close() }, 'Cancel'), saveGo));
+  function saveNote() {
+    saveMsg.textContent = '';
+    const clash = presets.find((p) => !p.builtin && p.name.toLowerCase() === saveName.value.trim().toLowerCase());
+    saveReplace.textContent = clash ? `A preset called “${clash.name}” already exists. Saving replaces it.` : '';
+  }
+  function openSave() {
+    const base = presets.find((p) => p.id === S.presetId);
+    saveName.value = base && !base.builtin ? base.name : `${shown(S.photoW)} × ${shown(S.photoH)} ${S.unit} on ${currentPaper().label}`.slice(0, 60);
+    saveNote();
+    saveDialog.showModal();
+    saveName.select();
+  }
+  async function saveAs(name, fromDialog = false) {
+    const res = await api('/photosheet/presets', { method: 'POST', body: { name, settings: presetSettings() } });
+    if (!res.ok) { if (fromDialog) saveMsg.textContent = res.error?.message || 'Could not save.'; else toast(res.error?.message || 'Could not save.', 'bad'); return; }
+    S.presetId = res.data.id; S.presetDirty = false;
+    if (fromDialog) saveDialog.close();
+    toast(res.data.replaced ? `Preset “${res.data.name}” updated.` : `Preset “${res.data.name}” saved.`);
+    save();
+    await loadPresets();
+  }
+  const delDialog = h('dialog', { 'aria-labelledby': 'ps-del-title' }, h('h3', { id: 'ps-del-title' }, 'Delete this preset?'), h('p', { id: 'ps-del-text' }),
+    h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Keep the preset', onclick: () => delDialog.close() }, 'Keep it'),
+      h('button', { class: 'btn primary danger-fill', type: 'button', id: 'ps-del-go', title: 'Delete the preset for good' }, 'Delete')));
+  function confirmDelete(p) {
+    document.getElementById('ps-del-text').textContent = `“${p.name}” will be removed for everyone who uses this panda-print. Your photos and other presets are not affected.`;
+    document.getElementById('ps-del-go').onclick = async () => {
+      delDialog.close();
+      const res = await api(`/photosheet/presets/${p.id}`, { method: 'DELETE' });
+      if (!res.ok) { toast(res.error?.message || 'Could not delete.', 'bad'); return; }
+      if (S.presetId === p.id) { S.presetId = ''; S.presetDirty = false; save(); }
+      toast('Preset deleted.');
+      await loadPresets();
+    };
+    delDialog.showModal();
+  }
+  const yamlText = h('textarea', { class: 'input yaml', readonly: true, rows: 14, spellcheck: 'false', 'aria-label': 'The preset as YAML' });
+  const yamlDialog = h('dialog', { class: 'wide', 'aria-labelledby': 'ps-yaml-title' }, h('h3', { id: 'ps-yaml-title' }, 'Preset as YAML'),
+    h('p', {}, 'To ship this preset with the app, paste it under “presets:” in app/tools/photosheet/presets.yml (a second preset is added as another “- id: …” entry).'), yamlText,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Copy the text', onclick: async () => {
+      try { await navigator.clipboard.writeText(yamlText.value); toast('Copied.'); } catch { yamlText.select(); toast('Press Ctrl+C (Cmd+C) to copy.'); }
+    } }, 'Copy'), h('button', { class: 'btn primary', type: 'button', title: 'Close', onclick: () => yamlDialog.close() }, 'Close')));
+  async function showYaml(p) {
+    try { const r = await fetch(`/api/photosheet/presets/${encodeURIComponent(p.id)}/yaml`, { credentials: 'same-origin' }); yamlText.value = r.ok ? await r.text() : 'Could not load this preset.'; }
+    catch { yamlText.value = 'Could not load this preset.'; }
+    yamlDialog.showModal();
+  }
+
   // ------------------------------------------------------------------ assemble the form
   const form = h('div', { class: 'ps-form' },
+    presetBox,
     h('section', { class: 'card ps-card' }, sectionHead('image', 'Your photos'), photoBox, picker),
     h('section', { class: 'card ps-card' }, sectionHead('hash', 'Photo size'),
       h('div', { class: 'field' }, h('label', { for: 'ps-preset' }, 'Size'), presetSelect),
@@ -310,7 +503,7 @@ export async function mount(root, kit) {
       margin: S.margin, gap: S.gap, mode: S.mode, cols: S.cols, rows: S.rows, count: S.count, orientation: S.orientation,
       align: S.align, fit: S.fit, crop_x: S.cropX, crop_y: S.cropY, marks: S.marks, outline: S.outline,
       min_margin: minMargin(), borderless: Boolean(paper.borderless),
-      counts: images.length ? images.map((i) => i.copies) : undefined, fill_page: S.fillPage,
+      counts: images.length ? images.map((i) => i.share) : undefined,
     };
   }
   const formData = async (extra = {}) => {
@@ -324,16 +517,21 @@ export async function mount(root, kit) {
   };
 
   let timer = 0;
+  let applying = false;  // true while a preset is being applied, so that doesn't count as a change to it
   function changed() {
+    if (!applying && S.presetId && !S.presetDirty) { S.presetDirty = true; paintPresets(); }
     save();
     updateCropBox();
     clearTimeout(timer);
     timer = setTimeout(refreshLayout, 120);
   }
-  async function refreshLayout() {
+  async function refreshLayout(edit = null) {
     const mine = ++token;
-    const res = await api('/photosheet/layout', { method: 'POST', body: { ...settings(), images: images.map((i) => ({ width: i.width, height: i.height })) } });
-    if (mine !== token) return;
+    const body = { ...settings(), images: images.map((i) => ({ width: i.width, height: i.height })) };
+    if (edit?.counts) body.counts = edit.counts;
+    if (edit?.pin) { body.counts = counts() || body.counts; body.pin = edit.pin; }
+    const res = await api('/photosheet/layout', { method: 'POST', body });
+    if (mine !== token && !edit) return;
     warnings.replaceChildren();
     if (!res.ok) {
       layout = null;
@@ -341,6 +539,7 @@ export async function mount(root, kit) {
       warnings.append(h('div', { class: 'notice bad' }, icon('alert', 18), h('div', {}, res.error?.message || 'Those settings can’t be laid out.')));
     } else {
       layout = res.data;
+      if (edit && layout.counts?.length === images.length) layout.counts.forEach((n, k) => { images[k].share = Math.max(n, 1); });  // what the person just set becomes the ratio
       const sheetDir = layout.orientation === 'landscape' ? 'landscape' : 'portrait';
       const dims = `${shown(S.photoW)} × ${shown(S.photoH)} ${S.unit}`;
       summary.replaceChildren(h('strong', {}, `${layout.count} photo${layout.count === 1 ? '' : 's'}`), ` (${layout.cols} × ${layout.rows}) of ${dims}, ${sheetDir}`);
@@ -359,7 +558,7 @@ export async function mount(root, kit) {
       b.title = canPrint() ? 'Show the sheet, then print it on the selected printer' : 'Needs a printer with a CUPS queue and a paper size it offers. You can still download the PDF.';
     }
     updateCropBox();
-    paintResults();
+    paintPhotos();
     drawPreview();
   }
   const updateCropBox = () => { cropBox.hidden = !(S.fit === 'fill' && layout?.cells?.length && images.some((i) => Math.abs(i.width / i.height - S.photoW / S.photoH) > 0.01)); };
@@ -388,7 +587,7 @@ export async function mount(root, kit) {
     h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Close without printing', onclick: () => dialog.close() }, 'Cancel'), goBtn));
   let dlgToken = 0;
   dialog.addEventListener('close', () => { if (dialog.open) return; dlgToken += 1; sheets.replaceChildren(); });
-  root.append(dialog);
+  root.append(dialog, saveDialog, delDialog, yamlDialog);
 
   const printOptions = () => ({ media: currentPaper().keyword, media_type: S.mediaType || null, quality: S.quality ? Number(S.quality) : null,
     resolution: S.resolution ? S.resolution.split('x').map(Number) : null, copies: Number(S.copies) || 1 });
@@ -449,6 +648,7 @@ export async function mount(root, kit) {
 
   syncMode();
   syncFields();
+  loadPresets();
   paintPhotos();
   drawPreview();
   kit.printer.subscribe(() => loadConfig());
