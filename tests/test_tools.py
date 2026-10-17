@@ -49,6 +49,7 @@ def test_broken_tools_are_reported_and_do_not_stop_the_app(extra_tools, settings
     assert "boom" in tools["broken"]["error"]
     assert "must equal its folder name" in tools["mismatch"]["error"]
     assert "error" not in tools["fine"] and "error" not in tools["maintenance"]
+    assert tools["fine"]["tabs"] == []  # no tabs declared: the shell shows one tab named after the tool
     assert c.get("/api/fine/ping").get_json()["data"] == "pong"  # new tool's API is mounted
     assert c.get(f"/api/maintenance/{PID}/nozzle").get_json()["ok"] is True
     # tabs are ordered by Tool.order
@@ -64,3 +65,12 @@ def test_template_is_a_working_tool_but_is_never_auto_loaded(settings, clock):
     ctx = app.extensions["panda"]["ctx"]
     tool = template.create(ctx)
     assert tool.blueprint and (tool.ui_dir / "ui.js").is_file()
+
+
+def test_maintenance_has_a_details_tab_and_a_nozzle_tab(client):
+    tool = {t["id"]: t for t in client.get("/api/tools").get_json()["tools"]}["maintenance"]
+    assert [(t["id"], t["title"]) for t in tool["tabs"]] == [("details", "Details"), ("nozzle", "Nozzle Check")]
+    assert tool["needs_printer"] is True
+    # the shell imports the entry, which loads one module per tab
+    for name in ("ui.js", "details.js", "nozzle.js", "shared.js", "ui.css"):
+        assert client.get(f"/tools/maintenance/{name}").status_code == 200, name

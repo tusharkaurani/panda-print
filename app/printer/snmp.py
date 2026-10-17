@@ -99,21 +99,31 @@ def parse_response(buf: bytes) -> tuple[int, int]:
     return int.from_bytes(rid, "big", signed=True), int.from_bytes(val, "big", signed=(vtag == 0x02))
 
 
-def get_counter(host: str, oid: str, community: str = "public", port: int = 161, timeout: float = 5.0) -> int:
+def get_counter(host: str, oid: str, community: str = "public", port: int = 161, timeout: float = 5.0,
+                attempts: int = 3) -> int:
+    """Read one counter. UDP can lose a packet, so the request is re-sent (same request id) a few times
+    within the timeout before giving up."""
     rid = random.randint(1, 2**30)
     packet = build_get(oid, community, rid)
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    deadline = started + timeout
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         # connect() so a closed port fails at once (ICMP "port unreachable" becomes
         # ConnectionRefusedError) and datagrams from other senders are ignored
         s.connect((host, port))
-        s.send(packet)
-        while True:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                raise socket.timeout()
-            s.settimeout(left)
-            data, _ = s.recvfrom(2048)
-            got_rid, value = parse_response(data)
-            if got_rid == rid:  # ignore stray datagrams
-                return value
+        for n in range(attempts):
+            s.send(packet)
+            wait_until = min(deadline, started + timeout * (n + 1) / attempts)
+            while True:
+                left = wait_until - time.monotonic()
+                if left <= 0:
+                    break
+                s.settimeout(left)
+                try:
+                    data = s.recv(2048)
+                except socket.timeout:
+                    break
+                got_rid, value = parse_response(data)
+                if got_rid == rid:  # ignore stray datagrams
+                    return value
+    raise socket.timeout()

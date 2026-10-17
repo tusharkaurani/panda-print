@@ -160,6 +160,20 @@ app/tools/scan/
   ui/ui.css       optional, loaded automatically
 ```
 
+**Each utility is a tab.** The dashboard shows a tab bar (the address becomes `#<tool>` or `#<tool>/<tab>`). A new tool
+is a new tab with no other change. A tool can also declare several tabs of its own, as Printer Maintenance does with
+**Details** (printer, ink, queue, recent prints) and **Nozzle Check**:
+
+```python
+from app.core.tool import Tool, ToolTab
+Tool(id="maintenance", ..., tabs=[ToolTab("details", "Details", "printer"), ToolTab("nozzle", "Nozzle Check", "droplet")])
+```
+
+The shell calls `mount(root, kit)` once per tab, the first time it is opened, and `kit.tabId` says which one. Keep
+each tab in its own module (see `app/tools/maintenance/ui/`: `ui.js` picks `details.js` or `nozzle.js`, and
+`shared.js` holds what they share), so a new feature is a new file plus one `ToolTab`. Tabs of tools that set
+`needs_printer` appear once a printer exists, and reload when the printer selection changes.
+
 **Backend** (`__init__.py`). `create(ctx)` receives `ctx.settings`, `ctx.db`, `ctx.printers` (the printer registry),
 `ctx.backend_for(printer)` (IPP/SNMP/CUPS access for one printer) and `ctx.clock`, and returns a `Tool`:
 
@@ -192,8 +206,8 @@ def create(ctx):
 
 **Frontend** (`ui/ui.js`). `mount(root, kit)` is the whole contract. `kit` has `api(path, {method, body})` (never throws, resolves to `{ok, data, error}`),
 `h()` for building elements, `icon()`, `fmt` (ago/abs/days), `ui` (`card`, `badge`, `gauge`, `stat`, `errorBox`, `skeleton`),
-`toast()`, `poll(fn, ms)` (runs while the tool is on screen), `toolId`, and `printer` (`printer.current` is the selected printer, `printer.subscribe(fn)` fires when the selection or its settings change; reload your cards there). See `app/tools/maintenance/ui/ui.js` for a full example.
-When there is more than one tool the dashboard shows tabs (`#<id>` in the URL). Icons come from `app/static/lib/icons.js`; add a path there if you need a new one.
+`toast()`, `poll(fn, ms)` (runs while the tab is on screen), `toolId`, `tabId`, and `printer` (`printer.current` is the selected printer, `printer.subscribe(fn)` fires when the selection or its settings change; reload your cards there). See `app/tools/maintenance/ui/ui.js` for a full example.
+Icons come from `app/static/lib/icons.js`; add a path there if you need a new one.
 
 **Tests.** The `make_app` fixture in `tests/conftest.py` builds the app with a fake printer (`tests/fakes.py`) and a controllable clock.
 
@@ -205,7 +219,7 @@ app/
   core/                 db, csrf, rate-limit rule, links.yml loader, tool registry, printer registry + API, errors
   printer/              ipp.py, snmp.py, mdns.py (stdlib clients), live.py, discovery.py (wizard: find + probe)
   static/               index.html, app.css, app.js, printers.js (wizard + admin), lib/ (dom, api, ui kit, icons)
-  tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/
+  tools/maintenance/    idle.py, tracker.py, store.py, runtimes.py, normalize.py, service.py, api.py, ui/ (details.js, nozzle.js, shared.js)
   tools/_template/      copy me
 config/                 links.yml (starter) and logos/
 tests/                  fakes.py (fake printer/CUPS/network) and pytest (config, idle logic, attribution, IPP/SNMP/mDNS wire formats, printer registry and API, CSRF, rate limit)

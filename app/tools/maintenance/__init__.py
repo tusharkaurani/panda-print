@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 
 from app.core.context import AppContext
-from app.core.tool import Tool
+from app.core.tool import Tool, ToolTab
 from app.tools.maintenance import store
 from app.tools.maintenance.api import build_blueprint
 from app.tools.maintenance.runtimes import Runtimes
@@ -45,4 +45,6 @@ def create(ctx: AppContext) -> Tool:
         start=start,
         order=10,
         needs_printer=True,
+        # Nozzle checks get their own tab so they can grow; new utilities can be added the same way
+        tabs=[ToolTab("details", "Details", "printer"), ToolTab("nozzle", "Nozzle Check", "droplet")],
     )

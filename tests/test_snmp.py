@@ -33,13 +33,14 @@ def serve(reply):
 
     def run():
         try:
-            data, addr = sock.recvfrom(2048)
+            while True:  # keep answering: the client may re-send a request it thinks was lost
+                data, addr = sock.recvfrom(2048)
+                received.append(data)
+                out = reply(request_id(data))
+                if out:
+                    sock.sendto(out, addr)
         except socket.timeout:
-            return
-        received.append(data)
-        out = reply(request_id(data))
-        if out:
-            sock.sendto(out, addr)
+            pass
         sock.close()
 
     threading.Thread(target=run, daemon=True).start()
@@ -90,3 +91,26 @@ def test_silence_times_out():
     port, _ = serve(lambda rid: None)
     with pytest.raises(socket.timeout):
         snmp.get_counter("127.0.0.1", OID, port=port, timeout=0.5)
+
+
+def test_a_lost_request_is_retried():
+    """UDP drops packets: the first request vanishes, the re-sent one is answered."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.settimeout(3)
+    seen = []
+
+    def run():
+        try:
+            for _ in range(2):
+                data, addr = sock.recvfrom(2048)
+                seen.append(data)
+                if len(seen) == 2:
+                    sock.sendto(response(request_id(data), 0x41, b"\x00\xae"), addr)
+        except socket.timeout:
+            pass
+        sock.close()
+
+    threading.Thread(target=run, daemon=True).start()
+    assert snmp.get_counter("127.0.0.1", OID, port=sock.getsockname()[1], timeout=2.0) == 174
+    assert len(seen) == 2 and seen[0] == seen[1]  # the same request, sent twice

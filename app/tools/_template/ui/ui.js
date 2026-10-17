@@ -1,5 +1,5 @@
 // The whole contract between a tool and the shell: export mount(root, kit).
-// kit = { toolId, api, h, svg, icon, fmt, ui, toast, poll }
+// kit = { toolId, tabId, api, h, svg, icon, fmt, ui, toast, poll, printer }; with several tabs, mount() runs once per tab
 export async function mount(root, kit) {
   const { h, ui, api, toolId } = kit;
   const card = ui.card({ title: 'Hello', iconName: 'info' });

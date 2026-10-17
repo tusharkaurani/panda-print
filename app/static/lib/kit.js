@@ -6,9 +6,9 @@ import * as fmt from './fmt.js';
 import * as ui from './ui.js';
 import { store } from './printer-store.js';
 
-export function makeKit(root, toolId) {
+export function makeKit(root, toolId, tabId) {
   return {
-    toolId, api, h, svg, clear, icon, fmt, ui,
+    toolId, tabId, api, h, svg, clear, icon, fmt, ui,
     toast: ui.toast,
     // the selected printer for tools with needs_printer: kit.printer.current is {id, name, ...};
     // subscribe(fn) calls fn(printer) whenever the selection or the printer's settings change

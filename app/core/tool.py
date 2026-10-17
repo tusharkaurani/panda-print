@@ -26,6 +26,15 @@ RESERVED_IDS = {"printers", "setup", "csrf", "tools", "links", "health"}
 
 
 @dataclass
+class ToolTab:
+    """One tab of a tool. The shell shows a tab per entry and calls the tool's UI mount() once per tab
+    (kit.tabId tells it which). A tool with no tabs gets a single implicit one."""
+    id: str  # url-safe; the page address becomes #<tool id>/<tab id>
+    title: str
+    icon: str = ""  # name from static/lib/icons.js; defaults to the tool's icon
+
+
+@dataclass
 class Tool:
     id: str  # url-safe slug; API lives under /api/<id>/, assets under /tools/<id>/
     title: str
@@ -37,6 +46,7 @@ class Tool:
     order: int = 100  # tab order, lowest first
     needs_printer: bool = False  # True: the shell shows this tool only once a printer is added,
     #                              and gives its UI a printer selector (kit.printer)
+    tabs: list[ToolTab] = field(default_factory=list)  # empty: one tab with the tool's own title
 
 
 @dataclass

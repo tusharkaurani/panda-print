@@ -116,7 +116,8 @@ def create_app(settings: Settings | None = None, access: PrinterAccess | None = 
                 css = t.ui_dir and (t.ui_dir / "ui.css").is_file()
                 out.append({"id": t.id, "title": t.title, "description": t.description, "icon": t.icon,
                             "entry": f"/tools/{t.id}/ui.js", "css": f"/tools/{t.id}/ui.css" if css else None,
-                            "needs_printer": t.needs_printer})
+                            "needs_printer": t.needs_printer,
+                            "tabs": [{"id": tab.id, "title": tab.title, "icon": tab.icon or t.icon} for tab in t.tabs]})
             else:
                 out.append({"id": s.id, "title": s.title, "error": s.error})
         return jsonify(tools=out, version=__version__)

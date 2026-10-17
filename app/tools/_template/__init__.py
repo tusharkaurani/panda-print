@@ -36,5 +36,6 @@ def create(ctx: AppContext) -> Tool:
         blueprint=bp,
         ui_dir=Path(__file__).parent / "ui",
         order=100,  # tab order when there are several tools
+        # tabs=[ToolTab("overview", "Overview"), ToolTab("history", "History")],  # optional: several tabs; kit.tabId tells the UI which
         needs_printer=False,  # True: hidden until a printer exists, and the UI gets kit.printer (see README)
     )
