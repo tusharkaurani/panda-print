@@ -142,13 +142,13 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .stat .s { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
 /* ---- ink gauges */
-.gauges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.gauges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding-block: 4px; }
 .gauge { display: grid; justify-items: center; gap: 4px; text-align: center; }
-.gauge svg { width: 100%; max-width: 104px; height: auto; }
+.gauge svg { width: 100%; max-width: 190px; height: auto; }
 .gauge .track { stroke: var(--track); }
 .gauge .fill { stroke: var(--gauge); transition: stroke-dasharray .9s cubic-bezier(.2, .8, .2, 1); }
 .gauge text { fill: var(--text); font: 700 21px var(--font); }
-.gauge .name { font-size: 13px; font-weight: 650; }
+.gauge .name { font-size: 15px; font-weight: 650; }
 .gauge.C { --gauge: var(--ink-c); } .gauge.M { --gauge: var(--ink-m); }
 .gauge.Y { --gauge: var(--ink-y); } .gauge.K { --gauge: var(--ink-k); }
 .gauge.unknown .fill { display: none; }
@@ -293,7 +293,9 @@ select.input { appearance: auto; }
 .card .sub { overflow-wrap: anywhere; }
 
 @media (max-width: 560px) {
-  .printer-pick select { max-width: 150px; }
+  .printer-pick select { max-width: 190px; }
+  .brand span { display: none; }  /* logo only, so the printer dropdown has room */
+  .card-head .updated { display: none; }
   .wiz-head { padding: 18px 16px 0; }
   .actions { justify-content: stretch; }
   .actions .btn { flex: 1 1 auto; }

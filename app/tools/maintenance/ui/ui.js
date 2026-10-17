@@ -8,8 +8,8 @@ export function mount(root, kit) {
   const { h, icon, fmt, ui, api, toast } = kit;
   root.classList.add('mt');
 
-  const printerCard = ui.card({ title: 'Printer', iconName: 'printer', onRefresh: () => load(printerCard, 'printer', renderPrinter) });
-  const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', onRefresh: () => load(nozzleCard, 'nozzle', renderNozzle) });
+  const printerCard = ui.card({ title: 'Printer', iconName: 'printer', wide: true, onRefresh: () => load(printerCard, 'printer', renderPrinter) });
+  const nozzleCard = ui.card({ title: 'Nozzle check', iconName: 'droplet', wide: true, onRefresh: () => load(nozzleCard, 'nozzle', renderNozzle) });
   const queueCard = ui.card({ title: 'Print queue', iconName: 'list', wide: true, onRefresh: () => load(queueCard, 'queue', renderQueue) });
   root.append(h('div', { class: 'grid' }, printerCard.el, nozzleCard.el, queueCard.el));
 
