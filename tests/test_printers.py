@@ -266,3 +266,45 @@ links:
     assert hall["Panel"] == "http://192.168.1.23/"
     # Hall's CUPS is on 127.0.0.1, which means "the Pi": the viewer is told the host they used
     assert hall["CUPS"] == "http://localhost:631/printers/HP_ENVY"
+
+
+# ------------------------------------------------------------------ the name is optional
+
+def test_blank_name_defaults_to_the_model_then_the_address(registry):
+    a = registry.add({"ip": "192.168.1.18", "model": "Brother DCP-T730DW"})
+    assert a.name == "Brother DCP-T730DW" and a.id == "brother-dcp-t730dw"
+    assert registry.add({"name": "  ", "ip": "192.168.1.30"}).name == "192.168.1.30"  # no model known: the address
+
+
+def test_two_printers_of_the_same_model_get_distinct_default_names(registry):
+    names = [registry.add({"ip": f"192.168.1.{i}", "model": "Brother DCP-T730DW"}).name for i in (18, 19, 20)]
+    assert names == ["Brother DCP-T730DW", "Brother DCP-T730DW (2)", "Brother DCP-T730DW (3)"]
+    assert len({p.id for p in registry.list()}) == 3
+
+
+def test_an_explicit_name_wins_over_the_model_and_duplicates_are_still_refused(registry):
+    p = registry.add({"name": "Study", "ip": "192.168.1.18", "model": "Brother DCP-T730DW"})
+    assert p.name == "Study"
+    with pytest.raises(ValidationError):
+        registry.add({"name": "study", "ip": "192.168.1.19"})  # typed on purpose: say so, don't silently rename
+
+
+def test_blanking_the_name_on_edit_goes_back_to_the_default(registry):
+    p = registry.add({"name": "Study", "ip": "192.168.1.18"})
+    registry.add({"ip": "192.168.1.19", "model": "Brother DCP-T730DW"})
+    assert registry.update(p.id, {"name": "", "model": "Brother DCP-T730DW"}).name == "Brother DCP-T730DW (2)"
+    assert registry.update(p.id, {"cups_queue": "Q"}).name == "Brother DCP-T730DW (2)"  # not mentioned: untouched
+
+
+def test_api_creates_a_printer_without_a_name(client):
+    h = csrf_headers(client)
+    r = client.post("/api/printers", json={"ip": "192.168.1.23", "model": "HP ENVY 6000 series", "name": ""}, headers=h)
+    assert r.status_code == 201 and r.get_json()["data"]["name"] == "HP ENVY 6000 series"
+    again = client.post("/api/printers", json={"ip": "192.168.1.24", "model": "HP ENVY 6000 series"}, headers=h)
+    assert again.get_json()["data"]["name"] == "HP ENVY 6000 series (2)"
+
+
+def test_printer_details_have_stable_keys(client):
+    details = client.get(f"/api/maintenance/{PID}/printer").get_json()["data"]["details"]
+    keys = [d["key"] for d in details]
+    assert keys[:4] == ["model", "firmware", "uptime", "web"] and "paper" in keys

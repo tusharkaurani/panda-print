@@ -104,18 +104,18 @@ def _media(v: str) -> str:
 
 
 def printer_details(attrs: Attrs) -> list[dict]:
-    """Extra facts for the 'details' disclosure, only those the printer provided."""
+    """Extra facts, only those the printer provided. `key` is stable for the UI; `label` is for people."""
     rows = [
-        ("Model", first(attrs, "printer-make-and-model")),
-        ("Firmware", first(attrs, "printer-firmware-string-version")),
-        ("Location", first(attrs, "printer-location")),
-        ("Paper loaded", ", ".join(_media(str(m)) for m in attrs.get("media-ready", [])) or None),
-        ("Default sides", first(attrs, "sides-default")),
-        ("Default colour mode", first(attrs, "print-color-mode-default")),
-        ("Uptime", _uptime(first(attrs, "printer-up-time"))),
-        ("Web interface", first(attrs, "printer-more-info")),
+        ("model", "Model", first(attrs, "printer-make-and-model")),
+        ("firmware", "Firmware", first(attrs, "printer-firmware-string-version")),
+        ("uptime", "Uptime", _uptime(first(attrs, "printer-up-time"))),
+        ("web", "Web interface", first(attrs, "printer-more-info")),
+        ("location", "Location", first(attrs, "printer-location")),
+        ("paper", "Paper loaded", ", ".join(_media(str(m)) for m in attrs.get("media-ready", [])) or None),
+        ("sides", "Default sides", first(attrs, "sides-default")),
+        ("colour", "Default colour mode", first(attrs, "print-color-mode-default")),
     ]
-    return [{"label": k, "value": str(v)} for k, v in rows if v not in (None, "")]
+    return [{"key": k, "label": label, "value": str(v)} for k, label, v in rows if v not in (None, "")]
 
 
 def printer(attrs: Attrs) -> dict:

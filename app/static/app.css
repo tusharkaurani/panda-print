@@ -322,21 +322,23 @@ select.input { appearance: auto; }
 }
 
 /* ---- details tab: use the width instead of long thin lists */
-.printer-top { display: grid; grid-template-columns: auto minmax(240px, 1fr); gap: 20px 28px; align-items: start; }
-.printer-top .counter-stat { align-self: stretch; display: grid; align-content: center; padding: 16px 20px; }
+.printer-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px 28px; align-items: center; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.facts.beside { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* Model, Firmware / Uptime, Web interface */
 .fact { background: var(--surface-2); border-radius: 12px; padding: 10px 14px; min-width: 0; }
 .fact dt { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .fact dd { font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+.fact-note { font-weight: 400; font-size: 12.5px; color: var(--muted); }
 .fact-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); text-decoration: none; }
 .fact-link:hover { text-decoration: underline; }
-.rows.tiled { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; }
-.rows.tiled .row { border-top: 0; background: var(--surface-2); border-radius: 12px; padding: 10px 14px; }
+/* recent prints: a list, one card per line */
+.rows.cards { gap: 8px; }
+.rows.cards .row { border-top: 0; background: var(--surface-2); border-radius: 12px; padding: 10px 14px; }
 @media (max-width: 800px) {
   .printer-top { grid-template-columns: 1fr; }
   .gauges { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 }
 @media (max-width: 560px) {
   .facts { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  .rows.tiled { grid-template-columns: 1fr; }
+  .facts.beside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

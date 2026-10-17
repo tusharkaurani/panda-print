@@ -40,7 +40,7 @@ export function probeRows(probe, running) {
 export function wizard(root, { mode, printer, onDone, onCancel }) {
   const d = store.defaults || {};
   const draft = mode === 'edit' ? { ...printer } : {
-    name: '', ip: '', ipp_url: '', snmp_community: d.snmp_community || 'public', snmp_port: d.snmp_port || 161,
+    name: '', model: '', ip: '', ipp_url: '', snmp_community: d.snmp_community || 'public', snmp_port: d.snmp_port || 161,
     counter_oid: d.counter_oid || '', cups_url: d.cups_url || 'http://127.0.0.1:631',
     cups_queue: d.cups_queue || '', host_state_file: d.host_state_file || '',
   };
@@ -81,7 +81,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
 
   function pick(c) {
     Object.assign(draft, {
-      ip: c.ip, ipp_url: c.ipp_url || '', name: c.model || '',  // blank: the connection check suggests the printer's own name
+      ip: c.ip, ipp_url: c.ipp_url || '', name: '', model: c.model || '',  // name stays blank: it defaults to the model
       cups_queue: c.queue || draft.cups_queue, cups_url: c.cups_url || draft.cups_url,
     });
     goForm();
@@ -110,7 +110,7 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
     const go = (e) => {
       e?.preventDefault();
       if (!manual.value.trim()) { err.textContent = 'Enter the printer\u2019s IP address or host name.'; manual.focus(); return; }
-      draft.ip = manual.value.trim(); draft.name = ''; draft.ipp_url = ''; draft.cups_queue = d.cups_queue || '';
+      draft.ip = manual.value.trim(); draft.name = ''; draft.model = ''; draft.ipp_url = ''; draft.cups_queue = d.cups_queue || '';
       goForm();
     };
     paintFound();
@@ -159,7 +159,8 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
         field('Nozzle-check timer state file', 'host_state_file',
           { placeholder: '/host-state/state', hint: 'Optional. A file written by an existing nozzle-check timer on the host.' })));
     const form = h('div', { class: 'form' },
-      field('Name', 'name', { placeholder: 'Study printer' }),
+      field('Name (optional)', 'name', { placeholder: draft.model || 'Defaults to the printer\u2019s model',
+        hint: 'Leave blank to use the model name. Name your printers if you have two of the same model.' }),
       field('Address', 'ip', { placeholder: '192.168.1.50', hint: 'IP address or host name of the printer.' }),
       h('div', {}, h('div', { class: 'row-inline between' }, h('h3', { class: 'sect' }, 'Connection check'),
         h('button', { class: 'btn small', type: 'button', onclick: runProbe }, icon('refresh', 15), 'Check again')), checksBox),
@@ -181,7 +182,10 @@ export function wizard(root, { mode, printer, onDone, onCancel }) {
     } else if (res.ok) {
       s.probe = res.data;
       const p = res.data;
-      if (!draft.name && p.suggested_name) { draft.name = p.suggested_name; inputs.name.value = draft.name; }
+      if (p.suggested_name) {  // shown as the name's default; sent along so the server can use it when the name is blank
+        draft.model = p.suggested_name;
+        if (!draft.name) inputs.name.placeholder = p.suggested_name;
+      }
       if (!draft.cups_queue && p.cups.suggested) draft.cups_queue = p.cups.suggested;
       if (!draft.ipp_url && p.ipp_url && p.ipp_url !== `ipp://${draft.ip}/ipp/print`) {
         draft.ipp_url = p.ipp_url; inputs.ipp_url.value = p.ipp_url;

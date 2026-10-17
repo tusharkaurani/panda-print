@@ -5,31 +5,41 @@ export function mount(root, kit) {
   const { h, icon, fmt, ui } = kit;
   const { load } = cardLoader(kit);
 
-  const printerCard = ui.card({ title: 'Printer', iconName: 'printer', wide: true, onRefresh: () => load(printerCard, 'printer', renderPrinter) });
+  const printerCard = ui.card({ title: kit.printer.current?.name || 'Printer', iconName: 'printer', wide: true, onRefresh: () => load(printerCard, 'printer', renderPrinter) });
   const queueCard = ui.card({ title: 'Print queue', iconName: 'list', wide: true, onRefresh: () => load(queueCard, 'queue', renderQueue) });
   root.append(h('div', { class: 'grid' }, printerCard.el, queueCard.el));
 
   // ------------------------------------------------------------ printer
+  // The four facts that sit beside the rings; everything else goes in the row below
+  const BESIDE = ['model', 'firmware', 'uptime', 'web'];
+
   function renderPrinter(d) {
+    printerCard.setTitle(kit.printer.current?.name || d.name);
     printerCard.setBadge(ui.badge(d.state.label, ui.healthKind(d.state.health)));
     const c = d.counter;
+    const beside = BESIDE.map((k) => d.details.find((r) => r.key === k)).filter(Boolean);
+    const rest = d.details.filter((r) => !BESIDE.includes(r.key));
+    // lifetime page counter: a card like the rest, first in the row below
+    const counter = h('div', { class: 'fact' }, h('dt', {}, 'Lifetime pages printed'),
+      h('dd', {}, c.value != null ? fmt.num(c.value) : '\u2013',
+        c.value != null && c.as_of && !c.error && h('span', { class: 'fact-note' }, ` read ${fmt.ago(c.as_of)}`)),
+      c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`));
     printerCard.set(
       (d.state.reasons.length || d.state.message)
         ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity))),
             d.state.message && h('span', { class: 'sub' }, d.state.message))
         : null,
-      // rings on the left, the page counter beside them (stacked on a phone)
       h('div', { class: 'printer-top' },
         d.inks.length
           ? h('div', {}, h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge)),
               h('p', { class: 'ink-note' }, 'Levels are the printer’s own estimate.'))
           : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
-        h('div', { class: 'stat counter-stat' },
-          h('div', { class: 'k' }, 'Lifetime pages printed'),
-          h('div', { class: 'counter' }, h('span', { class: 'big' }, fmt.num(c.value)),
-            c.value != null && c.as_of && !c.error && h('span', { class: 's' }, `read ${fmt.ago(c.as_of)}`)),
-          c.error && h('p', { class: 'msg' }, `${c.value != null ? 'Showing the last known value. ' : ''}${c.error}`))),
-      d.details.length ? facts('Printer details', d.details) : null);
+        beside.length ? h('dl', { class: 'facts beside' }, beside.map(fact)) : null),
+      h('dl', { class: 'facts' }, counter, rest.map(fact)));
+  }
+
+  function fact(r) {
+    return h('div', { class: 'fact' }, h('dt', {}, r.label), h('dd', {}, factValue(r.value)));
   }
 
   // Addresses become links, kept to one line (the full text is the tooltip)
@@ -84,13 +94,14 @@ export function mount(root, kit) {
       d.state.reasons.length ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity)))) : null,
       h('div', {}, h('h4', {}, 'Recent prints'),
         d.jobs_error && ui.errorBox(d.jobs_error),
-        recent.length ? h('ul', { class: 'rows tiled' }, recent.map((r) => r.row))
+        recent.length ? h('ul', { class: 'rows cards' }, recent.map((r) => r.row))
           : !d.jobs_error && h('p', { class: 'empty' }, 'Nothing printed yet.'),
         h('p', { class: 'ink-note' }, 'CUPS only knows about prints that go through it. Prints sent straight to the printer (from a phone, or copies made on the printer) are spotted from its page counter, so they show a page count and an approximate time.')));
   }
 
   // another printer was chosen (or this one's settings were edited): start over
   kit.printer.subscribe(() => {
+    printerCard.setTitle(kit.printer.current?.name || 'Printer');
     for (const c of [printerCard, queueCard]) { c.set(ui.skeleton()); c.setBadge(null); c.stamp(''); }
     load(printerCard, 'printer', renderPrinter);
     load(queueCard, 'queue', renderQueue);

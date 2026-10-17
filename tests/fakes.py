@@ -114,7 +114,7 @@ class FakePrinter:
             "printer-make-and-model": [self.model], "printer-location": ["Study"],
             "printer-state": [4 if busy else 3], "printer-state-reasons": ["none"],
             "printer-is-accepting-jobs": [True],
-            "printer-firmware-string-version": ["Ver.U"], "printer-up-time": [int(self.clock() % 10_000_000)],
+            "printer-firmware-string-version": ["Ver.U"], "printer-up-time": [int(self.clock() % 10_000_000) + 3600],
             "printer-more-info": [f"http://{self.p.ip}/"],
             "marker-names": ["M", "C", "Y", "BK"], "marker-levels": [94, 95, 94, 95],
             "marker-colors": ["#FF00FF", "#00FFFF", "#FFFF00", "#000000"],

@@ -157,6 +157,19 @@ def validate(draft: dict, taken_names: Iterable[str] = ()) -> tuple[dict, dict[s
     return clean, errors
 
 
+def default_name(draft: dict, taken: Iterable[str]) -> str:
+    """The name a printer gets when none is given: its model (the UI passes it as `model`), else its address.
+    Two printers of the same model are told apart as 'Model', 'Model (2)', ..."""
+    base = str(draft.get("model") or "").strip() or clean_host(str(draft.get("ip") or "")) or "Printer"
+    base = base[:50]
+    lowered = {n.lower() for n in taken}
+    name, n = base, 1
+    while name.lower() in lowered:
+        n += 1
+        name = f"{base} ({n})"
+    return name
+
+
 def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "printer"
 
@@ -183,7 +196,10 @@ class PrinterRegistry:
     # --- writes
     def add(self, draft: dict) -> Printer:
         with self._lock:
-            clean, errors = validate(draft, [p.name for p in self.list()])
+            taken = [p.name for p in self.list()]
+            if not str(draft.get("name") or "").strip():  # the name is optional
+                draft = {**draft, "name": default_name(draft, taken)}
+            clean, errors = validate(draft, taken)
             if errors:
                 raise ValidationError(errors)
             ids = {p.id for p in self.list()}
@@ -206,8 +222,11 @@ class PrinterRegistry:
             current = self.get(printer_id)
             if current is None:
                 raise KeyError(printer_id)
+            others = [p.name for p in self.list() if p.id != printer_id]
             merged = {**{k: getattr(current, k) for k in EDITABLE}, **draft}
-            clean, errors = validate(merged, [p.name for p in self.list() if p.id != printer_id])
+            if "name" in draft and not str(draft["name"] or "").strip():  # blanked: back to the default
+                merged["name"] = default_name({**merged, "model": draft.get("model")}, others)
+            clean, errors = validate(merged, others)
             if errors:
                 raise ValidationError(errors)
             self.db.execute(

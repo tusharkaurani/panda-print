@@ -25,14 +25,16 @@ export function errorBox(error, onRetry) {
 export function card({ title, iconName, wide = false, onRefresh }) {
   const badgeSlot = h('span');
   const updated = h('span', { class: 'updated' });
+  const heading = h('h3', {}, iconName && icon(iconName, 18), h('span', { class: 'card-title' }, title));
   const body = h('div', { class: 'card-body' }, skeleton());
   const refresh = onRefresh && h('button', { class: 'refresh', type: 'button', 'aria-label': `Refresh ${title}`, title: 'Refresh', onclick: onRefresh }, icon('refresh', 16));
   const el = h('section', { class: `card${wide ? ' wide' : ''}`, 'aria-label': title },
-    h('div', { class: 'card-head' }, h('h3', {}, iconName && icon(iconName, 18), title), badgeSlot, updated, refresh),
+    h('div', { class: 'card-head' }, heading, badgeSlot, updated, refresh),
     body);
   return {
     el, body,
     set(...children) { clear(body).append(...children.flat(Infinity).filter(Boolean)); },
+    setTitle(text) { heading.querySelector('.card-title').textContent = text; el.setAttribute('aria-label', text); },
     setBadge(node) { clear(badgeSlot); if (node) badgeSlot.append(node); },
     busy(on) { el.setAttribute('aria-busy', on ? 'true' : 'false'); },
     stamp(blank) { updated.textContent = blank === '' ? '' : `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; },
