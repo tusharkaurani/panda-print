@@ -147,3 +147,23 @@ def test_the_default_for_new_printers_can_be_switched_on_in_the_environment(make
     app, _ = make_app(auto_check=True, check_time="06:30")
     d = app.test_client().get(f"/api/maintenance/{PID}/automation").get_json()["data"]
     assert d["defaults"]["enabled"] is True and d["values"]["run_at"] == "06:30"
+
+
+def test_a_sent_check_shows_as_printed_once_the_page_count_confirms_it(rig):
+    rig.configure(enabled=True, idle_days=2, run_at="00:00")
+    rig.service.run_schedule()
+    row = lambda: rig.client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["history"][0]
+    assert row()["state"] == "submitted"  # sent to CUPS, not yet seen on the page count
+    rig.clock.advance(60)  # the fake printer finishes the page and its count goes up
+    rig.service.tracker.poll()
+    assert row()["state"] == "completed"
+    last = rig.client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]
+    assert last["last_auto"]["state"] == "completed"
+
+
+def test_a_check_that_never_reaches_the_page_count_stays_sent(rig):
+    rig.configure(enabled=True, idle_days=2, run_at="00:00")
+    rig.service.run_schedule()
+    rig.clock.advance(3 * 3600)  # no page ever appears (printer off, paper out...)
+    rig.service.tracker.poll()
+    assert rig.client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["history"][0]["state"] == "submitted"

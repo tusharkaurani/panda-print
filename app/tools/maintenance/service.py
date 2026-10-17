@@ -220,7 +220,9 @@ class Service:
     def _check(row) -> dict | None:
         if row is None:
             return None
-        return {"ts": row["ts"], "source": row["source"], "state": row["state"], "job_id": row["job_id"],
+        # "submitted" is what we did (sent it to CUPS); once the printer's page count has gone up for it, it was printed
+        state = "completed" if row["state"] == "submitted" and row["claimed_ts"] is not None else row["state"]
+        return {"ts": row["ts"], "source": row["source"], "state": state, "job_id": row["job_id"],
                 "message": row["message"], "page_name": row["page_name"], "pages": row["pages"]}
 
     # ------------------------------------------------------------ automation settings
