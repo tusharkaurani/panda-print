@@ -752,12 +752,12 @@ def good_settings(**kw):
 
 def test_the_presets_that_ship_with_the_app_are_valid():
     built = pre.load_builtin(Path(pre.__file__).with_name("presets.yml"))
-    assert len(built) >= 3 and all(p["builtin"] and p["id"].startswith("builtin-") for p in built)
+    assert len(built) >= 1 and all(p["builtin"] and p["id"].startswith("builtin-") for p in built)
     assert len({p["id"] for p in built}) == len(built)
     for p in built:  # each one lays out on its own paper
         s = p["settings"]
         L.compute(L.Request(s["paper"]["width"], s["paper"]["height"], s["photo"]["width"], s["photo"]["height"], (s["margin"],) * 4, s["gap"], s["mode"],
-                            s.get("cols", 0), s.get("rows", 0), s.get("count", 0), s["orientation"], s["align"], 0.0))
+                            s.get("cols", 0), s.get("rows", 0), s.get("count", 0), s["orientation"], s["align"], 0.0, s.get("area", "full")))
 
 
 @pytest.mark.parametrize("change", [
@@ -805,7 +805,7 @@ def test_a_preset_survives_the_round_trip_through_yaml(tmp_path):
 
 def test_the_presets_list_has_the_shipped_ones_and_mine(rig):
     d = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]
-    assert [p["builtin"] for p in d][:3] == [True, True, True]
+    assert d and d[0]["builtin"] is True and sum(p["builtin"] for p in d) == len(d)  # the shipped ones come first
     made = rig.client.post("/api/photosheet/presets", json={"name": "Mine", "settings": good_settings()}, headers=rig.h)
     assert made.status_code == 201 and made.get_json()["data"]["id"] == "user-mine" and made.get_json()["data"]["replaced"] is False
     d = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]
@@ -870,7 +870,7 @@ def test_preset_changes_need_a_csrf_token(rig):
 def test_a_damaged_saved_preset_is_ignored_not_shown(rig):
     rig.ctx.db.execute("INSERT INTO ps_presets(id, name, data, created_at) VALUES('user-bad','Bad','{not json',1)")
     names = [p["name"] for p in rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]]
-    assert "Bad" not in names and len(names) >= 3
+    assert "Bad" not in names and len(names) >= 1
 
 
 # ------------------------------------------------------------------ crop and fit are per photo

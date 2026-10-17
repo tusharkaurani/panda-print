@@ -38,3 +38,7 @@ blueprint and a `ui/ui.js`.
 4. If you can, say which printer you tried it on. The author has only verified a Brother DCP-T730DW against a real device.
 
 By contributing you agree your work is released under the MIT licence of this project.
+
+## Tests of the pages
+
+`tests/test_ui_smoke.py` opens each tool's page under node against recorded answers of the real API (with a small fake DOM in `tests/js/`) and does what a person would do next. It fails on an exception while a tab opens, a console error, a stray `false`/`null`/`undefined` printed in the page, or a dropdown with no choices. It needs node and is skipped without it. New pages should be added to it.

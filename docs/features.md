@@ -110,6 +110,6 @@ Not verified on real hardware yet: print one sheet on plain paper and measure a 
 The **Presets** card at the top saves the photo size, unit, paper, margins, layout, finishing and print choices (not the photos), so the usual job is one click. Applying a preset fills in the form; paper type and quality are applied only if the selected printer offers them, and the paper is matched by its CUPS name or its size. A preset you change shows as "changed", and **Save changes** replaces it.
 
 - **Save these settings as a preset…** keeps your own, in the database, so every device that uses this panda-print sees them. Saving under an existing name replaces it. Up to 50.
-- Some come with the app (shown the same way, with "comes with the app"; they can't be deleted). They are listed in `app/tools/photosheet/presets.yml`, which is read on demand, so editing it needs no restart.
+- Two come with the app: **35 × 45 mm on A4 (as A5 Half)** and **35 × 45 mm on A4 (210 × 297 mm)** (shown the same way, with "comes with the app"; they can't be deleted). They are listed in `app/tools/photosheet/presets.yml`, which is read on demand, so editing it needs no restart.
 - **Copy as YAML** turns any preset into text to paste into `presets.yml` under `presets:`, so a preset you set up here can ship with the code. Lengths in that file are in millimetres; the comments at the top of the file describe each setting.
 

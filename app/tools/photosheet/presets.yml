@@ -20,53 +20,51 @@
 #     quality     3 draft | 4 normal | 5 high
 #     copies      copies of the whole sheet
 presets:
-  - id: id-35x45-a4
-    name: ID photos 35 × 45 mm on A4
-    settings:
-      photo: {width: 35, height: 45}
-      unit: mm
-      paper: {width: 210, height: 297, media: iso_a4_210x297mm, label: A4}
-      orientation: auto
-      margin: 5
-      gap: 2
-      mode: fill
-      align: center
-      fit: fill
-      marks: true
-      outline: false
-      media_type: stationery
-      quality: 4
-
-  - id: us-2x2-4x6
-    name: US 2 × 2 in on 4 × 6 in photo paper
-    settings:
-      photo: {width: 50.8, height: 50.8}
-      unit: in
-      paper: {width: 101.6, height: 152.4, media: na_index-4x6_4x6in, label: 4 × 6 in}
-      orientation: auto
-      margin: 3
-      gap: 2
-      mode: fill
-      align: center
-      fit: fill
-      marks: true
-      outline: false
-      media_type: photographic-glossy
-      quality: 5
-
-  - id: small-id-25x35-a4
-    name: Small ID 25 × 35 mm on A4
-    settings:
-      photo: {width: 25, height: 35}
-      unit: mm
-      paper: {width: 210, height: 297, media: iso_a4_210x297mm, label: A4}
-      orientation: auto
-      margin: 5
-      gap: 2
-      mode: fill
-      align: center
-      fit: fill
-      marks: true
-      outline: false
-      media_type: stationery
-      quality: 4
+- id: preset1
+  name: 35 × 45 mm on A4 (as A5 Half)
+  settings:
+    photo:
+      width: 35.0
+      height: 45.0
+    unit: mm
+    paper:
+      width: 210.0
+      height: 297.0
+      media: iso_a4_210x297mm
+      label: A4 (210 × 297 mm)
+    orientation: auto
+    mode: fill
+    align: center
+    fit: fit
+    area: top
+    margin: 3.0
+    gap: 3.0
+    marks: false
+    outline: true
+    media_type: photographic-glossy
+    quality: 5
+    copies: 1
+- id: preset2
+  name: 35 × 45 mm on A4 (210 × 297 mm)
+  settings:
+    photo:
+      width: 35.0
+      height: 45.0
+    unit: mm
+    paper:
+      width: 210.0
+      height: 297.0
+      media: iso_a4_210x297mm
+      label: A4 (210 × 297 mm)
+    orientation: auto
+    mode: fill
+    align: center
+    fit: fit
+    area: top
+    margin: 3.0
+    gap: 3.0
+    marks: false
+    outline: true
+    media_type: photographic-glossy
+    quality: 5
+    copies: 1
