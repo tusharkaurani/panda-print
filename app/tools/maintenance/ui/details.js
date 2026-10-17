@@ -29,12 +29,13 @@ export function mount(root, kit) {
         ? h('div', { class: 'chips' }, d.state.reasons.map((r) => ui.badge(r.text, reasonKind(r.severity))),
             d.state.message && h('span', { class: 'sub' }, d.state.message))
         : null,
+      // one row: the four rings, then Model / Firmware / Uptime / Web interface beside them
       h('div', { class: 'printer-top' },
         d.inks.length
-          ? h('div', {}, h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge)),
-              h('p', { class: 'ink-note' }, 'Levels are the printer’s own estimate.'))
+          ? h('div', { class: 'gauges', role: 'group', 'aria-label': 'Ink levels' }, d.inks.map(ui.gauge))
           : h('p', { class: 'empty' }, 'The printer did not report ink levels.'),
         beside.length ? h('dl', { class: 'facts beside' }, beside.map(fact)) : null),
+      d.inks.length ? h('p', { class: 'ink-note tight' }, 'Ink levels are the printer’s own estimate.') : null,
       h('dl', { class: 'facts' }, counter, rest.map(fact)));
   }
 

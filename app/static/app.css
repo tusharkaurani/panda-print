@@ -160,9 +160,9 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .stat .s { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
 /* ---- ink gauges */
-.gauges { display: grid; grid-template-columns: repeat(4, minmax(0, 132px)); gap: 18px; justify-content: start; padding-block: 2px; }
+.gauges { display: grid; grid-template-columns: repeat(4, clamp(84px, 9vw, 108px)); gap: 12px; justify-content: start; padding-block: 2px; }
 .gauge { display: grid; justify-items: center; gap: 4px; text-align: center; }
-.gauge svg { width: 100%; max-width: 132px; height: auto; }
+.gauge svg { width: 100%; max-width: 108px; height: auto; }
 .gauge .track { stroke: var(--track); }
 .gauge .fill { stroke: var(--gauge); transition: stroke-dasharray .9s cubic-bezier(.2, .8, .2, 1); }
 .gauge text { fill: var(--text); font: 700 21px var(--font); }
@@ -322,9 +322,12 @@ select.input { appearance: auto; }
 }
 
 /* ---- details tab: use the width instead of long thin lists */
-.printer-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px 28px; align-items: center; }
+.printer-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px 24px; align-items: center; }
+.ink-note.tight { margin-top: -6px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
-.facts.beside { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* Model, Firmware / Uptime, Web interface */
+.facts.beside { grid-template-columns: 2fr 1fr .8fr 1.2fr; gap: 8px; }  /* Model, Firmware, Uptime, Web interface in one row beside the rings; the model name is the longest */
+.facts.beside .fact { padding: 10px 12px; }
+.facts.beside .fact dd { overflow-wrap: break-word; }
 .fact { background: var(--surface-2); border-radius: 12px; padding: 10px 14px; min-width: 0; }
 .fact dt { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .fact dd { font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
@@ -334,8 +337,10 @@ select.input { appearance: auto; }
 /* recent prints: a list, one card per line */
 .rows.cards { gap: 8px; }
 .rows.cards .row { border-top: 0; background: var(--surface-2); border-radius: 12px; padding: 10px 14px; }
-@media (max-width: 800px) {
+@media (max-width: 940px) {   /* not enough room for rings + 4 cards in one row: cards go under the rings */
   .printer-top { grid-template-columns: 1fr; }
+}
+@media (max-width: 800px) {
   .gauges { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 }
 @media (max-width: 560px) {
