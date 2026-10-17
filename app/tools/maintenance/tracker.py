@@ -36,8 +36,9 @@ def split_delta(delta: int, unclaimed_checks: int) -> tuple[int, int]:
 
 
 class Tracker:
-    def __init__(self, settings: Settings, store: Store, printer, clock):
+    def __init__(self, settings: Settings, store: Store, printer, clock, host_state_file: str = ""):
         self.s, self.store, self.printer, self.clock = settings, store, printer, clock
+        self.host_state_file = Path(host_state_file) if host_state_file else None
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ polling
@@ -93,7 +94,9 @@ class Tracker:
     # ------------------------------------------------------------ counter
     def host_state(self) -> tuple[idle.HostState | None, str | None]:
         """The host timer's state file, if mounted: (state, error)."""
-        path: Path = self.s.host_state_file
+        path = self.host_state_file
+        if path is None:
+            return None, None
         try:
             text = path.read_text()
         except FileNotFoundError:

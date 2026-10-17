@@ -1,4 +1,4 @@
-"""Tool: Printer Maintenance (status, ink, queue, nozzle checks).
+"""Tool: Printer Maintenance (status, ink, queue, nozzle checks) for every printer.
 
 This package is the reference example of a tool module; see the README.
 """
@@ -10,30 +10,26 @@ from pathlib import Path
 
 from app.core.context import AppContext
 from app.core.tool import Tool
-from app.tools.maintenance import mock_seed
+from app.tools.maintenance import store
 from app.tools.maintenance.api import build_blueprint
-from app.tools.maintenance.service import Service
-from app.tools.maintenance.store import Store
-from app.tools.maintenance.tracker import Tracker
+from app.tools.maintenance.runtimes import Runtimes
 
 log = logging.getLogger(__name__)
 
 
 def create(ctx: AppContext) -> Tool:
-    store = Store(ctx.db)
-    tracker = Tracker(ctx.settings, store, ctx.printer, ctx.clock)
-    if ctx.settings.mock:
-        mock_seed.seed(store, ctx.clock())
-    service = Service(ctx, store, tracker)
+    store.migrate(ctx.db)
+    runtimes = Runtimes(ctx)
 
     def poll_forever() -> None:
         stop = threading.Event()
         stop.wait(2)  # let the server come up first
         while True:
-            try:
-                tracker.poll()
-            except Exception:
-                log.exception("counter poll failed")
+            for rt in runtimes.all():  # every printer, including ones added while running
+                try:
+                    rt.tracker.poll()
+                except Exception:
+                    log.exception("counter poll failed for %s", rt.printer.name)
             stop.wait(ctx.settings.poll_interval)
 
     def start() -> None:
@@ -44,8 +40,9 @@ def create(ctx: AppContext) -> Tool:
         title="Printer Maintenance",
         description="Status, ink levels, queue and nozzle checks",
         icon="wrench",
-        blueprint=build_blueprint(service),
+        blueprint=build_blueprint(runtimes, ctx.clock),
         ui_dir=Path(__file__).parent / "ui",
         start=start,
         order=10,
+        needs_printer=True,
     )

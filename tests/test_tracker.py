@@ -1,4 +1,5 @@
 from app.core.db import Database
+from app.tools.maintenance import store as store_mod
 from app.tools.maintenance.store import Store
 from app.tools.maintenance.tracker import Tracker, split_delta
 from app.settings import Settings
@@ -13,9 +14,12 @@ class NoPrinter:  # the tracker's pure-DB paths don't touch the printer
 
 def make(tmp_path, **kw):
     clock = Clock()
-    settings = Settings(host_state_file=tmp_path / "state", **kw)
-    store = Store(Database(":memory:"))
-    return Tracker(settings, store, NoPrinter(), clock), store, clock
+    host_state = kw.pop("host_state", str(tmp_path / "state"))
+    settings = Settings(**kw)
+    db = Database(":memory:")
+    store_mod.migrate(db)
+    store = Store(db, "p1")
+    return Tracker(settings, store, NoPrinter(), clock, host_state), store, clock
 
 
 def test_split_delta():

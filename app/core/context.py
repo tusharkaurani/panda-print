@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from app.core.db import Database
-from app.printer import PrinterBackend
+from app.core.printers import Printer, PrinterRegistry
+from app.printer import PrinterAccess, PrinterBackend
 from app.settings import Settings
 
 
@@ -14,5 +15,10 @@ from app.settings import Settings
 class AppContext:
     settings: Settings
     db: Database
-    printer: PrinterBackend
+    printers: PrinterRegistry  # the printers added in the UI; tools never hard-code one
+    access: PrinterAccess  # network access: backends, discovery, probing
     clock: Callable[[], float] = field(default=time.time)
+
+    def backend_for(self, printer: Printer) -> PrinterBackend:
+        """IPP/SNMP/CUPS access for one printer (or its mock)."""
+        return self.access.backend(printer)

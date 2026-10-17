@@ -26,9 +26,9 @@ class RateLimited(Exception):
 
 
 class Service:
-    def __init__(self, ctx: AppContext, store: Store, tracker: Tracker):
+    def __init__(self, ctx: AppContext, backend, store: Store, tracker: Tracker):
         self.ctx, self.s, self.store, self.tracker = ctx, ctx.settings, store, tracker
-        self.printer = ctx.printer
+        self.printer = backend  # IPP/SNMP/CUPS access for this one printer
         self.clock = ctx.clock
         self._print_lock = threading.Lock()
         self._printer_cache: TTLCache = TTLCache(LIVE_CACHE_SECONDS)

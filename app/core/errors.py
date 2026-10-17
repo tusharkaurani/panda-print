@@ -12,11 +12,12 @@ class SourceError(Exception):
     `message` is safe to show to the user; `hint` says what to check.
     """
 
-    def __init__(self, source: str, message: str, hint: str | None = None):
+    def __init__(self, source: str, message: str, hint: str | None = None, kind: str = "error"):
         super().__init__(message)
         self.source = source
         self.message = message
         self.hint = hint
+        self.kind = kind  # "timeout" | "refused" | "dns" | "error", so callers can decide whether to retry
 
     def to_dict(self) -> dict:
         d = {"source": self.source, "message": self.message}
@@ -34,13 +35,13 @@ def explain(source: str, target: str, exc: BaseException) -> SourceError:
         exc = exc.reason
     if isinstance(exc, (socket.timeout, TimeoutError)):
         return SourceError(source, f"{target} did not answer in time.",
-                           "Is it powered on and on the network?")
+                           "Is it powered on and on the network?", kind="timeout")
     if isinstance(exc, ConnectionRefusedError):
         return SourceError(source, f"{target} refused the connection.",
-                           "Is the service running and the address/port correct?")
+                           "Is the service running and the address/port correct?", kind="refused")
     if isinstance(exc, socket.gaierror):
         return SourceError(source, f"Could not resolve the address of {target}.",
-                           "Check the host name in the configuration.")
+                           "Check the host name in the configuration.", kind="dns")
     if isinstance(exc, (OSError, http.client.HTTPException)):
         return SourceError(source, f"Could not talk to {target}: {exc}.",
                            "Check the network path and the address in the configuration.")

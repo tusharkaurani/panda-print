@@ -14,8 +14,10 @@ from app.core import csrf as csrf_mod
 from app.core.context import AppContext
 from app.core.db import Database
 from app.core.links import LinksConfig
+from app.core.printers import PrinterRegistry, ValidationError
+from app.core.printers_api import build_blueprint as printers_blueprint
 from app.core.tool import discover
-from app.printer import PrinterBackend, make_backend
+from app.printer import PrinterAccess, make_access
 from app.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -24,7 +26,30 @@ CSP = ("default-src 'self'; img-src 'self' data: http: https:; style-src 'self';
        "connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'")
 
 
-def create_app(settings: Settings | None = None, printer: PrinterBackend | None = None,
+def seed_printers(settings: Settings, registry: PrinterRegistry) -> None:
+    """Unattended installs: PRINTER_IP in the environment adds the first printer. MOCK=1 adds a demo one
+    (unless MOCK_SETUP=1, which starts empty so the setup wizard can be tried)."""
+    if len(registry):
+        return
+    if settings.mock:
+        if not settings.mock_setup:
+            registry.add({"name": "Brother DCP-T730DW", "ip": "192.168.1.18", "cups_queue": "T730",
+                          "ipp_url": "ipp://192.168.1.18/ipp/print"})
+        return
+    if settings.printer_ip:
+        try:
+            printer = registry.add({
+                "name": settings.printer_ip, "ip": settings.printer_ip, "ipp_url": settings.printer_ipp_url,
+                "snmp_community": settings.snmp_community, "snmp_port": settings.snmp_port,
+                "counter_oid": settings.snmp_counter_oid, "cups_url": settings.cups_url,
+                "cups_queue": settings.cups_queue,
+                "host_state_file": str(settings.host_state_file) if settings.host_state_file.exists() else ""})
+            log.info("added printer %s from PRINTER_IP", printer.ip)
+        except ValidationError as e:
+            log.error("PRINTER_IP settings are invalid, so no printer was added: %s", e)
+
+
+def create_app(settings: Settings | None = None, access: PrinterAccess | None = None,
                start_background: bool = True, clock: Callable[[], float] = time.time,
                only_tools: set[str] | None = None) -> Flask:
     settings = settings or Settings.from_env()
@@ -34,13 +59,16 @@ def create_app(settings: Settings | None = None, printer: PrinterBackend | None 
 
     ephemeral = settings.mock and not settings.mock_persist
     db = Database(":memory:" if ephemeral else settings.db_path)
-    ctx = AppContext(settings, db, printer or make_backend(settings), clock)
+    registry = PrinterRegistry(db, clock)
+    ctx = AppContext(settings, db, registry, access or make_access(settings, clock), clock)
+    seed_printers(settings, registry)
     secret = secrets.token_hex(32).encode() if ephemeral and not settings.secret_key \
         else csrf_mod.load_secret(settings.secret_key, settings.data_dir)
     csrf = csrf_mod.Csrf(secret, settings.trusted_origins)
     links = LinksConfig(settings.links_file, settings.logos_dir, ROOT / "defaults" / "links.yml")
     slots = discover(ctx, only_tools)
     app.extensions["panda"] = {"ctx": ctx, "slots": slots, "links": links, "csrf": csrf}
+    app.register_blueprint(printers_blueprint(ctx), url_prefix="/api/printers")
 
     # ---------------------------------------------------------------- tools
     for slot in slots:
@@ -97,7 +125,8 @@ def create_app(settings: Settings | None = None, printer: PrinterBackend | None 
                 t = s.tool
                 css = t.ui_dir and (t.ui_dir / "ui.css").is_file()
                 out.append({"id": t.id, "title": t.title, "description": t.description, "icon": t.icon,
-                            "entry": f"/tools/{t.id}/ui.js", "css": f"/tools/{t.id}/ui.css" if css else None})
+                            "entry": f"/tools/{t.id}/ui.js", "css": f"/tools/{t.id}/ui.css" if css else None,
+                            "needs_printer": t.needs_printer})
             else:
                 out.append({"id": s.id, "title": s.title, "error": s.error})
         return jsonify(tools=out, mock=settings.mock, version=__version__)

@@ -1,10 +1,11 @@
 import pytest
 
 from app.factory import create_app
-from app.printer.mock import MockPrinter
+from app.printer.mock import MockAccess
 from app.settings import Settings
 
 T0 = 1_800_000_000.0
+PID = "brother-dcp-t730dw"  # id of the printer that mock mode adds on start-up
 
 
 class Clock:
@@ -32,14 +33,14 @@ def settings(tmp_path):
 
 @pytest.fixture
 def make_app(settings, clock):
-    """make_app(**setting_overrides) -> (flask app, mock printer)"""
+    """make_app(**setting_overrides) -> (flask app, backend of the mock printer)"""
     import dataclasses
 
     def _make(**overrides):
         s = dataclasses.replace(settings, **overrides) if overrides else settings
-        printer = MockPrinter(s, clock)
-        app = create_app(s, printer=printer, start_background=False, clock=clock)
-        return app, printer
+        app = create_app(s, access=MockAccess(s, clock), start_background=False, clock=clock)
+        ctx = app.extensions["panda"]["ctx"]
+        return app, ctx.backend_for(ctx.printers.get(PID))
 
     return _make
 

@@ -4,8 +4,9 @@ import textwrap
 import pytest
 
 import app.tools as tools_pkg
+from conftest import PID
 from app.factory import create_app
-from app.printer.mock import MockPrinter
+from app.printer.mock import MockAccess
 
 
 def write_tool(root, name, body):
@@ -41,20 +42,20 @@ def test_broken_tools_are_reported_and_do_not_stop_the_app(extra_tools, settings
             bp.get('/ping')(lambda: jsonify(ok=True, data='pong'))
             return Tool(id='fine', title='Fine', description='', icon='info', blueprint=bp, order=1)
     """)
-    app = create_app(settings, printer=MockPrinter(settings, clock), start_background=False, clock=clock)
+    app = create_app(settings, access=MockAccess(settings, clock), start_background=False, clock=clock)
     c = app.test_client()
     tools = {t["id"]: t for t in c.get("/api/tools").get_json()["tools"]}
     assert "boom" in tools["broken"]["error"]
     assert "must equal its folder name" in tools["mismatch"]["error"]
     assert "error" not in tools["fine"] and "error" not in tools["maintenance"]
     assert c.get("/api/fine/ping").get_json()["data"] == "pong"  # new tool's API is mounted
-    assert c.get("/api/maintenance/nozzle").get_json()["ok"] is True
+    assert c.get(f"/api/maintenance/{PID}/nozzle").get_json()["ok"] is True
     # tabs are ordered by Tool.order
     assert [t["id"] for t in c.get("/api/tools").get_json()["tools"]][:2] == ["fine", "maintenance"]
 
 
 def test_template_is_a_working_tool_but_is_never_auto_loaded(settings, clock):
-    app = create_app(settings, printer=MockPrinter(settings, clock), start_background=False, clock=clock)
+    app = create_app(settings, access=MockAccess(settings, clock), start_background=False, clock=clock)
     assert "_template" not in [t["id"] for t in app.test_client().get("/api/tools").get_json()["tools"]]
 
     # what copying the template does: the same code under another folder name

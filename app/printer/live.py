@@ -4,6 +4,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 from app.core.errors import SourceError, explain
+from app.core.printers import Printer
 from app.printer import Attrs, ipp, snmp
 from app.settings import Settings
 
@@ -28,21 +29,27 @@ JOB_ATTRS = [
 
 
 class LivePrinter:
-    def __init__(self, settings: Settings):
-        self.s = settings
-        self.ipp = ipp.IppClient(settings.net_timeout)
-        cups = urlsplit(settings.cups_url)
+    def __init__(self, settings: Settings, printer: Printer, timeout: float | None = None):
+        self.s, self.p = settings, printer
+        self.ipp = ipp.IppClient(timeout or settings.net_timeout)
+        self.timeout = timeout or settings.net_timeout
+        cups = urlsplit(printer.cups_url)
         self._cups_host = cups.hostname or "localhost"
         self._cups_port = cups.port or 631
         # The IPP URI names the queue; the HTTP URL is where we POST.
-        self._queue_uri = f"ipp://{self._cups_host}:{self._cups_port}/printers/{settings.cups_queue}"
-        self._queue_url = f"{settings.cups_url}/printers/{settings.cups_queue}"
+        self._queue_uri = f"ipp://{self._cups_host}:{self._cups_port}/printers/{printer.cups_queue}"
+        self._queue_url = f"{printer.cups_url}/printers/{printer.cups_queue}"
+
+    def _need_queue(self) -> None:
+        if not self.p.cups_queue:
+            raise SourceError("cups", "No CUPS queue is set for this printer.",
+                              "Open the Printers page, edit this printer and choose its queue.")
 
     # -- the printer itself
     def printer_info(self) -> Attrs:
-        target = f"the printer ({self.s.printer_ip})"
+        target = f"the printer ({self.p.ip})"
         try:
-            resp = self.ipp.request(self.s.ipp_url, ipp.GET_PRINTER_ATTRIBUTES, self.s.ipp_url,
+            resp = self.ipp.request(self.p.ipp_endpoint, ipp.GET_PRINTER_ATTRIBUTES, self.p.ipp_endpoint,
                                     [(ipp.KEYWORD, "requested-attributes", PRINTER_ATTRS)])
         except Exception as e:
             raise self._wrap("printer", target, e) from e
@@ -53,29 +60,35 @@ class LivePrinter:
 
     def read_counter(self) -> int:
         try:
-            return snmp.get_counter(self.s.printer_ip, self.s.snmp_counter_oid, self.s.snmp_community,
-                                    self.s.snmp_port, self.s.net_timeout)
+            return snmp.get_counter(self.p.ip, self.p.counter_oid, self.p.snmp_community,
+                                    self.p.snmp_port, self.timeout)
         except snmp.SnmpError as e:
             raise SourceError("snmp", f"Could not read the page counter: {e}.") from e
         except Exception as e:
-            raise self._wrap("snmp", f"the printer's SNMP service ({self.s.printer_ip}:{self.s.snmp_port})", e) from e
+            raise self._wrap("snmp", f"the printer's SNMP service ({self.p.ip}:{self.p.snmp_port})", e) from e
 
     # -- CUPS
-    def queue_info(self) -> Attrs:
+    def cups_queues(self) -> list[Attrs]:
+        """Every queue CUPS knows about (also used by discovery and the setup wizard)."""
         try:
-            resp = self.ipp.request(self.s.cups_url + "/", ipp.CUPS_GET_PRINTERS, None,
+            resp = self.ipp.request(self.p.cups_url + "/", ipp.CUPS_GET_PRINTERS, None,
                                     [(ipp.KEYWORD, "requested-attributes", QUEUE_ATTRS)])
         except Exception as e:
-            raise self._wrap("cups", f"CUPS ({self.s.cups_url})", e) from e
-        printers = resp.of(ipp.PRINTER_ATTRS)
+            raise self._wrap("cups", f"CUPS ({self.p.cups_url})", e) from e
+        return resp.of(ipp.PRINTER_ATTRS)
+
+    def queue_info(self) -> Attrs:
+        self._need_queue()
+        printers = self.cups_queues()
         for p in printers:
-            if p.get("printer-name", [None])[0] == self.s.cups_queue:
+            if p.get("printer-name", [None])[0] == self.p.cups_queue:
                 return p
         names = ", ".join(sorted(str(p.get("printer-name", ["?"])[0]) for p in printers)) or "none"
-        raise SourceError("cups", f"CUPS has no queue named '{self.s.cups_queue}' (found: {names}).",
-                          "Set CUPS_QUEUE to one of those names.")
+        raise SourceError("cups", f"CUPS has no queue named '{self.p.cups_queue}' (found: {names}).",
+                          "Open the Printers page and pick one of those queues.")
 
     def list_jobs(self) -> list[Attrs]:
+        self._need_queue()
         jobs: list[Attrs] = []
         for which in ("not-completed", "completed"):
             try:
@@ -84,11 +97,12 @@ class LivePrinter:
                     (ipp.KEYWORD, "requested-attributes", JOB_ATTRS),
                 ])
             except Exception as e:
-                raise self._wrap("cups", f"CUPS ({self.s.cups_url})", e) from e
+                raise self._wrap("cups", f"CUPS ({self.p.cups_url})", e) from e
             jobs.extend(resp.of(ipp.JOB_ATTRS))
         return jobs
 
     def submit_nozzle(self, job_name: str, document: bytes, user: str) -> int:
+        self._need_queue()
         try:
             resp = self.ipp.request(self._queue_url, ipp.PRINT_JOB, self._queue_uri, [
                 (ipp.NAME, "requesting-user-name", user),
@@ -96,7 +110,7 @@ class LivePrinter:
                 (ipp.MIME_TYPE, "document-format", "application/postscript"),
             ], data=document)
         except Exception as e:
-            raise self._wrap("cups", f"CUPS ({self.s.cups_url})", e) from e
+            raise self._wrap("cups", f"CUPS ({self.p.cups_url})", e) from e
         for g in resp.of(ipp.JOB_ATTRS):
             if "job-id" in g:
                 return int(g["job-id"][0])

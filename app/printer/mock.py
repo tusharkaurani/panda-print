@@ -11,6 +11,7 @@ import time
 from typing import Callable
 
 from app.core.errors import SourceError
+from app.core.printers import Printer, validate
 from app.printer import Attrs
 from app.settings import Settings
 
@@ -32,6 +33,12 @@ HISTORY = [
 ]
 FIRST_JOB_ID = 31
 
+# the pretend network: what the setup wizard can "find" in mock mode
+MOCK_DEVICES = {
+    "192.168.1.18": {"model": "Brother DCP-T730DW", "queue": "T730", "rp": "ipp/print"},
+    "192.168.1.23": {"model": "HP ENVY 6000 series", "queue": "HP_ENVY", "rp": "ipp/print"},
+}
+
 
 def history_events(now: float) -> list[dict]:
     """The scripted past, with absolute times, job ids and running counter values."""
@@ -45,8 +52,9 @@ def history_events(now: float) -> list[dict]:
 
 
 class MockPrinter:
-    def __init__(self, settings: Settings, clock: Callable[[], float] = time.time):
-        self.s = settings
+    def __init__(self, settings: Settings, printer: Printer, clock: Callable[[], float] = time.time):
+        self.s, self.p = settings, printer
+        self.model = MOCK_DEVICES.get(printer.ip, {}).get("model", "Brother DCP-T730DW")
         self.clock = clock
         self._lock = threading.Lock()
         now = clock()
@@ -76,6 +84,11 @@ class MockPrinter:
         if what in self.s.mock_fail:
             raise SourceError(source, message, "This is a simulated failure (MOCK_FAIL).")
 
+    def _need_queue(self) -> None:
+        if not self.p.cups_queue:
+            raise SourceError("cups", "No CUPS queue is set for this printer.",
+                              "Open the Printers page, edit this printer and choose its queue.")
+
     def _tick(self) -> None:
         now = self.clock()
         for done, job_id in [p for p in self._pending if p[0] <= now]:
@@ -88,17 +101,17 @@ class MockPrinter:
 
     # ---- PrinterBackend
     def printer_info(self) -> Attrs:
-        self._fail("printer", "printer", "The printer (192.168.1.18) did not answer in time.")
+        self._fail("printer", "printer", f"The printer ({self.p.ip}) did not answer in time.")
         with self._lock:
             self._tick()
             busy = bool(self._pending)
         return {
-            "printer-name": ["DCP-T730DW"], "printer-info": ["Brother DCP-T730DW"],
-            "printer-make-and-model": ["Brother DCP-T730DW"], "printer-location": ["Study"],
+            "printer-name": [self.model.split()[-1]], "printer-info": [self.model],
+            "printer-make-and-model": [self.model], "printer-location": ["Study"],
             "printer-state": [4 if busy else 3], "printer-state-reasons": ["none"],
             "printer-is-accepting-jobs": [True],
             "printer-firmware-string-version": ["Ver.U"], "printer-up-time": [int(self.clock() % 10_000_000)],
-            "printer-more-info": ["http://192.168.1.18/"],
+            "printer-more-info": [f"http://{self.p.ip}/"],
             "marker-names": ["M", "C", "Y", "BK"], "marker-levels": [94, 95, 94, 95],
             "marker-colors": ["#FF00FF", "#00FFFF", "#FFFF00", "#000000"],
             "marker-types": ["ink-cartridge"] * 4, "marker-low-levels": [10] * 4, "marker-high-levels": [100] * 4,
@@ -107,33 +120,36 @@ class MockPrinter:
         }
 
     def read_counter(self) -> int:
-        self._fail("snmp", "snmp", "The printer's SNMP service (192.168.1.18:161) did not answer in time.")
+        self._fail("snmp", "snmp", f"The printer's SNMP service ({self.p.ip}:{self.p.snmp_port}) did not answer in time.")
         with self._lock:
             self._tick()
             return self.counter
 
     def queue_info(self) -> Attrs:
-        self._fail("cups", "cups", "CUPS (http://127.0.0.1:631) refused the connection.")
+        self._need_queue()
+        self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
         with self._lock:
             self._tick()
             busy = bool(self._pending)
         return {
-            "printer-name": [self.s.cups_queue], "printer-info": ["Brother DCP-T730DW"],
-            "printer-make-and-model": ["Brother DCP-T730DW"], "printer-location": ["Study"],
+            "printer-name": [self.p.cups_queue], "printer-info": [self.model],
+            "printer-make-and-model": [self.model], "printer-location": ["Study"],
             "printer-state": [4 if busy else 3], "printer-state-reasons": ["none"],
             "printer-is-accepting-jobs": [True], "queued-job-count": [len(self._pending)],
-            "device-uri": ["ipp://192.168.1.18/ipp/print"],
-            "printer-uri-supported": [f"ipp://localhost/printers/{self.s.cups_queue}"],
+            "device-uri": [self.p.ipp_endpoint],
+            "printer-uri-supported": [f"ipp://localhost/printers/{self.p.cups_queue}"],
         }
 
     def list_jobs(self) -> list[Attrs]:
-        self._fail("cups", "cups", "CUPS (http://127.0.0.1:631) refused the connection.")
+        self._need_queue()
+        self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
         with self._lock:
             self._tick()
             return [dict(j) for j in self.jobs]
 
     def submit_nozzle(self, job_name: str, document: bytes, user: str) -> int:
-        self._fail("cups", "cups", "CUPS (http://127.0.0.1:631) refused the connection.")
+        self._need_queue()
+        self._fail("cups", "cups", f"CUPS ({self.p.cups_url}) refused the connection.")
         if not document.startswith(b"%!PS"):
             raise SourceError("cups", "The document is not PostScript.")
         with self._lock:
@@ -142,3 +158,60 @@ class MockPrinter:
             self.jobs.append(self._job(job_id, job_name, user, now, None, 0))
             self._pending.append((now + PRINT_SECONDS, job_id))
             return job_id
+
+
+class MockAccess:
+    """Mock mode's network: two pretend printers can be found, everything else times out."""
+
+    def __init__(self, settings: Settings, clock: Callable[[], float] | None = None):
+        self.s, self.clock = settings, clock or time.time
+        self._backends: dict[str, tuple[Printer, MockPrinter]] = {}
+
+    def backend(self, printer: Printer) -> MockPrinter:
+        cached = self._backends.get(printer.id)
+        if cached and cached[0] == printer:
+            return cached[1]
+        backend = MockPrinter(self.s, printer, self.clock)
+        self._backends[printer.id] = (printer, backend)
+        return backend
+
+    def discover(self, cups_url: str | None = None) -> dict:
+        time.sleep(0.8)  # a real scan takes a moment; lets the UI show its progress state
+        found = []
+        for ip, dev in MOCK_DEVICES.items():
+            c = {"name": dev["model"], "model": dev["model"], "ip": ip, "ipp_url": f"ipp://{ip}/{dev['rp']}"}
+            if dev["queue"] == "T730":  # only the Brother is already set up in CUPS
+                c.update(queue=dev["queue"], cups_url=cups_url or self.s.cups_url, sources=["cups", "mdns"],
+                         device_uri=c["ipp_url"])
+            else:
+                c.update(sources=["mdns"])
+            found.append(c)
+        return {"candidates": found, "notes": []}
+
+    def probe(self, draft: dict) -> dict:
+        clean, errors = validate({**draft, "name": draft.get("name") or "probe"})
+        errors.pop("name", None)
+        if errors:
+            return {"ok": False, "errors": errors}
+        time.sleep(0.5)
+        dev = MOCK_DEVICES.get(clean["ip"])
+        queues = [{"name": d["queue"], "info": d["model"], "device_uri": f"ipp://{ip}/{d['rp']}"}
+                  for ip, d in MOCK_DEVICES.items() if d["queue"] == "T730"]
+        same = [q["name"] for q in queues if clean["ip"] in q["device_uri"]]
+        suggested = clean["cups_queue"] if clean["cups_queue"] in [q["name"] for q in queues] else (same[0] if same else "")
+        if dev:
+            ipp = {"ok": True, "ipp_url": f"ipp://{clean['ip']}/{dev['rp']}", "model": dev["model"],
+                   "name": dev["model"], "state": "Idle", "inks": 4}
+            snmp = {"ok": True, "value": FINAL_COUNT}
+        else:
+            timeout = {"source": "printer", "message": f"The printer ({clean['ip']}) did not answer in time.",
+                       "hint": "Is it powered on and on the network?"}
+            ipp = {"ok": False, "error": timeout}
+            snmp = {"ok": False, "error": {**timeout, "source": "snmp", "message": f"The printer's SNMP service ({clean['ip']}:161) did not answer in time."}}
+        names = [q["name"] for q in queues]
+        cups = {"ok": not clean["cups_queue"] or clean["cups_queue"] in names, "queues": queues, "suggested": suggested}
+        if not cups["ok"]:
+            cups["error"] = {"source": "cups", "message": f"CUPS has no queue named '{clean['cups_queue']}'.",
+                             "hint": "Pick one of the queues below."}
+        return {"ok": True, "ipp": ipp, "snmp": snmp, "cups": cups,
+                "suggested_name": ipp.get("name") or "", "ipp_url": ipp.get("ipp_url", "")}

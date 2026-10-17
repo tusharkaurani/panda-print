@@ -21,6 +21,9 @@ import app.tools as tools_pkg
 
 log = logging.getLogger(__name__)
 
+# ids the core already uses for its own API paths and page routes
+RESERVED_IDS = {"printers", "setup", "csrf", "tools", "links", "health"}
+
 
 @dataclass
 class Tool:
@@ -32,6 +35,8 @@ class Tool:
     ui_dir: Path | None = None  # folder holding ui.js (and optionally ui.css)
     start: Callable[[], None] | None = None  # optional: launch background work
     order: int = 100  # tab order, lowest first
+    needs_printer: bool = False  # True: the shell shows this tool only once a printer is added,
+    #                              and gives its UI a printer selector (kit.printer)
 
 
 @dataclass
@@ -51,6 +56,8 @@ def discover(ctx, only: set[str] | None = None) -> list[ToolSlot]:
         if only is not None and mod.name not in only:
             continue
         try:
+            if mod.name in RESERVED_IDS:
+                raise ValueError(f"{mod.name!r} is reserved by the dashboard; pick another folder name")
             module = importlib.import_module(f"app.tools.{mod.name}")
             tool = module.create(ctx)
             if tool.id != mod.name:

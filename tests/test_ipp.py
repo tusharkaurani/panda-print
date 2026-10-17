@@ -7,6 +7,7 @@ import pytest
 
 from app.core.errors import SourceError
 from app.printer import ipp
+from app.core.printers import Printer
 from app.printer.live import LivePrinter
 from app.settings import Settings
 from app.tools.maintenance.service import NOZZLE_PS
@@ -96,10 +97,10 @@ def cups():
     server.shutdown()
 
 
-def live(port, **kw):
-    s = Settings(printer_ipp_url=f"ipp://127.0.0.1:{port}/ipp/print", cups_url=f"http://127.0.0.1:{port}",
-                 net_timeout=2, **kw)
-    return LivePrinter(s)
+def live(port, cups_queue="T730"):
+    p = Printer(id="t", name="T", ip="127.0.0.1", ipp_url=f"ipp://127.0.0.1:{port}/ipp/print",
+                cups_url=f"http://127.0.0.1:{port}", cups_queue=cups_queue)
+    return LivePrinter(Settings(net_timeout=2), p)
 
 
 def test_live_printer_reads_attributes_queue_and_jobs(cups):

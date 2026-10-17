@@ -35,6 +35,8 @@ class Settings:
     # mock data is regenerated relative to "now" on every start, so by default MOCK=1
     # keeps its database in memory; MOCK_PERSIST=1 stores it in DATA_DIR like normal
     mock_persist: bool = False
+    # MOCK_SETUP=1 starts mock mode with no printers, to try the setup wizard
+    mock_setup: bool = False
     log_level: str = "INFO"
     data_dir: Path = Path("data")
     config_dir: Path = Path("config")
@@ -42,17 +44,17 @@ class Settings:
     # extra origins (comma separated in env) accepted for state-changing POSTs
     trusted_origins: tuple[str, ...] = ()
 
-    # --- printer (IPP + SNMP)
-    printer_ip: str = "192.168.1.18"
-    printer_ipp_url: str = ""  # default derived from printer_ip
+    # --- printer defaults. Printers are added in the UI (setup wizard / Printers page);
+    # these only prefill the forms. If PRINTER_IP is set and no printer exists yet, one is
+    # added from these values at start-up (handy for unattended installs).
+    printer_ip: str = ""
+    printer_ipp_url: str = ""
     snmp_community: str = "public"
     snmp_port: int = 161
     snmp_counter_oid: str = "1.3.6.1.2.1.43.10.2.1.4.1.1"  # prtMarkerLifeCount
     net_timeout: float = 5.0
-
-    # --- CUPS
     cups_url: str = "http://127.0.0.1:631"
-    cups_queue: str = "T730"
+    cups_queue: str = ""
 
     # --- nozzle check policy
     idle_days: float = 7.0
@@ -68,10 +70,6 @@ class Settings:
     print_max_per_hour: int = 5
 
     recent_jobs: int = 10
-
-    @property
-    def ipp_url(self) -> str:
-        return self.printer_ipp_url or f"ipp://{self.printer_ip}/ipp/print"
 
     @property
     def db_path(self) -> Path:
@@ -94,6 +92,7 @@ class Settings:
             port=int(_num(e.get("PORT"), d.port)),
             mock=_bool(e.get("MOCK")),
             mock_persist=_bool(e.get("MOCK_PERSIST")),
+            mock_setup=_bool(e.get("MOCK_SETUP")),
             mock_fail=tuple(x.strip() for x in e.get("MOCK_FAIL", "").split(",") if x.strip()),
             log_level=e.get("LOG_LEVEL", d.log_level).upper(),
             data_dir=Path(e.get("DATA_DIR", str(d.data_dir))),
@@ -102,14 +101,14 @@ class Settings:
             trusted_origins=tuple(
                 o.strip().rstrip("/") for o in e.get("TRUSTED_ORIGINS", "").split(",") if o.strip()
             ),
-            printer_ip=e.get("PRINTER_IP", d.printer_ip),
+            printer_ip=e.get("PRINTER_IP", "").strip(),
             printer_ipp_url=e.get("PRINTER_IPP_URL", ""),
             snmp_community=e.get("SNMP_COMMUNITY", d.snmp_community),
             snmp_port=int(_num(e.get("SNMP_PORT"), d.snmp_port)),
             snmp_counter_oid=e.get("SNMP_COUNTER_OID", d.snmp_counter_oid),
             net_timeout=_num(e.get("NET_TIMEOUT"), d.net_timeout),
             cups_url=e.get("CUPS_URL", d.cups_url).rstrip("/"),
-            cups_queue=e.get("CUPS_QUEUE", d.cups_queue),
+            cups_queue=e.get("CUPS_QUEUE", "").strip(),
             idle_days=_num(e.get("IDLE_DAYS"), d.idle_days),
             poll_interval=_num(e.get("POLL_INTERVAL"), d.poll_interval),
             host_state_file=Path(e.get("HOST_STATE_FILE", str(d.host_state_file))),
