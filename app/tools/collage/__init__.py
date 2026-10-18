@@ -291,5 +291,5 @@ def create(ctx: AppContext) -> Tool:
         return resp
 
     return Tool(
-        id="collage", title="Photo Collage Sheet", description="Fit any number of photos onto one sheet by halving the paper (A4 is two A5, A5 is two A6), then download or print it",
+        id="collage", title="Photo Collage Sheet", description="Arrange any number of photos on a single sheet in standard print sizes, each placed where it fits best, ready to download or print",
         icon="image", blueprint=bp, ui_dir=HERE / "ui", order=17, needs_printer=False, parent="utilities")
