@@ -2,7 +2,7 @@
 .pu-page { display: grid; gap: 28px; }
 .pu-notes { font-size: 13px; color: var(--muted); }
 .pu-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 12px; }
-.pu-head h2 { margin: 0; font-size: 19px; font-weight: 720; letter-spacing: -.02em; }
+.pu-head h2, .pu-head h3 { margin: 0; font-size: 19px; font-weight: 720; letter-spacing: -.02em; }
 .pu-head p { margin: 0; color: var(--muted); font-size: 13px; }
 
 /* four equal columns at most; a narrower page gets fewer columns, never squeezed cards, and a short row stays left-aligned */
@@ -21,3 +21,29 @@
 .pu-desc { color: var(--muted); font-size: 13px; line-height: 1.4; }
 .pu-host { margin-top: auto; padding-top: 4px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 @media (prefers-reduced-motion: reduce) { .pu-card { transition: none; } .pu-card:hover { transform: none; } }
+
+/* two zones: what runs inside the app (solid, green) and links to other sites (quiet, dashed, per-category colours) */
+.pu-zone { display: grid; gap: 18px; padding: 20px; border-radius: calc(var(--radius) + 6px); }
+.pu-zone-head { display: flex; align-items: center; gap: 12px; }
+.pu-zone-head > svg { flex: none; width: 40px; height: 40px; padding: 9px; border-radius: 12px; }
+.pu-zone-head h2 { font-size: 20px; font-weight: 740; letter-spacing: -.02em; }
+.pu-zone-head p { color: var(--muted); font-size: 13.5px; }
+.pu-zone.own { background: linear-gradient(135deg, var(--accent-soft), var(--surface) 70%); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.pu-zone.own .pu-zone-head > svg { background: var(--accent); color: var(--accent-ink); }
+.pu-zone.own .pu-card { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.pu-zone.ext { background: transparent; border: 1.5px dashed var(--line); }
+.pu-zone.ext .pu-zone-head > svg { background: var(--surface-2); color: var(--muted); }
+.pu-zone.ext .pu-page, .pu-zone.ext .pu-cat { display: grid; }
+.pu-zone.ext { gap: 26px; }
+.pu-cat { --h: var(--info); --h-bg: var(--info-bg); }
+.pu-cat.hue-1 { --h: var(--ok); --h-bg: var(--ok-bg); }
+.pu-cat.hue-2 { --h: var(--warn); --h-bg: var(--warn-bg); }
+.pu-cat.hue-3 { --h: #8b3fd1; --h-bg: color-mix(in srgb, #8b3fd1 14%, var(--surface)); }
+.pu-cat.hue-4 { --h: var(--bad); --h-bg: var(--bad-bg); }
+.pu-cat.hue-5 { --h: #0b8aa8; --h-bg: color-mix(in srgb, #0b8aa8 14%, var(--surface)); }
+.pu-cat .pu-head h3 { padding: 3px 12px; border-radius: 99px; background: var(--h-bg); color: var(--h); font-size: 15px; font-weight: 720; }
+.pu-cat .pu-card:hover { border-color: color-mix(in srgb, var(--h) 55%, var(--line)); box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--h) 25%, transparent); }
+.pu-tag { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 99px; font-family: var(--font); font-size: 11.5px; font-weight: 700; }
+.pu-tag.own { background: var(--accent); color: var(--accent-ink); margin-right: 0; }
+.pu-tag.ext { background: var(--surface-2); color: var(--muted); }
+@media (max-width: 560px) { .pu-zone { padding: 14px; } }

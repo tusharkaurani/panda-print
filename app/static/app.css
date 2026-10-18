@@ -55,6 +55,8 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font);
   -webkit-font-smoothing: antialiased; min-height: 100vh;
+  background-image: radial-gradient(900px 420px at 0% -80px, var(--glow-a), transparent 70%), radial-gradient(800px 380px at 100% -60px, var(--glow-b), transparent 70%);
+  background-repeat: no-repeat; background-attachment: fixed;
 }
 h1, h2, h3, p, ul, ol, dl, dd { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
@@ -126,7 +128,7 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .tab { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; text-decoration: none; white-space: nowrap;
   color: var(--muted); font-weight: 650; border-bottom: 3px solid transparent; margin-bottom: -1px; border-radius: 10px 10px 0 0; }
 .tab:hover { color: var(--text); background: var(--surface-2); }
-.tab[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-soft); }
 .tab[aria-current="page"] svg { color: var(--accent); }
 .tool-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .tool-head h2 { font-size: 22px; letter-spacing: -.015em; }
@@ -138,7 +140,9 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
 .card-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 0; }
 .card-head h3 { font-size: 16px; font-weight: 700; margin-right: auto; display: flex; align-items: center; gap: 9px; }
-.card-head h3 svg { color: var(--accent); }
+.card-head h3 svg { color: var(--accent); box-sizing: content-box; padding: 6px; border-radius: 10px; background: var(--accent-soft); }
+.card:nth-of-type(3n+2) .card-head h3 svg { color: var(--info); background: var(--info-bg); }
+.card:nth-of-type(3n) .card-head h3 svg { color: var(--warn); background: var(--warn-bg); }
 .card-body { padding: 14px 18px 18px; display: grid; gap: 16px; }
 .card .sub { color: var(--muted); font-size: 13.5px; }
 .card[aria-busy="true"] .card-head h3::after { content: ""; width: 12px; height: 12px; border-radius: 50%;
@@ -160,7 +164,9 @@ main.wrap { padding-block: 8px 40px; display: grid; gap: 28px; }
 
 /* ---- stats */
 .stats { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.stat { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.stat { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; min-width: 0; border-left: 3px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.stat:nth-child(3n+2) { border-left-color: color-mix(in srgb, var(--info) 60%, transparent); }
+.stat:nth-child(3n) { border-left-color: color-mix(in srgb, var(--warn) 60%, transparent); }
 .stat dt, .stat .k { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .stat dd, .stat .v { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin-top: 2px; overflow-wrap: anywhere; }
 .stat .s { font-size: 12.5px; color: var(--muted); margin-top: 2px; }

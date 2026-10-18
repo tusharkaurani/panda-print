@@ -16,7 +16,7 @@ export async function mount(root, kit) {
       thumb,
       h('span', { class: 'pu-name' }, tool.name, icon('external', 14)),
       tool.description && h('span', { class: 'pu-desc' }, tool.description),
-      h('span', { class: 'pu-host' }, tool.host));
+      h('span', { class: 'pu-host' }, h('span', { class: 'pu-tag ext' }, 'Other site'), tool.host));
   }
 
   // tools that live inside this page (they declare parent: "utilities"): they open in the app, not in a new tab
@@ -26,7 +26,7 @@ export async function mount(root, kit) {
       h('span', { class: 'pu-thumb', 'aria-hidden': 'true' }, art(kit, BUILT_IN_ART[t.id] || 'document')),
       h('span', { class: 'pu-name' }, t.title),
       t.description && h('span', { class: 'pu-desc' }, t.description),
-      h('span', { class: 'pu-host' }, 'Built in'));
+      h('span', { class: 'pu-host' }, h('span', { class: 'pu-tag own' }, 'Built in')));
   }
 
   async function load() {
@@ -39,12 +39,16 @@ export async function mount(root, kit) {
       error && h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, error)),
       warnings?.length > 0 && h('details', { class: 'pu-notes' }, h('summary', {}, `${warnings.length} note${warnings.length === 1 ? '' : 's'} about print-utilities.yml`),
         h('ul', {}, warnings.map((w) => h('li', {}, w)))),
-      inside.length > 0 && h('section', { class: 'pu-cat', 'aria-labelledby': 'pu-builtin' },
-        h('div', { class: 'pu-head' }, h('h2', { id: 'pu-builtin' }, 'Built in'), h('p', {}, 'Tools that run inside panda-print.')),
+      inside.length > 0 && h('section', { class: 'pu-zone own', 'aria-labelledby': 'pu-builtin' },
+        h('div', { class: 'pu-zone-head' }, icon('check', 20),
+          h('div', {}, h('h2', { id: 'pu-builtin' }, 'Built in'), h('p', {}, 'Runs inside panda-print. Nothing is sent to another site.'))),
         h('div', { class: 'pu-grid' }, inside.map(builtIn))),
-      ...categories.map((c) => h('section', { class: 'pu-cat', 'aria-labelledby': `pu-${c.id}` },
-        h('div', { class: 'pu-head' }, h('h2', { id: `pu-${c.id}` }, c.name), c.description && h('p', {}, c.description)),
-        h('div', { class: 'pu-grid' }, c.tools.map(card)))),
+      categories.length > 0 && h('section', { class: 'pu-zone ext', 'aria-labelledby': 'pu-ext' },
+        h('div', { class: 'pu-zone-head' }, icon('external', 20),
+          h('div', {}, h('h2', { id: 'pu-ext' }, 'Free online tools'), h('p', {}, 'Other websites. Each card opens in a new tab.'))),
+        ...categories.map((c, i) => h('section', { class: `pu-cat hue-${i % 6}`, 'aria-labelledby': `pu-${c.id}` },
+          h('div', { class: 'pu-head' }, h('h3', { id: `pu-${c.id}` }, c.name), c.description && h('p', {}, c.description)),
+          h('div', { class: 'pu-grid' }, c.tools.map(card))))),
     ].filter(Boolean));
   }
   await load();
