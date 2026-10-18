@@ -582,7 +582,7 @@ def test_the_shipped_presets_are_the_three_out_of_the_box_and_kitchen_brings_its
     assert [p["name"] for p in shipped] == ["Return address ×30, US Letter", "Round stickers, 40 mm on plain A4", "Kitchen Labels - A4 Sheet"]
     kitchen = shipped[2]["settings"]
     items = kitchen["content"]["text"].split("\n")
-    assert kitchen["content"]["per_line"] is True and len(items) == 39 and items[0] == "Oats" and items[-1] == "Quinoa" and "Biscuits & Cookies" in items
+    assert kitchen["content"]["per_line"] is True and len(items) == 36 and items[0] == "Oats" and items[-1] == "Quinoa" and "Biscuits & Cookies" in items and not {"Spaghetti", "Turkish Coffee", "Monk Fruit Sweetener"} & set(items)  # 36 = 4 across × 9 down: one sheet
     assert (kitchen["size"], kitchen["look"]["inset"], kitchen["cut"]) == ({"width": 50.0, "height": 31.0}, 3.0, "grid")
     round_ = shipped[1]["settings"]
     assert (round_["size"], round_["look"]["shape"], round_["margin"], round_["cut"], round_["look"]["inset"]) == ({"width": 40.0, "height": 40.0}, "ellipse", 0.5, "grid", 3.0)

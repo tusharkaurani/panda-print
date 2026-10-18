@@ -141,12 +141,10 @@ presets:
         Chickpeas
         Coffee Beans
         Instant Coffee
-        Turkish Coffee
         Tea Leaves
         Green Tea
         White Sugar
         Brown Sugar
-        Monk Fruit Sweetener
         Table Salt
         Black Pepper
         Turmeric Powder
@@ -168,6 +166,5 @@ presets:
         Vinegar
         Honey
         Pasta
-        Spaghetti
         Quinoa
       per_line: true
