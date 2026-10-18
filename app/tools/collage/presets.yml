@@ -15,4 +15,22 @@
 #     media_type  a CUPS paper type, e.g. stationery (plain) or photographic-glossy; used when offered
 #     quality     3 draft | 4 normal | 5 high
 #     copies      copies of the whole sheet
-presets: []  # none ship yet: save your own in the app, then copy its YAML here
+presets:
+- id: collage-a4
+  name: Collage on A4 (210 × 297 mm)
+  settings:
+    unit: mm
+    paper:
+      width: 210.0
+      height: 297.0
+      media: iso_a4_210x297mm
+      label: A4 (210 × 297 mm)
+    orientation: auto
+    area: full
+    fit: fill
+    margin: 0.0
+    gap: 0.0
+    outline: false
+    media_type: photographic-glossy
+    quality: 5
+    copies: 1

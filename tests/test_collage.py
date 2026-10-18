@@ -406,13 +406,16 @@ def test_a_sheet_goes_to_the_chosen_printer_only(make_app):
     assert c.get(f"/api/collage/config?printer={other}").get_json()["data"]["printer"]["name"] == "Hall"
 
 
-def test_presets_start_empty_and_people_can_add_replace_and_remove_their_own(rig):
-    assert rig.client.get("/api/collage/presets").get_json()["data"]["presets"] == []
+def test_the_shipped_preset_is_valid_and_people_can_add_replace_and_remove_their_own(rig):
+    shipped = rig.client.get("/api/collage/presets").get_json()["data"]["presets"]
+    assert [(p["name"], p["builtin"]) for p in shipped] == [("Collage on A4 (210 × 297 mm)", True)]
+    x = shipped[0]["settings"]
+    assert (x["paper"]["media"], x["orientation"], x["area"], x["fit"], x["margin"], x["gap"], x["media_type"], x["quality"]) == (A4, "auto", "full", "fill", 0.0, 0.0, "photographic-glossy", 5)
     made = rig.client.post("/api/collage/presets", json={"name": "Family", "settings": PRESET}, headers=rig.h)
     assert made.status_code == 201 and made.get_json()["data"]["settings"]["area"] == "top"
     again = rig.client.post("/api/collage/presets", json={"name": "family", "settings": {**PRESET, "area": "full"}}, headers=rig.h)
     assert again.status_code == 200 and again.get_json()["data"]["replaced"] is True
-    mine = rig.client.get("/api/collage/presets").get_json()["data"]["presets"]
+    mine = [p for p in rig.client.get("/api/collage/presets").get_json()["data"]["presets"] if not p["builtin"]]
     assert len(mine) == 1 and mine[0]["settings"]["area"] == "full"
     assert rig.client.get(f"/api/collage/presets/{mine[0]['id']}/yaml").status_code == 200
     assert rig.client.delete(f"/api/collage/presets/{mine[0]['id']}", headers=rig.h).status_code == 200
