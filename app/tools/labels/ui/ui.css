@@ -10,7 +10,7 @@
 .lb .lb-head svg { box-sizing: content-box; padding: 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
 .lb .three { display: grid; grid-template-columns: 1fr 1fr 96px; gap: 12px; align-items: start; }
 .lb .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
-.lb .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 14px; }
+.lb .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 14px; align-items: start; }
 .lb .hint { margin: 0; }
 .lb .lb-text { font-family: var(--mono); font-size: 13.5px; line-height: 1.45; resize: vertical; min-height: 120px; white-space: pre; overflow: auto; }
 .lb .lb-pane { display: grid; gap: 12px; }

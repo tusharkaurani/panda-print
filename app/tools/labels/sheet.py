@@ -74,8 +74,9 @@ def _number(name: str, v) -> float:
     return float(v)
 
 
-def pack_sheet(paper_w, paper_h, cols, rows, width, height, left, top, gap_x=0.0, gap_y=0.0) -> Sheet:
-    """A label pack: fixed places (the sheet's own die cuts) on a portrait page."""
+def pack_sheet(paper_w, paper_h, cols, rows, width, height, left, top, gap_x=0.0, gap_y=0.0, area="full") -> Sheet:
+    """A label pack: fixed places (the sheet's own die cuts) on a portrait page. `area` top or bottom uses only the labels in that
+    half of the sheet (a label belongs to the half its middle is in), so the rest can be printed later."""
     for name, v in (("columns", cols), ("rows", rows)):
         if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 30:
             raise SheetError(f"The number of {name} must be a whole number from 1 to 30.")
@@ -97,7 +98,18 @@ def pack_sheet(paper_w, paper_h, cols, rows, width, height, left, top, gap_x=0.0
         raise SheetError(f"{rows} rows of labels need {need_h:.1f} mm, but the paper is {ph:g} mm tall. Make the labels shorter or use fewer rows.")
     cells = [{"x": round(left + c * (width + gap_x), 3), "y": round(top + r * (height + gap_y), 3), "w": width, "h": height}
              for r in range(rows) for c in range(cols)]
-    return Sheet(pw, ph, cells, width, height, cols, rows, "portrait", {"x": 0.0, "y": 0.0, "w": pw, "h": ph}, "full")
+    if area not in photo_layout.AREAS:
+        raise SheetError("Choose the whole page, or its top or bottom half.")
+    region = {"x": 0.0, "y": 0.0, "w": pw, "h": ph}
+    warnings: list[str] = []
+    if area != "full":
+        region = {"x": 0.0, "y": 0.0 if area == "top" else ph / 2, "w": pw, "h": ph / 2}
+        cells = [c for c in cells if (c["y"] + c["h"] / 2 < ph / 2) == (area == "top")]
+        if not cells:
+            raise SheetError(f"No label of this sheet is in the {area} half. Use the whole page, or the other half.")
+        if len(cells) < cols * rows:
+            warnings.append(f"Only the {len(cells)} labels in the {area} half of the sheet are used; the rest stay blank.")
+    return Sheet(pw, ph, cells, width, height, cols, rows, "portrait", region, area, warnings)
 
 
 def size_sheet(paper_w, paper_h, width, height, margin=5.0, gap=2.0, mode="fill", cols=0, rows=0, count=0, orientation="auto",

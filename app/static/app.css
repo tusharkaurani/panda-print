@@ -270,7 +270,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 .input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .input[aria-invalid="true"] { border-color: var(--bad); }
 select.input { appearance: auto; }
-.field { display: grid; gap: 5px; }
+.field { display: grid; gap: 5px; align-content: start; }
 .field label { font-weight: 600; font-size: 14px; }
 .hint { color: var(--muted); font-size: 13px; }
 .msg { color: var(--bad); font-size: 13px; font-weight: 600; }

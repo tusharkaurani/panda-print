@@ -17,12 +17,12 @@ export async function mount(root, kit) {
   const S = {
     unit: 'mm', kind: 'pack', pack: 'l7160', paper: 'a4', customW: 210, customH: 297,
     packCols: 3, packRows: 7, width: 63.5, height: 38.1, left: 7.2, top: 15.1, gapX: 2.5, gapY: 0,
-    orientation: 'auto', align: 'center', area: 'full', margin: 5, gap: 2, mode: 'fill', cols: 4, rows: 6, count: 12,
+    orientation: 'auto', align: 'center', area: 'full', margin: 5, gap: 2, mode: 'fill', cols: 4, rows: 6, count: 12, blankCount: 0,
     shape: 'rounded', radius: 2, fill: '', border: '', borderWidth: 0.3, color: '#000000', family: 'sans', bold: false, italic: false,
     auto: false, size: 11, textAlign: 'left', valign: 'middle', pad: 3, lineSpacing: 1.2, firstBold: false, firstScale: 1, firstColor: '',
     logoPosition: 'top', logoPct: 30,
     inputMode: 'text', text: SAMPLE, perLine: false, csv: '', csvName: '', csvTemplate: '',
-    copies: 1, repeat: false, start: 1, outline: false, page: 1,
+    copies: 1, repeat: false, start: 1, outline: false, marks: false, page: 1,
     mediaType: '', quality: '', resolution: '', sheetCopies: 1,
   };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage is optional */ }
@@ -138,8 +138,9 @@ export async function mount(root, kit) {
     csvArea, csvNote,
     h('div', { class: 'field' }, h('label', { for: 'lb-csvtemplate' }, 'What each label says'), tplArea,
       h('p', { class: 'hint' }, 'Put a column name in { } where its value goes. Leave this empty to print every column, one per line. A line whose values are all empty is left out.'), colChips));
-  const contentBox = h('section', { class: 'card lb-card' }, head('file', 'Your labels'),
-    select('inputMode', 'Labels from', [['text', 'Type or paste the labels'], ['csv', 'From a spreadsheet (CSV)']], { onchange: () => syncVisibility() }), textPane, csvPane);
+  const blankPane = h('div', { class: 'lb-pane' }, plain('blankCount', 'How many blank labels', { min: 0, max: 5000, hint: 'Leave 0 to fill the sheet (from the start place). The labels print with their colour, border and picture but no text, to write on by hand.' }));
+  const contentBox = h('section', { class: 'card lb-card' }, head('file', '4 · Your labels'),
+    select('inputMode', 'Labels from', [['text', 'Type or paste the labels'], ['csv', 'From a spreadsheet (CSV)'], ['blank', 'Blank labels (to write on by hand)']], { onchange: () => syncVisibility() }), textPane, csvPane, blankPane);
 
   // ------------------------------------------------------------------ 3. the label sheet and the paper
   const unitSelect = select('unit', 'Unit', [['mm', 'mm'], ['cm', 'cm'], ['in', 'in']], { id: 'lb-unit' });
@@ -158,27 +159,32 @@ export async function mount(root, kit) {
   } });
   const sizeFields = h('div', { class: 'lb-pane' },
     h('div', { class: 'field' }, h('label', { for: 'lb-sizepick' }, 'Common sizes'), sizePick));
-  const sheetBox = h('section', { class: 'card lb-card' }, head('hash', 'Label size and sheet'),
-    kindField, packField, packNote, packCustom, sizeFields,
-    h('div', { class: 'three' }, length('width', 'Label width'), length('height', 'Label height'), unitSelect));
-  // paper and layout
+  // paper
   const paperSelect = bind('paper', h('select', { class: 'input', id: 'lb-paper', onchange: () => { S.paper = paperSelect.value; syncPaper(); changed(); } }), 'select');
   const paperHint = h('p', { class: 'hint', id: 'lb-paper-hint' }, 'The sizes this printer offers, when a printer with CUPS is selected.');
   const customRow = h('div', { class: 'two', hidden: true }, length('customW', 'Paper width', { min: 40 }), length('customH', 'Paper height', { min: 40 }));
+  const radiusField = plain('radius', 'Corner rounding (mm)', { min: 0, max: 50, step: 0.5, float: true });
+  const shapeRow = h('div', { class: 'two' },
+    select('shape', 'Shape', [['rect', 'Square corners'], ['rounded', 'Rounded corners'], ['ellipse', 'Circle or oval']], { onchange: () => syncVisibility(), hint: 'Choosing a common size or a pack sets its usual shape.' }), radiusField);
+  const sheetBox = h('section', { class: 'card lb-card' }, head('file', '1 · Paper and label size'),
+    h('div', { class: 'field' }, h('label', { for: 'lb-paper' }, 'Paper'), paperSelect, paperHint), customRow,
+    kindField, packField, packNote, packCustom, sizeFields,
+    h('div', { class: 'three' }, length('width', 'Label width'), length('height', 'Label height'), unitSelect), shapeRow);
+  // layout on the paper
   const areaNote = h('p', { class: 'notice info', hidden: true });
   const gridRow = h('div', { class: 'two', hidden: true }, plain('cols', 'Columns'), plain('rows', 'Rows'));
   const countRow = h('div', { class: 'two', hidden: true }, plain('count', 'Number of labels', { max: 600 }));
   const sizeLayout = h('div', { class: 'lb-pane' },
     h('div', { class: 'two' }, select('orientation', 'Sheet direction', [['auto', 'Automatic (fits the most)'], ['portrait', 'Portrait'], ['landscape', 'Landscape']]),
       select('align', 'Placed', [['center', 'Centred on the paper'], ['start', 'Top left']])),
-    select('area', 'Print on', [['full', 'The whole page'], ['top', 'Top half only'], ['bottom', 'Bottom half only']],
-      { onchange: (v) => { if (v !== 'full') S.orientation = 'auto'; syncVisibility(); }, hint: 'A half leaves the rest of the sheet blank, so you can use it later (the top half of A4 is an A5 area).' }),
-    areaNote,
     h('div', { class: 'two' }, length('margin', 'Margin around the labels'), length('gap', 'Space between labels')),
     select('mode', 'Labels per sheet', [['fill', 'As many as fit'], ['grid', 'A grid (columns × rows)'], ['count', 'A number of labels']], { onchange: () => syncVisibility() }),
     gridRow, countRow);
-  const paperBox = h('section', { class: 'card lb-card' }, head('file', 'Paper and layout'),
-    h('div', { class: 'field' }, h('label', { for: 'lb-paper' }, 'Paper'), paperSelect, paperHint), customRow, sizeLayout);
+  const packLayoutNote = h('p', { class: 'hint' }, 'The places are fixed by the label pack. Choose a half to use only the labels in the top or the bottom of the sheet.');
+  const paperBox = h('section', { class: 'card lb-card' }, head('hash', '2 · Layout on the sheet'),
+    select('area', 'Print on', [['full', 'The whole page'], ['top', 'Top half only'], ['bottom', 'Bottom half only']],
+      { onchange: (v) => { if (v !== 'full') S.orientation = 'auto'; S.start = 1; syncVisibility(); }, hint: 'A half leaves the rest of the sheet blank, so you can use it later (the top half of A4 is an A5 area).' }),
+    areaNote, packLayoutNote, sizeLayout);
 
   // ------------------------------------------------------------------ 4. how the labels look
   const logoInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: () => { const f = logoInput.files[0]; logoInput.value = ''; if (f) loadLogo(f); } });
@@ -187,9 +193,7 @@ export async function mount(root, kit) {
   const logoOptions = h('div', { class: 'two', hidden: true },
     select('logoPosition', 'Picture goes', [['top', 'Above the text'], ['left', 'Left of the text'], ['background', 'Behind the text']]),
     plain('logoPct', 'Picture size (%)', { min: 10, max: 70 }));
-  const radiusField = plain('radius', 'Corner rounding (mm)', { min: 0, max: 50, step: 0.5, float: true });
-  const lookBox = h('section', { class: 'card lb-card' }, head('eye', 'Label style'),
-    h('div', { class: 'two' }, select('shape', 'Shape', [['rect', 'Square corners'], ['rounded', 'Rounded corners'], ['ellipse', 'Circle or oval']], { onchange: () => syncVisibility() }), radiusField),
+  const lookBox = h('section', { class: 'card lb-card' }, head('eye', '3 · Label style'),
     h('div', { class: 'two' }, colour('fill', 'Background colour', { optional: true, none: 'No colour' }), colour('border', 'Border colour', { optional: true, none: 'No border' })),
     h('div', { class: 'two' }, plain('borderWidth', 'Border width (mm)', { min: 0, max: 5, step: 0.1, float: true }), colour('color', 'Text colour')),
     h('div', { class: 'two' }, select('family', 'Font', [['sans', 'Sans-serif (Helvetica)'], ['serif', 'Serif (Times)'], ['mono', 'Typewriter (Courier)']])),
@@ -203,7 +207,7 @@ export async function mount(root, kit) {
   const sizeInput = bind('size', h('input', { class: 'input', type: 'number', min: 5, max: 72, step: 0.5, id: 'lb-size', 'aria-label': 'Text size in points',
     oninput: () => { const v = parseFloat(sizeInput.value); if (Number.isFinite(v)) { S.size = v; changed(); } } }), 'plain');
   const autoCheck = bind('auto', h('input', { type: 'checkbox', id: 'lb-auto', onchange: () => { S.auto = autoCheck.checked; syncVisibility(); changed(); } }), 'check');
-  const textBox = h('section', { class: 'card lb-card' }, head('hash', 'The text'),
+  const textBox = h('section', { class: 'card lb-card' }, head('hash', '5 · The text'),
     h('div', { class: 'two' },
       h('div', { class: 'field' }, h('label', { for: 'lb-size' }, 'Text size (points)'), sizeInput,
         h('label', { class: 'check-row slim', for: 'lb-auto' }, autoCheck, h('span', {}, 'Make the text as large as fits every label'))),
@@ -214,30 +218,32 @@ export async function mount(root, kit) {
     h('div', { class: 'two' }, check('firstBold', 'First line in bold', 'Handy for names.'), colour('firstColor', 'First line colour', { optional: true, none: 'Same as the text' })));
 
   // ------------------------------------------------------------------ 6. how many, and finishing
-  const countBox = h('section', { class: 'card lb-card' }, head('hash', 'How many'),
-    h('div', { class: 'two' }, plain('copies', 'Copies of each label', { max: 100 }),
-      plain('start', 'Start at label number', { max: 600, hint: 'For a part-used sheet. You can also click a label in the preview.' })),
+  const copyFields = h('div', { class: 'lb-pane' }, plain('copies', 'Copies of each label', { max: 100 }),
     check('repeat', 'Repeat the list to fill the sheet', 'Good for one return-address label ×30.'));
-  const finishBox = h('section', { class: 'card lb-card' }, head('check', 'Finishing'),
-    check('outline', 'Thin guide outline around every place', 'For a test on plain paper, to hold against a real sheet. Leave off for real labels.'));
+  const countBox = h('section', { class: 'card lb-card' }, head('hash', '6 · How many'), copyFields,
+    plain('start', 'Start at label number', { max: 600, hint: 'For a part-used sheet. You can also click a label in the preview.' }));
+  const finishBox = h('section', { class: 'card lb-card' }, head('check', '7 · Cut lines'),
+    check('outline', 'Cut line around each label', 'A thin line in the label’s shape (round for a circle) to cut along. Drawn only where a label is printed.'),
+    check('marks', 'Cut marks', 'Small ticks in the margins beside the labels, to guide a ruler or cutter.'),
+    h('p', { class: 'hint' }, 'Leave both off when printing on a pack that is already cut, or test on plain paper first and hold it against a real sheet.'));
 
   // ------------------------------------------------------------------ 7. printing choices (only with CUPS)
   const printBox = h('section', { class: 'card lb-card' });
   function syncPrinter() {
     const p = kit.printer.current;
-    if (!p) { printBox.replaceChildren(head('printer', 'Printing'), h('p', { class: 'hint' }, 'Add a printer to print from here. You can still download the PDF.')); return; }
+    if (!p) { printBox.replaceChildren(head('printer', '8 · Printing'), h('p', { class: 'hint' }, 'Add a printer to print from here. You can still download the PDF.')); return; }
     if (!printer || printer.configured === false) {
-      printBox.replaceChildren(head('printer', 'Printing'),
+      printBox.replaceChildren(head('printer', '8 · Printing'),
         h('p', { class: 'hint' }, `${p.name} has no CUPS print queue, so it can’t print from here. Download the PDF and print it from your computer, or set up CUPS and choose the queue under Printers → Edit.`));
       return;
     }
-    if (printer.error) { printBox.replaceChildren(head('printer', 'Printing'), ui.errorBox(printer.error, loadConfig)); return; }
+    if (printer.error) { printBox.replaceChildren(head('printer', '8 · Printing'), ui.errorBox(printer.error, loadConfig)); return; }
     const types = [['', 'Printer’s own choice'], ...printer.media_types.map((t) => [t.value, t.label])];
     const qualities = [['', 'Printer’s own choice'], ...printer.qualities.map((q) => [q.value, q.label])];
     const match = matchingMedia();
     const typeField = select('mediaType', 'Paper type', types, { hint: 'Label sheets usually print best as “Labels”.' });
     const qualityField = select('quality', 'Print quality', qualities);
-    printBox.replaceChildren(head('printer', `Print on ${p.name}`),
+    printBox.replaceChildren(head('printer', `8 · Print on ${p.name}`),
       match.length ? h('p', { class: 'hint' }, `Printed on ${match[0].label}, the paper this sheet is on.`)
         : h('p', { class: 'msg' }, `${p.name} doesn’t list this paper size, so printing is switched off. Download the PDF instead.`),
       h('div', { class: 'grid2' }, typeField, qualityField, plain('sheetCopies', 'Copies of the sheet', { max: 20 })),
@@ -266,12 +272,14 @@ export async function mount(root, kit) {
   function syncVisibility() {
     const isPack = S.kind === 'pack', t = pack();
     packField.hidden = !isPack; packCustom.hidden = !(isPack && !t); sizeFields.hidden = isPack; sizeLayout.hidden = isPack;
-    packNote.hidden = !isPack;
+    packNote.hidden = !isPack; packLayoutNote.hidden = !isPack;
     packNote.textContent = isPack ? `${S.packCols * S.packRows} labels on each sheet, ${shown(S.width)} × ${shown(S.height)} ${S.unit} each${t ? `, on ${t.paper === 'a4' ? 'A4' : 'US Letter'}` : ''}.` : '';
     paperSelect.disabled = Boolean(t);
     paperHint.textContent = t ? 'A label pack comes on one paper size. Choose “My own pack…” to use another.' : printer?.media?.length ? `The paper sizes ${printer.name} offers.` : 'Common paper sizes. Select a printer with CUPS to see the sizes it offers.';
     customRow.hidden = S.paper !== 'custom' || Boolean(t);
-    textPane.hidden = S.inputMode !== 'text'; csvPane.hidden = S.inputMode !== 'csv';
+    paperSelect.disabled = Boolean(t);
+    textPane.hidden = S.inputMode !== 'text'; csvPane.hidden = S.inputMode !== 'csv'; blankPane.hidden = S.inputMode !== 'blank';
+    textBox.hidden = S.inputMode === 'blank'; copyFields.hidden = S.inputMode === 'blank';
     gridRow.hidden = S.mode !== 'grid'; countRow.hidden = S.mode !== 'count';
     const part = S.area !== 'full';
     if (ctl.orientation) ctl.orientation.el.disabled = part;
@@ -377,7 +385,7 @@ export async function mount(root, kit) {
       if (c.used) continue;
       shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius);
       if (S.start > 1 && L.page === 1 && !c.lines.length) { ctx.fillStyle = '#eceff3'; ctx.fill(); }
-      ctx.strokeStyle = S.outline ? '#888' : '#dde1e7'; ctx.setLineDash(S.outline ? [] : [1.2, 1]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = '#dde1e7'; ctx.setLineDash([1.2, 1]); ctx.stroke(); ctx.setLineDash([]);
     }
     for (const c of L.cells) {
       if (!c.used) continue;
@@ -389,13 +397,32 @@ export async function mount(root, kit) {
       }
       shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius);
       if (look.border && look.border_width > 0) { ctx.strokeStyle = look.border; ctx.lineWidth = look.border_width; ctx.stroke(); ctx.lineWidth = 0.25; }
-      else if (S.outline) { ctx.strokeStyle = '#888'; ctx.stroke(); }
+      if (S.outline) { shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius); ctx.strokeStyle = '#666'; ctx.lineWidth = 0.25; ctx.stroke(); }  // the cut line
       ctx.textBaseline = 'alphabetic';
       for (const ln of c.lines) {
         ctx.font = `${look.italic ? 'italic ' : ''}${ln.bold ? 'bold ' : ''}${ln.size * 25.4 / 72}px ${FONT_CSS[look.family]}`;
         ctx.fillStyle = ln.color; ctx.fillText(ln.t, ln.x, ln.y);
       }
     }
+    if (S.marks) drawMarks(ctx, L);
+  }
+  function drawMarks(ctx, L) {  // cut marks in the margins beside the printed labels (the PDF draws the same ticks)
+    const used = L.cells.filter((c) => c.used);
+    if (!used.length) return;
+    const tick = 3, off = 1;
+    const xs = [...new Set(used.flatMap((c) => [c.x, c.x + c.w]))], ys = [...new Set(used.flatMap((c) => [c.y, c.y + c.h]))];
+    const top = Math.min(...used.map((c) => c.y)), bottom = Math.max(...used.map((c) => c.y + c.h));
+    const left = Math.min(...used.map((c) => c.x)), right = Math.max(...used.map((c) => c.x + c.w));
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 0.2; ctx.beginPath();
+    for (const x of xs) {
+      if (top - off - tick >= 0) { ctx.moveTo(x, top - off - tick); ctx.lineTo(x, top - off); }
+      if (bottom + off + tick <= L.page_h) { ctx.moveTo(x, bottom + off); ctx.lineTo(x, bottom + off + tick); }
+    }
+    for (const y of ys) {
+      if (left - off - tick >= 0) { ctx.moveTo(left - off - tick, y); ctx.lineTo(left - off, y); }
+      if (right + off + tick <= L.page_w) { ctx.moveTo(right + off, y); ctx.lineTo(right + off + tick, y); }
+    }
+    ctx.stroke();
   }
   canvas.addEventListener('click', (ev) => {
     if (!layout) return;
@@ -411,17 +438,17 @@ export async function mount(root, kit) {
   function request() {
     const [pw, ph] = paperSize();
     const sheet = S.kind === 'pack'
-      ? { kind: 'pack', paper: { width: pw, height: ph }, cols: S.packCols, rows: S.packRows, width: S.width, height: S.height, left: S.left, top: S.top, gap_x: S.gapX, gap_y: S.gapY }
+      ? { kind: 'pack', paper: { width: pw, height: ph }, cols: S.packCols, rows: S.packRows, width: S.width, height: S.height, left: S.left, top: S.top, gap_x: S.gapX, gap_y: S.gapY, area: S.area }
       : { kind: 'size', paper: { width: pw, height: ph }, width: S.width, height: S.height, margin: S.margin, gap: S.gap, mode: S.mode, cols: S.cols, rows: S.rows,
           count: S.count, orientation: S.orientation, align: S.align, area: S.area };
     return {
       sheet,
-      content: { mode: S.inputMode, text: S.text, per_line: S.perLine, csv: S.csv, template: S.csvTemplate },
+      content: { mode: S.inputMode, text: S.text, per_line: S.perLine, csv: S.csv, template: S.csvTemplate, count: S.blankCount },
       style: { size: S.auto ? null : S.size, align: S.textAlign, valign: S.valign, family: S.family, bold: S.bold, italic: S.italic, first_bold: S.firstBold,
         first_scale: S.firstScale, first_color: S.firstColor || null, color: S.color, line_spacing: S.lineSpacing, pad: S.pad, shape: S.shape, radius: S.radius,
         fill: S.fill || null, border: S.border || null, border_width: S.borderWidth,
         ...(logo ? { logo: { width: logo.width, height: logo.height, position: S.logoPosition, pct: S.logoPct } } : {}) },
-      copies: S.copies, fill: S.repeat, start: S.start, outline: S.outline, page: S.page,
+      copies: S.copies, fill: S.repeat, start: S.start, outline: S.outline, marks: S.marks, page: S.page,
       min_margin: minMargin(), borderless: matchingMedia().some((m) => m.borderless),
     };
   }
@@ -464,8 +491,9 @@ export async function mount(root, kit) {
     columns = layout.columns || [];
     paintColumns();
     csvNote.textContent = S.inputMode === 'csv' && columns.length ? `${layout.labels} labels from the spreadsheet. Columns: ${columns.join(', ')}.` : '';
+    const blank = S.inputMode === 'blank';
     summary.textContent = layout.labels
-      ? `${layout.labels} label${layout.labels === 1 ? '' : 's'} on ${layout.sheets} sheet${layout.sheets === 1 ? '' : 's'} (${layout.per_sheet} places each), text ${+layout.size.toFixed(1)} pt.`
+      ? `${layout.labels} ${blank ? 'blank ' : ''}label${layout.labels === 1 ? '' : 's'} on ${layout.sheets} sheet${layout.sheets === 1 ? '' : 's'} (${layout.per_sheet} places each)${blank ? '' : `, text ${+layout.size.toFixed(1)} pt`}.`
       : 'Type something to see it on the labels.';
     warnings.append(...layout.warnings.map((w) => h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, w))));
     paintPager(); syncButtons(); drawPreview();
@@ -502,12 +530,12 @@ export async function mount(root, kit) {
     const out = { unit: S.unit, kind: S.kind, paper: { width: pw, height: ph, ...(paper.keyword ? { media: paper.keyword } : {}), label: paper.label },
       look: { shape: S.shape, radius: S.radius, fill: S.fill || null, border: S.border || null, border_width: S.borderWidth, color: S.color, family: S.family, bold: S.bold, italic: S.italic, line_spacing: S.lineSpacing },
       text: { size: S.auto ? null : S.size, align: S.textAlign, valign: S.valign, pad: S.pad, first_bold: S.firstBold, first_scale: S.firstScale, first_color: S.firstColor || null },
-      copies: S.copies, repeat: S.repeat, outline: S.outline, sheet_copies: Number(S.sheetCopies) || 1 };
+      area: S.area, copies: S.copies, repeat: S.repeat, outline: S.outline, marks: S.marks, sheet_copies: Number(S.sheetCopies) || 1 };
     if (S.kind === 'pack') {
       out.pack = S.pack;
       if (!S.pack) { out.grid = { cols: S.packCols, rows: S.packRows, left: S.left, top: S.top, gap_x: S.gapX, gap_y: S.gapY }; out.size = { width: S.width, height: S.height }; }
     } else {
-      Object.assign(out, { size: { width: S.width, height: S.height }, orientation: S.orientation, area: S.area, margin: S.margin, gap: S.gap, mode: S.mode, align: S.align });
+      Object.assign(out, { size: { width: S.width, height: S.height }, orientation: S.orientation, margin: S.margin, gap: S.gap, mode: S.mode, align: S.align });
       if (S.mode === 'grid') { out.cols = S.cols; out.rows = S.rows; }
       if (S.mode === 'count') out.count = S.count;
     }
@@ -521,7 +549,7 @@ export async function mount(root, kit) {
     const x = p.settings;
     const before = controlState();
     const look = x.look || {}, text = x.text || {};
-    Object.assign(S, { unit: x.unit || 'mm', kind: x.kind || 'pack', start: 1, page: 1, copies: x.copies || 1, repeat: Boolean(x.repeat), outline: Boolean(x.outline),
+    Object.assign(S, { unit: x.unit || 'mm', kind: x.kind || 'pack', start: 1, page: 1, copies: x.copies || 1, repeat: Boolean(x.repeat), outline: Boolean(x.outline), marks: Boolean(x.marks), area: ['top', 'bottom'].includes(x.area) ? x.area : 'full',
       shape: look.shape || 'rect', radius: look.radius ?? 2, fill: look.fill || '', border: look.border || '', borderWidth: look.border_width ?? 0.3, color: look.color || '#000000',
       family: look.family || 'sans', bold: Boolean(look.bold), italic: Boolean(look.italic), lineSpacing: look.line_spacing ?? 1.2,
       auto: text.size === null, size: text.size ?? S.size, textAlign: text.align || 'left', valign: text.valign || 'middle', pad: text.pad ?? 2,
@@ -532,7 +560,7 @@ export async function mount(root, kit) {
       if (t) Object.assign(S, { packCols: t.cols, packRows: t.rows, width: t.width, height: t.height, left: t.left, top: t.top, gapX: t.gap_x, gapY: t.gap_y });
       else if (x.grid) Object.assign(S, { packCols: x.grid.cols, packRows: x.grid.rows, left: x.grid.left, top: x.grid.top, gapX: x.grid.gap_x, gapY: x.grid.gap_y, width: x.size.width, height: x.size.height });
     } else {
-      Object.assign(S, { width: x.size.width, height: x.size.height, orientation: x.orientation || 'auto', area: ['top', 'bottom'].includes(x.area) ? x.area : 'full',
+      Object.assign(S, { width: x.size.width, height: x.size.height, orientation: x.orientation || 'auto',
         margin: x.margin ?? 5, gap: x.gap ?? 2, mode: x.mode || 'fill', align: x.align || 'center' });
       if (x.cols) S.cols = x.cols;
       if (x.rows) S.rows = x.rows;
@@ -638,7 +666,7 @@ export async function mount(root, kit) {
   }
 
   // ------------------------------------------------------------------ assemble the page
-  const form = h('div', { class: 'ps-form' }, presetBox, contentBox, sheetBox, paperBox, lookBox, textBox, countBox, finishBox, printBox,
+  const form = h('div', { class: 'ps-form' }, presetBox, sheetBox, paperBox, lookBox, contentBox, textBox, countBox, finishBox, printBox,
     h('section', { class: 'card lb-card narrow-only' }, head('printer', 'Make the sheet'), actionRow()));
   const side = h('aside', { class: 'ps-side' }, h('div', { class: 'sticky-col' },
     h('div', { class: 'card lb-card preview-card' }, h('div', { class: 'sheet-wrap' }, canvas), pager, summary, warnings),

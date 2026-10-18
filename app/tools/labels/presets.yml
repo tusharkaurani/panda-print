@@ -6,11 +6,12 @@
 #   pack      the id of a pack in templates.yml, or empty for your own measurements (then `grid` and `size` are needed)
 #   paper     {width, height, media?, label?}   portrait size; `media` is the CUPS paper name, used when the printer offers it
 #   size      {width, height}   one label (kind: size)
-#   orientation auto | portrait | landscape;  area full | top | bottom;  margin, gap;  mode fill | grid | count; align center | start
+#   area      full | top | bottom   use only the top or the bottom half of the sheet; the rest stays blank (packs and plain sheets)
+#   orientation auto | portrait | landscape;  margin, gap;  mode fill | grid | count; align center | start   (plain sheets)
 #   look      shape rect | rounded | ellipse, radius, fill, border (colours as #rrggbb), border_width, color, family sans | serif | mono,
 #             bold, italic, line_spacing
 #   text      size (points, or null for the largest that fits), align, valign, pad, first_bold, first_scale, first_color
-#   copies, repeat, outline, media_type, quality, sheet_copies
+#   copies, repeat, outline (cut line around each label), marks (cut marks), media_type, quality, sheet_copies
 presets:
 - id: address-21
   name: Address labels, 21 per A4 sheet

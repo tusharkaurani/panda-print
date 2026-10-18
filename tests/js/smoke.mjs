@@ -133,7 +133,10 @@ async function labelScenario() {
   await fire('lb-inputMode', 'csv');
   await fire('lb-csv', 'Name,City\nAda,London', 'input'); await fire('lb-csvtemplate', '{Name}', 'input');
   const chip = $$('.lb .chips .chip.col')[0]; if (!chip) problems.push('no column chips after reading a spreadsheet'); else { chip.click(); await settle(); }
+  await fire('lb-inputMode', 'blank'); await fire('lb-blankCount', '5', 'input');
+  if (el('lb-text').parentElement.hidden === false && el('lb-text').parentElement.parentElement.hidden === false) problems.push('the text pane should be hidden for blank labels');
   await fire('lb-inputMode', 'text');
+  for (const area of ['top', 'bottom', 'full']) await fire('lb-area', area);  // a half page works for a pack too
   // a plain sheet, laid out by label size
   await fire('lb-kind', 'size');
   if (!$$('#lb-sizepick option').length || $$('#lb-sizepick option').length < 10) problems.push('the common sizes list is empty');
@@ -155,7 +158,7 @@ async function labelScenario() {
   await fire('lb-firstColor', '#cc0000', 'input'); await fire('lb-firstScale', '1.5', 'input'); await fire('lb-lineSpacing', '1.4', 'input');
   await fire('lb-auto', true); await fire('lb-auto', false);
   await fire('lb-textAlign', 'center'); await fire('lb-valign', 'top'); await fire('lb-pad', '2', 'input'); await fire('lb-size', '9', 'input');
-  await fire('lb-copies', '3', 'input'); await fire('lb-start', '4', 'input'); await fire('lb-repeat', true); await fire('lb-outline', true);
+  await fire('lb-copies', '3', 'input'); await fire('lb-start', '4', 'input'); await fire('lb-repeat', true); await fire('lb-outline', true); await fire('lb-marks', true);
   await fire('lb-unit', 'in'); await fire('lb-unit', 'mm');
   $('.sheet-canvas').dispatchEvent(new FakeEvent('click', { clientX: 10, clientY: 10, bubbles: true })); await settle();
   // presets fill the form in

@@ -11,7 +11,7 @@ from app.tools.photosheet.presets import PresetError, _int, _num, clean_name, lo
 TABLE = "lb_presets"
 MIGRATIONS = ["CREATE TABLE IF NOT EXISTS lb_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, created_at REAL NOT NULL);"]
 KEYS = {"unit", "kind", "pack", "grid", "paper", "size", "orientation", "area", "margin", "gap", "mode", "cols", "rows", "count", "align",
-        "look", "text", "copies", "repeat", "outline", "media_type", "quality", "resolution", "sheet_copies"}
+        "look", "text", "copies", "repeat", "outline", "marks", "media_type", "quality", "resolution", "sheet_copies"}
 LOOK_KEYS = {"shape", "radius", "fill", "border", "border_width", "color", "family", "bold", "italic", "line_spacing"}
 TEXT_KEYS = {"size", "align", "valign", "pad", "first_bold", "first_scale", "first_color"}
 
@@ -76,17 +76,12 @@ def clean_settings(raw) -> dict:
         out["size"] = {"width": _num(size, "width", lay.MIN_PHOTO_MM, lay.MAX_PHOTO_MM, "The label width"),
                        "height": _num(size, "height", lay.MIN_PHOTO_MM, lay.MAX_PHOTO_MM, "The label height")}
         out["orientation"] = raw.get("orientation", "auto")
-        out["area"] = raw.get("area", "full")
         out["mode"] = raw.get("mode", "fill")
         out["align"] = raw.get("align", "center")
         out["margin"] = _num(raw, "margin", 0, lay.MAX_MARGIN_MM, "The margin") if "margin" in raw else 5.0
         out["gap"] = _num(raw, "gap", 0, lay.MAX_GAP_MM, "The gap") if "gap" in raw else 2.0
         if out["orientation"] not in ("auto", "portrait", "landscape"):
             raise PresetError("The sheet direction must be automatic, portrait or landscape.")
-        if out["area"] not in lay.AREAS:
-            raise PresetError("The part of the page must be full, top or bottom.")
-        if out["area"] != "full" and out["orientation"] == "landscape":
-            raise PresetError("A half page can't be combined with a landscape sheet.")
         if out["mode"] not in ("fill", "grid", "count"):
             raise PresetError("How many must be fill, grid or count.")
         if out["align"] not in ("center", "start"):
@@ -95,6 +90,11 @@ def clean_settings(raw) -> dict:
             out["cols"], out["rows"] = _int(raw, "cols", 1, 99, "Columns"), _int(raw, "rows", 1, 99, "Rows")
         if out["mode"] == "count":
             out["count"] = _int(raw, "count", 1, sh.MAX_LABELS, "The number of labels")
+    out["area"] = raw.get("area", "full")
+    if out["area"] not in lay.AREAS:
+        raise PresetError("The part of the page must be full, top or bottom.")
+    if out["area"] != "full" and out.get("orientation") == "landscape":
+        raise PresetError("A half page can't be combined with a landscape sheet.")
     look = raw.get("look", {})
     if not isinstance(look, dict) or set(look) - LOOK_KEYS:
         raise PresetError("The look of the labels isn't valid.")
@@ -124,7 +124,8 @@ def clean_settings(raw) -> dict:
         raise PresetError("Choose left, centre or right, and top or middle.")
     out["copies"] = _int(raw, "copies", 1, 100, "Copies of each label", 1)
     out["repeat"] = _bool(raw, "repeat", False, "Repeat to fill the sheet")
-    out["outline"] = _bool(raw, "outline", False, "Guide outlines")
+    out["outline"] = _bool(raw, "outline", False, "Cut lines")
+    out["marks"] = _bool(raw, "marks", False, "Cut marks")
     mt = raw.get("media_type")
     if mt not in (None, ""):
         if not isinstance(mt, str) or len(mt) > 80:

@@ -95,6 +95,33 @@ def test_every_shipped_pack_fits_its_paper():
         S.pack_sheet(t["paper_width"], t["paper_height"], t["cols"], t["rows"], t["width"], t["height"], t["left"], t["top"], t["gap_x"], t["gap_y"])
 
 
+def test_a_pack_can_use_only_its_top_or_bottom_half_to_save_the_rest_for_later():
+    top, bottom = l7160(area="top"), l7160(area="bottom")
+    assert top.per_sheet == 12 and bottom.per_sheet == 9 and top.per_sheet + bottom.per_sheet == 21  # together, the whole sheet
+    assert all(c["y"] + c["h"] / 2 < 148.5 for c in top.cells) and all(c["y"] + c["h"] / 2 > 148.5 for c in bottom.cells)
+    assert top.area == "top" and top.region["h"] == pytest.approx(148.5) and bottom.region["y"] == pytest.approx(148.5)
+    assert any("12 labels in the top half" in w for w in top.warnings) and not l7160().warnings
+    with pytest.raises(S.SheetError, match="half"):
+        l7160(area="left")
+    with pytest.raises(S.SheetError, match="No label"):
+        S.pack_sheet(210, 297, 1, 1, 60, 200, 5, 90, area="top")  # the only label starts in the lower half
+
+
+def test_labels_flow_into_the_chosen_half_only():
+    r = S.compute(l7160(area="bottom"), [[f"L{i}"] for i in range(12)], style())
+    assert len(r.pages) == 2 and r.pages[0][0]["y"] > 148.5 and sum(1 for c in r.pages[0] if c["used"]) == 9 and r.pages[0][0]["lines"][0]["t"] == "L0"
+
+
+def test_blank_labels_print_their_background_with_no_text():
+    r = S.compute(plain(), [[]], style(fill="#ffeecc", shape="ellipse", border="#aa7700"), fill=True)
+    assert r.labels == 24 and all(c["used"] and c["lines"] == [] for c in r.pages[0])
+    body = P.build(r)
+    assert b"1 0.933 0.8 rg" in body and b" Tj" not in body and b"BT" not in body  # colour and border, but no text objects
+    assert body.count(b" f Q") == 24
+    few = S.compute(plain(), [[]] * 5, style())
+    assert few.labels == 5 and sum(1 for c in few.pages[0] if c["used"]) == 5
+
+
 # ------------------------------------------------------------------ a plain sheet laid out by label size
 
 def test_a_plain_sheet_is_filled_by_label_size_like_the_passport_tool():
@@ -379,10 +406,33 @@ def test_colours_shapes_and_borders_are_drawn_only_when_chosen():
     assert b" re" in square and b" c h" not in square
 
 
-def test_guide_outlines_cover_every_place_and_only_when_asked():
-    r = S.compute(l7160(), [["A"]], style())
-    assert P.build(r).count(b" re S") == 0
-    assert P.build(r, outline=True).count(b" re S") == 21
+def test_cut_lines_go_around_each_printed_label_in_its_shape_and_only_when_asked():
+    r = S.compute(l7160(), [["A"], ["B"]], style(), start=2)
+    assert P.build(r).count(b" S\n") == 0
+    assert P.build(r, outline=True).count(b" re S") == 2  # two labels, none of the 19 empty places
+    round_ = S.compute(l7160(), [["A"], ["B"]], style(shape="ellipse"))
+    cut = P.build(round_, outline=True)
+    assert cut.count(b" c h S") == 2 and b" re S" not in cut  # a circle is cut round, not square
+    assert P.build(S.compute(l7160(), [], style()), outline=True).count(b" S\n") == 0  # nothing printed, nothing to cut
+
+
+def test_cut_marks_sit_in_the_margins_beside_the_labels_and_only_when_asked():
+    r = S.compute(plain(), [["A"]], style(), fill=True)
+    marks = P.build(r, marks=True)
+    assert marks.count(b" l S") > 20 and P.build(r).count(b" l S") == 0  # ticks for every column and row edge, top and bottom, left and right
+    ticks = re.findall(rb"([\d.]+) ([\d.]+) m ([\d.]+) ([\d.]+) l S", marks)
+    first = r.pages[0][0]
+    for x1, y1, x2, y2 in ticks:  # a tick never lands on a label
+        x1, y1, x2, y2 = (float(v) / PT for v in (x1, y1, x2, y2))
+        y1, y2 = 297 - y1, 297 - y2
+        assert not any(c["x"] + 0.01 < x1 < c["x"] + c["w"] - 0.01 and c["y"] + 0.01 < y1 < c["y"] + c["h"] - 0.01 for c in r.pages[0])
+    assert P.build(S.compute(l7160(), [], style()), marks=True).count(b" l S") == 0
+
+
+def test_cut_marks_are_left_out_where_the_margin_has_no_room():
+    r = S.compute(S.size_sheet(210, 297, 40, 40, margin=1, gap=0, mode="grid", cols=2, rows=2), [["A"]], style(), fill=True)
+    top_ticks = [t for t in re.findall(rb"([\d.]+) ([\d.]+) m ([\d.]+) ([\d.]+) l S", P.build(r, marks=True)) if float(t[1]) / PT > 297 - 4]
+    assert all(float(t[3]) / PT <= 297 for t in top_ticks)  # nothing is drawn off the page
 
 
 def test_a_logo_is_embedded_once_and_drawn_clipped_on_every_used_label():
@@ -439,6 +489,18 @@ def test_a_preset_is_checked_and_filled_in_with_defaults():
 def test_bad_presets_are_refused_in_plain_words(change, words):
     with pytest.raises(pre.PresetError, match=words):
         pre.clean_settings({**PACK_PRESET, **change})
+
+
+def test_a_preset_can_use_a_half_page_for_a_pack_and_keeps_cut_lines():
+    x = pre.clean_settings({**PACK_PRESET, "area": "bottom", "outline": True, "marks": True})
+    assert x["area"] == "bottom" and x["outline"] is True and x["marks"] is True
+    assert pre.clean_settings(PACK_PRESET)["area"] == "full" and pre.clean_settings(PACK_PRESET)["marks"] is False
+    with pytest.raises(pre.PresetError, match="top or bottom"):
+        pre.clean_settings({**PACK_PRESET, "area": "left"})
+    with pytest.raises(pre.PresetError, match="half page"):
+        pre.clean_settings({**SIZE_PRESET, "area": "top", "orientation": "landscape"})
+    with pytest.raises(pre.PresetError, match="true or false"):
+        pre.clean_settings({**PACK_PRESET, "marks": 1})
 
 
 def test_a_preset_for_your_own_pack_needs_its_measurements_and_a_size_preset_its_size():
@@ -498,6 +560,31 @@ def test_layout_returns_the_placed_text_and_the_look_for_the_preview(rig):
     assert d["look"]["shape"] == "rect" and d["look"]["family"] == "sans" and d["area"] == "full" and d["orientation"] == "portrait"
 
 
+def test_a_pack_half_page_through_the_api(rig):
+    d = rig.post("layout", rig.body(sheet={**rig.body()["sheet"], "area": "top"})).get_json()["data"]
+    assert d["per_sheet"] == 12 and d["area"] == "top" and d["region"]["h"] == pytest.approx(148.5) and any("top half" in w for w in d["warnings"])
+    assert rig.post("layout", rig.body(sheet={**rig.body()["sheet"], "area": "side"})).status_code == 400
+
+
+def test_blank_labels_through_the_api(rig):
+    d = rig.post("layout", rig.body(content={"mode": "blank", "count": 0})).get_json()["data"]
+    assert d["labels"] == 21 and all(c["used"] and not c["lines"] for c in d["cells"])  # 0 fills the sheet
+    five = rig.post("layout", rig.body(content={"mode": "blank", "count": 5}, copies=7, fill=True)).get_json()["data"]
+    assert five["labels"] == 5  # copies and repeat don't apply to blanks
+    assert rig.post("layout", rig.body(content={"mode": "blank", "count": -1})).status_code == 400
+    assert rig.post("layout", rig.body(content={"mode": "blank", "count": 99999})).status_code == 400
+    assert rig.post("layout", rig.body(content={"mode": "blank", "count": 3}, start=4)).get_json()["data"]["cells"][3]["used"]
+    r = rig.post("pdf", rig.body(content={"mode": "blank", "count": 0}, style={"size": 11, "fill": "#ffeecc"}))
+    assert r.status_code == 200 and b" Tj" not in r.data and r.data.count(b" f Q") == 21
+
+
+def test_cut_lines_and_marks_are_asked_for_in_the_request(rig):
+    plain_pdf = rig.post("pdf").data
+    cut = rig.post("pdf", {**rig.body(), "outline": True, "marks": True}).data
+    assert b" re S" not in plain_pdf and b" l S" not in plain_pdf
+    assert cut.count(b" re S") == 2 and b" l S" in cut
+
+
 def test_a_plain_sheet_through_the_api(rig):
     d = rig.post("layout", rig.body(sheet=plain_sheet(), style={"size": 11, "shape": "ellipse", "fill": "#ffeecc", "border": "#aa7700", "family": "serif"},
                                     fill=True)).get_json()["data"]
@@ -527,7 +614,7 @@ def test_layout_reports_a_picture_placement_from_its_size_alone(rig):
 
 
 @pytest.mark.parametrize("change,words", [
-    ({"copies": 0}, "Copies"), ({"copies": "2"}, "whole number"), ({"start": 99}, "1 to 21"), ({"content": {"mode": "pdf"}}, "typed text or a spreadsheet"),
+    ({"copies": 0}, "Copies"), ({"copies": "2"}, "whole number"), ({"start": 99}, "1 to 21"), ({"content": {"mode": "pdf"}}, "or blank labels"),
     ({"content": {"mode": "text", "text": 5}}, "text wasn"), ({"content": {"mode": "csv", "csv": "A,B\n1,2\n", "template": "{Z}"}}, "no column"),
     ({"style": {"size": "big"}}, "text size"), ({"style": {"shape": "star"}}, "Choose square"), ({"style": {"fill": "red"}}, "colour"),
     ({"style": {"family": "comic"}}, "font"), ({"style": {"logo": 5}}, "logo"), ({"style": {"logo": {"width": 0, "height": 5}}}, "logo"),

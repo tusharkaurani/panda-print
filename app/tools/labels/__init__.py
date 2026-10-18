@@ -92,7 +92,7 @@ def create(ctx: AppContext) -> Tool:
         if kind == "pack":
             return sh.pack_sheet(pw, ph, whole(s, "cols", "The columns"), whole(s, "rows", "The rows"), num(s, "width", "The label width"),
                                  num(s, "height", "The label height"), num(s, "left", "The left margin", 0), num(s, "top", "The top margin", 0),
-                                 num(s, "gap_x", "The gap across", 0), num(s, "gap_y", "The gap down", 0))
+                                 num(s, "gap_x", "The gap across", 0), num(s, "gap_y", "The gap down", 0), str(s.get("area", "full")))
         if kind != "size":
             raise BadRequest("Choose a label pack, or lay the labels out by size.")
         margin = s.get("margin", 5)
@@ -140,14 +140,20 @@ def create(ctx: AppContext) -> Tool:
             if not isinstance(c.get("text", ""), str) or not isinstance(c.get("csv", ""), str) or not isinstance(c.get("template", ""), str):
                 raise BadRequest("The label text wasn't understood.")
             columns: list[str] = []
+            blank_fill = False
             if mode == "csv":
                 labels, columns = sh.labels_from_csv(c.get("csv", ""), c.get("template", ""))
             elif mode == "text":
                 labels = sh.labels_from_text(c.get("text", ""), bool(c.get("per_line", False)))
+            elif mode == "blank":  # labels with a background but no text, to write on by hand
+                n = whole(c, "count", "The number of blank labels", 0)
+                if not 0 <= n <= sh.MAX_LABELS:
+                    raise BadRequest(f"The number of blank labels must be from 0 (fill the sheet) to {sh.MAX_LABELS}.")
+                labels, blank_fill = [[]] * max(n, 1), n == 0
             else:
-                raise BadRequest("Choose typed text or a spreadsheet.")
-            result = sh.compute(sheet, labels, read_style(st), copies=whole(raw, "copies", "Copies of each label", 1), fill=bool(raw.get("fill", False)),
-                                start=whole(raw, "start", "The first place", 1))
+                raise BadRequest("Choose typed text, a spreadsheet, or blank labels.")
+            result = sh.compute(sheet, labels, read_style(st), copies=1 if mode == "blank" else whole(raw, "copies", "Copies of each label", 1),
+                                fill=blank_fill or (bool(raw.get("fill", False)) and mode != "blank"), start=whole(raw, "start", "The first place", 1))
         except sh.SheetError as e:
             raise BadRequest(str(e)) from None
         if s.get("kind", "pack") == "pack" and min_margin:
@@ -193,7 +199,8 @@ def create(ctx: AppContext) -> Tool:
     def pdf_for(raw: dict, logo, result: sh.Result, for_media: bool) -> bytes:
         if result.style.logo and logo is None:
             raise BadRequest("The logo picture is missing. Choose it again.")
-        return pdf.build(result, outline=bool(raw.get("outline", False)), title="Labels", logo=logo if result.style.logo else None, for_media=for_media)
+        return pdf.build(result, outline=bool(raw.get("outline", False)), marks=bool(raw.get("marks", False)), title="Labels",
+                         logo=logo if result.style.logo else None, for_media=for_media)
 
     def printer_or_404(pid: str):
         printer = ctx.printers.get(pid or "")

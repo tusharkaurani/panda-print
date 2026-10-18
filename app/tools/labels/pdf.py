@@ -43,9 +43,10 @@ def _path(shape: str, x: float, y: float, w: float, h: float, r: float) -> str:
         f"{_n(x)} {_n(y + r - k)} {_n(x + r - k)} {_n(y)} {_n(x + r)} {_n(y)} c h"])
 
 
-def build(result: Result, *, outline: bool = False, title: str = "Labels", logo: tuple[bytes, Jpeg] | None = None, for_media: bool = False) -> bytes:
-    """The PDF bytes. `outline` draws a thin guide around every place (to test on plain paper). `logo` is the picture for
-    every label. `for_media`: a landscape layout is turned onto a portrait page, the way paper is fed into the printer."""
+def build(result: Result, *, outline: bool = False, marks: bool = False, title: str = "Labels", logo: tuple[bytes, Jpeg] | None = None,
+          for_media: bool = False) -> bytes:
+    """The PDF bytes. `outline` draws a thin cut line around every label that is printed, in the label's shape; `marks` draws
+    small cut marks beside the labels, in the margins. `logo` is the picture for every label. `for_media`: a landscape layout is turned onto a portrait page, the way paper is fed into the printer."""
     sheet, st = result.sheet, result.style
     lw, lh = sheet.paper_w, sheet.paper_h
     rotate = for_media and lw > lh
@@ -70,10 +71,30 @@ def build(result: Result, *, outline: bool = False, title: str = "Labels", logo:
         add = lambda text: ops.append(text.encode("latin-1"))
         if rotate:
             add(f"0 1 -1 0 {_n(pt(lh))} 0 cm")  # a quarter turn: the sheet's top-left lands at the page's top-right
-        if outline:
-            add("q 0.25 w 0.6 G")
-            for c in page:
-                add(_path("rect", *rect(c), 0) + " S")
+        used = [c for c in page if c.get("used")]
+        if outline and used:
+            add("q 0.25 w 0.45 G")
+            for c in used:
+                add(_path(st.shape, *rect(c), pt(radius)) + " S")
+            add("Q")
+        if marks and used:
+            add("q 0.25 w 0.2 G")
+            tick, off = 3.0, 1.0
+            xs = sorted({c["x"] for c in used} | {c["x"] + c["w"] for c in used})
+            ys = sorted({c["y"] for c in used} | {c["y"] + c["h"] for c in used})
+            top, bottom = min(c["y"] for c in used), max(c["y"] + c["h"] for c in used)
+            left, right = min(c["x"] for c in used), max(c["x"] + c["w"] for c in used)
+            line = lambda x1, y1, x2, y2: add(f"{_n(pt(x1))} {_n(pt(lh - y1))} m {_n(pt(x2))} {_n(pt(lh - y2))} l S")
+            for x in xs:
+                if top - off - tick >= 0:
+                    line(x, top - off - tick, x, top - off)
+                if bottom + off + tick <= lh:
+                    line(x, bottom + off, x, bottom + off + tick)
+            for y in ys:
+                if left - off - tick >= 0:
+                    line(left - off - tick, y, left - off, y)
+                if right + off + tick <= lw:
+                    line(right + off, y, right + off + tick, y)
             add("Q")
         for c in page:
             if not c.get("used"):

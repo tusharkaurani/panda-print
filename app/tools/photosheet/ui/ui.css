@@ -10,7 +10,7 @@
 .ps-head svg { box-sizing: content-box; padding: 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
 .ps .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ps .three { display: grid; grid-template-columns: 1fr 1fr 96px; gap: 12px; }
-.ps .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 14px; }
+.ps .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 14px; align-items: start; }
 .ps .static { font-weight: 600; padding: 9px 0; }
 .ps .hint { margin: 0; }
 
