@@ -11,6 +11,15 @@ export const ARTS = {
     s('path', { d: 'M52 22h-8M52 78h-8M108 22h8M108 78h8M62 14v-8M98 14v-8M62 86v8M98 86v8', stroke: M, 'stroke-width': 1.5, fill: 'none' }),
     s('rect', { x: 118, y: 94, width: 14, height: 18, rx: 1.5, fill: '#dbeaf6', stroke: K }), s('rect', { x: 136, y: 94, width: 14, height: 18, rx: 1.5, fill: '#dbeaf6', stroke: K }),
   ],
+  collage: (s) => [
+    s('rect', { x: 34, y: 8, width: 92, height: 104, rx: 3, fill: P, stroke: G }),
+    s('rect', { x: 40, y: 14, width: 80, height: 48, rx: 2, fill: '#dbeaf6', stroke: K, 'stroke-width': 1.2 }),
+    s('path', { d: 'M40 62l22-22 14 14 12-9 32 25', fill: '#9ccdb0', stroke: 'none' }), s('circle', { cx: 100, cy: 28, r: 6, fill: Y }),
+    s('rect', { x: 40, y: 68, width: 38, height: 38, rx: 2, fill: '#fbd6e4', stroke: K, 'stroke-width': 1.2 }),
+    s('circle', { cx: 59, cy: 82, r: 7, fill: '#f1c9a5' }), s('path', { d: 'M44 106c1-10 7-14 15-14s14 4 15 14z', fill: M }),
+    s('rect', { x: 82, y: 68, width: 38, height: 38, rx: 2, fill: '#fff2c4', stroke: K, 'stroke-width': 1.2 }),
+    s('path', { d: 'M82 106l14-18 10 12 6-6 8 12z', fill: '#f0b429', stroke: 'none' }),
+  ],
   worksheet: (s) => [
     s('rect', { x: 38, y: 8, width: 84, height: 104, rx: 3, fill: P, stroke: G }),
     s('rect', { x: 48, y: 17, width: 40, height: 6, rx: 2, fill: C }),

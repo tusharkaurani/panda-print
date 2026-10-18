@@ -1,0 +1,18 @@
+# Photo Collage Sheet presets that ship with the app: a name and the choices to apply (never the photos).
+# People can save their own presets in the app. To ship one with the code, add an entry under `presets:` here; the server
+# writes the text for a saved preset at /api/collage/presets/<id>/yaml. Lengths are in millimetres.
+#
+#   id            a short stable name (letters, digits, dashes)
+#   name          shown on the preset button
+#   settings:
+#     unit        mm | cm | in            how lengths are shown in the form
+#     paper       {width, height, media?, label?}   portrait size; `media` is the CUPS paper name, used when the printer offers it
+#     orientation auto | portrait | landscape
+#     area        full | top | bottom   use only the top or the bottom half of the paper; the rest stays blank
+#     margin, gap mm
+#     fit         fill (crop each photo to its place) | fit (show all of it)
+#     outline     true | false     a thin line around each photo
+#     media_type  a CUPS paper type, e.g. stationery (plain) or photographic-glossy; used when offered
+#     quality     3 draft | 4 normal | 5 high
+#     copies      copies of the whole sheet
+presets: []  # none ship yet: save your own in the app, then copy its YAML here

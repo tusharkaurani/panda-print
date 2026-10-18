@@ -66,6 +66,13 @@ def fixtures(app, variant: str) -> dict:
         body = {**base, "images": [{"width": 700, "height": 900}] * n, "counts": [1] * n}
         r = client.post("/api/photosheet/layout", json=body, headers=h)
         fx[f"POST /photosheet/layout#{n}"] = r.get_json()["data"]
+    fx["GET /collage/config?printer=no"] = get(client, "/api/collage/config")
+    fx["GET /collage/config?printer=yes"] = get(client, f"/api/collage/config?printer={PID}")
+    fx["GET /collage/presets"] = get(client, "/api/collage/presets")
+    for n in (1, 3, 5):
+        r = client.post("/api/collage/layout", json={"paper": {"width": 210, "height": 297}, "margin": 5, "gap": 3, "orientation": "auto",
+                                                      "images": ([{"width": 1500, "height": 1000}, {"width": 700, "height": 1000}] * 3)[:n]}, headers=h)
+        fx[f"POST /collage/layout#{n}"] = r.get_json()["data"]
     fx["GET /labels/config?printer=no"] = get(client, "/api/labels/config")
     fx["GET /labels/config?printer=yes"] = get(client, f"/api/labels/config?printer={PID}")
     fx["GET /labels/presets"] = get(client, "/api/labels/presets")
@@ -133,6 +140,17 @@ def test_the_label_sheet_tab_opens_and_every_control_works(tmp_path, make_app_mo
     assert result["calls"] >= 3 and "Print these labels?" in result["text"]
 
 
+def test_the_photo_collage_tab_opens_and_every_control_works(tmp_path, make_app_module):
+    """Adds photos, tries other arrangements, swaps two photos, crop and fit, every part of the page, units and presets."""
+    result = run(tmp_path, fixtures(make_app_module("normal"), "normal"), "collage", scenario="collage")
+    assert result["calls"] >= 3
+
+
+def test_the_photo_collage_tab_without_cups_still_shows_and_explains(tmp_path, make_app_module):
+    result = run(tmp_path, fixtures(make_app_module("no-cups"), "no-cups"), "collage")
+    assert "no CUPS print queue" in result["text"]
+
+
 def test_the_label_sheet_tab_without_cups_still_shows_and_explains(tmp_path, make_app_module):
     result = run(tmp_path, fixtures(make_app_module("no-cups"), "no-cups"), "labels")
     assert "no CUPS print queue" in result["text"]
@@ -147,7 +165,7 @@ def test_the_printer_maintenance_tabs_open_in_every_state(tmp_path, make_app_mod
 def test_the_print_utilities_tab_opens_with_the_built_in_tool_and_no_chatter(tmp_path, make_app_module):
     result = run(tmp_path, fixtures(make_app_module("normal"), "normal"), "utilities")
     text = result["text"]
-    assert "Built in" in text and "Passport Sheet Maker" in text and "Label Sheet Maker" in text  # the photo tool is a card on this page
+    assert "Built in" in text and "Passport Sheet Maker" in text and "Label Sheet Maker" in text and "Photo Collage Sheet" in text  # the photo tool is a card on this page
     assert "Photos & IDs" in text and "checked" not in text and "Sites change" not in text  # and the page carries no disclaimer text
 
 

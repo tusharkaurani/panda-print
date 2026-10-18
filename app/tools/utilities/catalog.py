@@ -16,7 +16,7 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-ARTS = {"passport", "worksheet", "math", "handwriting", "colouring", "calendar", "graph", "lined", "dots",
+ARTS = {"passport", "collage", "worksheet", "math", "handwriting", "colouring", "calendar", "graph", "lined", "dots",
         "pdf", "poster", "labels", "craft", "document"}
 KNOWN_TOOL_KEYS = {"name", "url", "description", "art", "image"}
 KNOWN_CATEGORY_KEYS = {"name", "description", "tools"}

@@ -39,6 +39,8 @@ async function api(p, opts = {}) {
     hit = fx[`${key}#${n}`] || fx[`${key}#1`];
   }
   if (key === 'POST /labels/layout') hit = fx[`${key}#${opts.body?.sheet?.kind === 'size' ? 'size' : opts.body?.content?.mode === 'csv' ? 'csv' : 'text'}`];
+  if (key === 'POST /collage/layout') { const n = opts.body?.images?.length || 1; hit = fx[`${key}#${n <= 1 ? 1 : n <= 3 ? 3 : 5}`]; }  // the recorded answer for about this many photos
+  if (key === 'GET /collage/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (key === 'GET /labels/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (key === 'GET /photosheet/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (hit === undefined) {
@@ -189,6 +191,41 @@ async function labelScenario() {
   await settle();
 }
 
+async function collageScenario() {
+  const el = (id) => document.getElementById(id);
+  const input = $('.cl input[type=file]');
+  input.files = [fakeFile('a.png'), fakeFile('b.png'), fakeFile('c.png')];
+  input.dispatchEvent(new FakeEvent('change'));
+  await settle();
+  const rows = $$('.photo-row').length;
+  if (rows !== 3) problems.push(`expected 3 photo rows after adding 3 photos, got ${rows}`);
+  if (!/Arrangement 1 of/.test($('.variant-label')?.textContent || '')) problems.push('no arrangement picker after adding photos');
+  const next = $$('.variant-row button').find((b) => /Next/.test(b.textContent)); if (next && !next.disabled) { next.click(); await settle(); }
+  const prev = $$('.variant-row button').find((b) => /Previous/.test(b.textContent)); if (prev && !prev.disabled) { prev.click(); await settle(); }
+  const canvasEl = $('.sheet-canvas');
+  canvasEl.dispatchEvent(new FakeEvent('click', { clientX: 10, clientY: 10, bubbles: true })); await settle();
+  canvasEl.dispatchEvent(new FakeEvent('click', { clientX: 100, clientY: 200, bubbles: true })); await settle();
+  const adjust = $$('.adjust')[0]; adjust.open = true; adjust.dispatchEvent(new FakeEvent('toggle')); await settle();
+  change($('.adjust select'), 'fit'); await settle();
+  const useAll = $$('.adjust-body .btn').find((b) => /Use for all/.test(b.textContent)); if (useAll) useAll.click(); await settle();
+  for (const o of ['portrait', 'landscape', 'auto']) { change(el('cl-orientation'), o); await settle(); }
+  for (const a of ['top', 'bottom', 'full']) { change(el('cl-area'), a); await settle(); }
+  typeInto(el('cl-margin'), '6'); typeInto(el('cl-gap'), '4'); await settle();
+  change(el('cl-paper'), 'custom'); typeInto(el('cl-customW'), '150', 'input'); await settle(); change(el('cl-paper'), $$('#cl-paper option')[0].value); await settle();
+  change(el('cl-unit'), 'in'); await settle(); change(el('cl-unit'), 'mm'); await settle();
+  el('cl-outline').checked = true; change(el('cl-outline')); await settle();
+  change(el('cl-fit'), 'fit'); await settle();
+  const chips = $$('.cl .chip-wrap .chip');
+  const save = $$('button').find((b) => /Save these settings/.test(b.textContent)); save.click(); await settle();
+  typeInto(el('cl-preset-name'), 'Mine'); await settle();
+  const go = $$('dialog button').find((b) => b.textContent.trim() === 'Save preset'); go.click(); await settle();
+  const pr = $$('.cl button').find((b) => /Preview and print/.test(b.textContent)); if (pr && !pr.disabled) { pr.click(); await settle(); }
+  const dl = $$('.cl button').find((b) => /Download PDF/.test(b.textContent)); if (dl && !dl.disabled) { dl.click(); await settle(); }
+  const remove = $$('.icon-mini').find((b) => /Remove/.test(b.getAttribute('aria-label') || '')); remove.click(); await settle();
+  for (const s of subs) s(PRINTER);
+  await settle();
+}
+
 async function overviewScenario() { for (const s of subs) s(PRINTER); await settle(); }
 async function nozzleScenario() {
   for (const s of subs) s(PRINTER);
@@ -200,6 +237,7 @@ async function nozzleScenario() {
 try {
   if (scenario === 'photos') await photoScenario();
   else if (scenario === 'labels') await labelScenario();
+  else if (scenario === 'collage') await collageScenario();
   else if (tool === 'maintenance' && tab === 'overview') await overviewScenario();
   else if (tool === 'maintenance' && tab === 'nozzle') await nozzleScenario();
 } catch (e) { problems.push(`scenario threw: ${e?.stack || e}`); }

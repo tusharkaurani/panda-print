@@ -12,7 +12,7 @@ def test_health(client):
 def test_index_and_tool_registry(client):
     assert b"panda-print" in client.get("/").data
     tools = client.get("/api/tools").get_json()["tools"]
-    assert [t["id"] for t in tools] == ["maintenance", "photosheet", "labels", "utilities"]
+    assert [t["id"] for t in tools] == ["maintenance", "photosheet", "labels", "collage", "utilities"]
     assert all(tab["description"] for tab in tools[0]["tabs"])  # each tab says what it holds on hover
     by_id = {t["id"]: t for t in tools}
     assert [t["id"] for t in tools if not t["parent"]] == ["maintenance", "utilities"]  # three tabs at the top: Overview, Nozzle Care, Print Utilities
