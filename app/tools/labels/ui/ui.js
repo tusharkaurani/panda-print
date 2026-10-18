@@ -17,7 +17,7 @@ export async function mount(root, kit) {
   const S = {
     unit: 'mm', kind: 'pack', pack: 'l7160', paper: 'a4', customW: 210, customH: 297,
     packCols: 3, packRows: 7, width: 63.5, height: 38.1, left: 7.2, top: 15.1, gapX: 2.5, gapY: 0,
-    orientation: 'auto', align: 'center', area: 'full', margin: 5, gap: 2, mode: 'fill', cols: 4, rows: 6, count: 12, blankCount: 0,
+    orientation: 'auto', align: 'center', area: 'full', margin: 5, gap: 2, mode: 'fill', cols: 4, rows: 6, count: 12, blanks: 'none', blankCount: 5,
     shape: 'rounded', radius: 2, fill: '', border: '', borderWidth: 0.3, color: '#000000', family: 'sans', bold: false, italic: false,
     auto: false, size: 11, textAlign: 'left', valign: 'middle', pad: 3, lineSpacing: 1.2, firstBold: false, firstScale: 1, firstColor: '',
     logoPosition: 'top', logoPct: 30,
@@ -138,9 +138,13 @@ export async function mount(root, kit) {
     csvArea, csvNote,
     h('div', { class: 'field' }, h('label', { for: 'lb-csvtemplate' }, 'What each label says'), tplArea,
       h('p', { class: 'hint' }, 'Put a column name in { } where its value goes. Leave this empty to print every column, one per line. A line whose values are all empty is left out.'), colChips));
-  const blankPane = h('div', { class: 'lb-pane' }, plain('blankCount', 'How many blank labels', { min: 0, max: 5000, hint: 'Leave 0 to fill the sheet (from the start place). The labels print with their colour, border and picture but no text, to write on by hand.' }));
+  const blankCountField = plain('blankCount', 'How many blank labels', { min: 1, max: 5000 });
+  const blankBox = h('div', { class: 'lb-pane' },
+    select('blanks', 'After these labels', [['none', 'Leave the rest of the sheet empty'], ['fill', 'Fill the rest of the sheet with blank labels'], ['count', 'Add a number of blank labels']],
+      { hint: 'Blank labels share the sheet with the printed ones and have the same colour, border and picture, but no text: to write on by hand. Leave the list empty to print only blank labels.', onchange: () => syncVisibility() }),
+    blankCountField);
   const contentBox = h('section', { class: 'card lb-card' }, head('file', '4 · Your labels'),
-    select('inputMode', 'Labels from', [['text', 'Type or paste the labels'], ['csv', 'From a spreadsheet (CSV)'], ['blank', 'Blank labels (to write on by hand)']], { onchange: () => syncVisibility() }), textPane, csvPane, blankPane);
+    select('inputMode', 'Labels from', [['text', 'Type or paste the labels'], ['csv', 'From a spreadsheet (CSV)']], { onchange: () => syncVisibility() }), textPane, csvPane, blankBox);
 
   // ------------------------------------------------------------------ 3. the label sheet and the paper
   const unitSelect = select('unit', 'Unit', [['mm', 'mm'], ['cm', 'cm'], ['in', 'in']], { id: 'lb-unit' });
@@ -278,8 +282,7 @@ export async function mount(root, kit) {
     paperHint.textContent = t ? 'A label pack comes on one paper size. Choose “My own pack…” to use another.' : printer?.media?.length ? `The paper sizes ${printer.name} offers.` : 'Common paper sizes. Select a printer with CUPS to see the sizes it offers.';
     customRow.hidden = S.paper !== 'custom' || Boolean(t);
     paperSelect.disabled = Boolean(t);
-    textPane.hidden = S.inputMode !== 'text'; csvPane.hidden = S.inputMode !== 'csv'; blankPane.hidden = S.inputMode !== 'blank';
-    textBox.hidden = S.inputMode === 'blank'; copyFields.hidden = S.inputMode === 'blank';
+    textPane.hidden = S.inputMode !== 'text'; csvPane.hidden = S.inputMode !== 'csv'; blankCountField.hidden = S.blanks !== 'count';
     gridRow.hidden = S.mode !== 'grid'; countRow.hidden = S.mode !== 'count';
     const part = S.area !== 'full';
     if (ctl.orientation) ctl.orientation.el.disabled = part;
@@ -443,7 +446,7 @@ export async function mount(root, kit) {
           count: S.count, orientation: S.orientation, align: S.align, area: S.area };
     return {
       sheet,
-      content: { mode: S.inputMode, text: S.text, per_line: S.perLine, csv: S.csv, template: S.csvTemplate, count: S.blankCount },
+      content: { mode: S.inputMode, text: S.text, per_line: S.perLine, csv: S.csv, template: S.csvTemplate, blanks: { mode: S.blanks, count: S.blankCount } },
       style: { size: S.auto ? null : S.size, align: S.textAlign, valign: S.valign, family: S.family, bold: S.bold, italic: S.italic, first_bold: S.firstBold,
         first_scale: S.firstScale, first_color: S.firstColor || null, color: S.color, line_spacing: S.lineSpacing, pad: S.pad, shape: S.shape, radius: S.radius,
         fill: S.fill || null, border: S.border || null, border_width: S.borderWidth,
@@ -491,9 +494,10 @@ export async function mount(root, kit) {
     columns = layout.columns || [];
     paintColumns();
     csvNote.textContent = S.inputMode === 'csv' && columns.length ? `${layout.labels} labels from the spreadsheet. Columns: ${columns.join(', ')}.` : '';
-    const blank = S.inputMode === 'blank';
+    const printed = layout.labels - layout.blanks;
+    const what = layout.blanks ? `${printed ? `${printed} with text and ` : ''}${layout.blanks} blank` : '';
     summary.textContent = layout.labels
-      ? `${layout.labels} ${blank ? 'blank ' : ''}label${layout.labels === 1 ? '' : 's'} on ${layout.sheets} sheet${layout.sheets === 1 ? '' : 's'} (${layout.per_sheet} places each)${blank ? '' : `, text ${+layout.size.toFixed(1)} pt`}.`
+      ? `${layout.labels} label${layout.labels === 1 ? '' : 's'}${what ? ` (${what})` : ''} on ${layout.sheets} sheet${layout.sheets === 1 ? '' : 's'} (${layout.per_sheet} places each)${printed ? `, text ${+layout.size.toFixed(1)} pt` : ''}.`
       : 'Type something to see it on the labels.';
     warnings.append(...layout.warnings.map((w) => h('div', { class: 'notice warn' }, icon('alert', 18), h('div', {}, w))));
     paintPager(); syncButtons(); drawPreview();

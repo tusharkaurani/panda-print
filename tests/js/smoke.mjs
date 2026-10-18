@@ -133,9 +133,8 @@ async function labelScenario() {
   await fire('lb-inputMode', 'csv');
   await fire('lb-csv', 'Name,City\nAda,London', 'input'); await fire('lb-csvtemplate', '{Name}', 'input');
   const chip = $$('.lb .chips .chip.col')[0]; if (!chip) problems.push('no column chips after reading a spreadsheet'); else { chip.click(); await settle(); }
-  await fire('lb-inputMode', 'blank'); await fire('lb-blankCount', '5', 'input');
-  if (el('lb-text').parentElement.hidden === false && el('lb-text').parentElement.parentElement.hidden === false) problems.push('the text pane should be hidden for blank labels');
-  await fire('lb-inputMode', 'text');
+  for (const b of ['fill', 'count', 'none']) await fire('lb-blanks', b);  // blank labels share the sheet with the printed ones
+  await fire('lb-blankCount', '4', 'input');
   for (const area of ['top', 'bottom', 'full']) await fire('lb-area', area);  // a half page works for a pack too
   // a plain sheet, laid out by label size
   await fire('lb-kind', 'size');

@@ -323,12 +323,13 @@ class Result:
     labels: int
     style: Style
     warnings: list[str] = field(default_factory=list)
+    blanks: int = 0  # how many of `labels` have no text
 
     def to_dict(self, page: int = 1) -> dict:
         page = min(max(page, 1), len(self.pages))
         st = self.style
         return {"page_w": self.sheet.paper_w, "page_h": self.sheet.paper_h, "per_sheet": self.sheet.per_sheet, "sheets": len(self.pages),
-                "page": page, "size": self.size, "labels": self.labels, "cells": self.pages[page - 1], "warnings": self.warnings,
+                "page": page, "size": self.size, "labels": self.labels, "blanks": self.blanks, "cells": self.pages[page - 1], "warnings": self.warnings,
                 "orientation": self.sheet.orientation, "region": self.sheet.region, "area": self.sheet.area, "cols": self.sheet.cols, "rows": self.sheet.rows,
                 "look": {"shape": st.shape, "radius": min(st.radius, self.sheet.width / 2, self.sheet.height / 2), "fill": st.fill, "border": st.border,
                          "border_width": st.border_width, "family": st.family, "italic": st.italic, "color": st.color}}
@@ -372,7 +373,10 @@ def choose_size(labels: list[list[str]], style: Style, box: dict) -> tuple[float
     return size, sum(1 for lb in labels if not ok(lb, size))
 
 
-def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1, fill: bool = False, start: int = 1) -> Result:
+def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1, fill: bool = False, start: int = 1,
+            blanks: int = 0, blanks_fill: bool = False) -> Result:
+    """Lay the labels out. After them come `blanks` labels with no text (to write on by hand), or, with `blanks_fill`, as many as
+    it takes to fill the last sheet; they share the sheet, colour, border and picture of the printed labels."""
     if isinstance(copies, bool) or not isinstance(copies, int) or not 1 <= copies <= 100:
         raise SheetError("Copies of each label must be a whole number from 1 to 100.")
     cap = sheet.per_sheet
@@ -399,6 +403,13 @@ def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1
         while len(expanded) < target:
             expanded.append(base[i % len(base)])
             i += 1
+    if isinstance(blanks, bool) or not isinstance(blanks, int) or not 0 <= blanks <= MAX_LABELS:
+        raise SheetError(f"The number of blank labels must be from 0 to {MAX_LABELS}.")
+    printed = len(expanded)
+    if blanks_fill:
+        expanded += [[]] * (max(1, -(-(start - 1 + len(expanded)) // cap)) * cap - (start - 1) - len(expanded))
+    elif blanks:
+        expanded += [[]] * blanks
     if len(expanded) > MAX_LABELS:
         raise SheetError(f"That is {len(expanded)} labels; the most is {MAX_LABELS} at a time.")
     n_sheets = max(1, -(-(start - 1 + len(expanded)) // cap))
@@ -423,7 +434,7 @@ def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1
                 entry["logo"] = fit_logo(text_box(cell, style)[1], style.logo)
             page.append(entry)
         pages.append(page)
-    return Result(sheet, pages, size, len(expanded), style, warnings)
+    return Result(sheet, pages, size, len(expanded), style, warnings, blanks=len(expanded) - printed)
 
 
 def _place(cell: dict, label: list[str], style: Style, size: float) -> list[dict]:

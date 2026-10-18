@@ -140,20 +140,20 @@ def create(ctx: AppContext) -> Tool:
             if not isinstance(c.get("text", ""), str) or not isinstance(c.get("csv", ""), str) or not isinstance(c.get("template", ""), str):
                 raise BadRequest("The label text wasn't understood.")
             columns: list[str] = []
-            blank_fill = False
             if mode == "csv":
                 labels, columns = sh.labels_from_csv(c.get("csv", ""), c.get("template", ""))
             elif mode == "text":
                 labels = sh.labels_from_text(c.get("text", ""), bool(c.get("per_line", False)))
-            elif mode == "blank":  # labels with a background but no text, to write on by hand
-                n = whole(c, "count", "The number of blank labels", 0)
-                if not 0 <= n <= sh.MAX_LABELS:
-                    raise BadRequest(f"The number of blank labels must be from 0 (fill the sheet) to {sh.MAX_LABELS}.")
-                labels, blank_fill = [[]] * max(n, 1), n == 0
             else:
-                raise BadRequest("Choose typed text, a spreadsheet, or blank labels.")
-            result = sh.compute(sheet, labels, read_style(st), copies=1 if mode == "blank" else whole(raw, "copies", "Copies of each label", 1),
-                                fill=blank_fill or (bool(raw.get("fill", False)) and mode != "blank"), start=whole(raw, "start", "The first place", 1))
+                raise BadRequest("Choose typed text or a spreadsheet.")
+            extra_blank = c.get("blanks") if isinstance(c.get("blanks"), dict) else {}
+            blanks_mode = extra_blank.get("mode", "none")
+            if blanks_mode not in ("none", "fill", "count"):
+                raise BadRequest("Blank labels can be none, fill the rest of the sheet, or a number.")
+            blanks = whole(extra_blank, "count", "The number of blank labels", 0) if blanks_mode == "count" else 0
+            blanks_fill = blanks_mode == "fill"
+            result = sh.compute(sheet, labels, read_style(st), copies=whole(raw, "copies", "Copies of each label", 1),
+                                fill=bool(raw.get("fill", False)), start=whole(raw, "start", "The first place", 1), blanks=blanks, blanks_fill=blanks_fill)
         except sh.SheetError as e:
             raise BadRequest(str(e)) from None
         if s.get("kind", "pack") == "pack" and min_margin:

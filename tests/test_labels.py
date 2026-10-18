@@ -113,13 +113,34 @@ def test_labels_flow_into_the_chosen_half_only():
 
 
 def test_blank_labels_print_their_background_with_no_text():
-    r = S.compute(plain(), [[]], style(fill="#ffeecc", shape="ellipse", border="#aa7700"), fill=True)
-    assert r.labels == 24 and all(c["used"] and c["lines"] == [] for c in r.pages[0])
+    r = S.compute(plain(), [], style(fill="#ffeecc", shape="ellipse", border="#aa7700"), blanks_fill=True)
+    assert r.labels == 24 and r.blanks == 24 and all(c["used"] and c["lines"] == [] for c in r.pages[0])
     body = P.build(r)
     assert b"1 0.933 0.8 rg" in body and b" Tj" not in body and b"BT" not in body  # colour and border, but no text objects
     assert body.count(b" f Q") == 24
-    few = S.compute(plain(), [[]] * 5, style())
+    few = S.compute(plain(), [], style(), blanks=5)
     assert few.labels == 5 and sum(1 for c in few.pages[0] if c["used"]) == 5
+
+
+def test_blank_labels_share_the_sheet_with_the_printed_ones():
+    r = S.compute(l7160(), [["Ada"], ["Grace"]], style(fill="#ffeecc"), blanks_fill=True)
+    assert r.labels == 21 and r.blanks == 19 and lines(r, cell=0) == ["Ada"] and lines(r, cell=1) == ["Grace"] and lines(r, cell=2) == []
+    assert all(c["used"] for c in r.pages[0])  # printed and blank labels alike are drawn
+    some = S.compute(l7160(), [["Ada"], ["Grace"]], style(), blanks=3)
+    assert some.labels == 5 and some.blanks == 3 and [c["used"] for c in some.pages[0][:6]] == [True] * 5 + [False]
+    assert S.compute(l7160(), [["Ada"]], style()).blanks == 0
+
+
+def test_blanks_follow_copies_start_and_runs_onto_more_sheets():
+    r = S.compute(l7160(), [["A"]], style(), copies=3, start=5, blanks_fill=True)
+    assert r.labels == 17 and r.blanks == 14 and [bool(c["lines"]) for c in r.pages[0][:9]] == [False] * 4 + [True] * 3 + [False] * 2  # 4 skipped, 3 copies, then blanks
+    more = S.compute(l7160(), [[f"L{i}"] for i in range(25)], style(), blanks_fill=True)
+    assert len(more.pages) == 2 and more.labels == 42 and more.blanks == 17 and all(c["used"] for c in more.pages[1])
+    assert S.compute(l7160(), [[f"L{i}"] for i in range(21)], style(), blanks_fill=True).blanks == 0  # nothing to fill
+    with pytest.raises(S.SheetError, match="blank labels"):
+        S.compute(l7160(), [["A"]], style(), blanks=-1)
+    with pytest.raises(S.SheetError, match="the most is"):
+        S.compute(l7160(), [["A"]], style(), blanks=S.MAX_LABELS)
 
 
 # ------------------------------------------------------------------ a plain sheet laid out by label size
@@ -567,15 +588,20 @@ def test_a_pack_half_page_through_the_api(rig):
 
 
 def test_blank_labels_through_the_api(rig):
-    d = rig.post("layout", rig.body(content={"mode": "blank", "count": 0})).get_json()["data"]
-    assert d["labels"] == 21 and all(c["used"] and not c["lines"] for c in d["cells"])  # 0 fills the sheet
-    five = rig.post("layout", rig.body(content={"mode": "blank", "count": 5}, copies=7, fill=True)).get_json()["data"]
-    assert five["labels"] == 5  # copies and repeat don't apply to blanks
-    assert rig.post("layout", rig.body(content={"mode": "blank", "count": -1})).status_code == 400
-    assert rig.post("layout", rig.body(content={"mode": "blank", "count": 99999})).status_code == 400
-    assert rig.post("layout", rig.body(content={"mode": "blank", "count": 3}, start=4)).get_json()["data"]["cells"][3]["used"]
-    r = rig.post("pdf", rig.body(content={"mode": "blank", "count": 0}, style={"size": 11, "fill": "#ffeecc"}))
-    assert r.status_code == 200 and b" Tj" not in r.data and r.data.count(b" f Q") == 21
+    mixed = rig.post("layout", rig.body(content={"mode": "text", "text": "Ada\n\nGrace", "blanks": {"mode": "fill"}})).get_json()["data"]
+    assert mixed["labels"] == 21 and mixed["blanks"] == 19 and mixed["cells"][0]["lines"] and not mixed["cells"][2]["lines"] and mixed["cells"][2]["used"]
+    some = rig.post("layout", rig.body(content={"mode": "text", "text": "Ada", "blanks": {"mode": "count", "count": 4}})).get_json()["data"]
+    assert some["labels"] == 5 and some["blanks"] == 4 and not some["cells"][5]["used"]
+    only = rig.post("layout", rig.body(content={"mode": "text", "text": "", "blanks": {"mode": "fill"}})).get_json()["data"]
+    assert only["labels"] == 21 and only["blanks"] == 21  # no list at all: just blank labels
+    none = rig.post("layout", rig.body(content={"mode": "text", "text": "Ada", "blanks": {"mode": "none", "count": 9}})).get_json()["data"]
+    assert none["labels"] == 1 and none["blanks"] == 0
+    assert rig.post("layout", rig.body(content={"mode": "text", "text": "A", "blanks": {"mode": "lots"}})).status_code == 400
+    assert rig.post("layout", rig.body(content={"mode": "text", "text": "A", "blanks": {"mode": "count", "count": -1}})).status_code == 400
+    assert rig.post("layout", rig.body(content={"mode": "text", "text": "A", "blanks": {"mode": "count", "count": 99999}})).status_code == 400
+    assert rig.post("layout", rig.body(content={"mode": "blank", "count": 3})).status_code == 400  # the old separate mode is gone
+    r = rig.post("pdf", rig.body(content={"mode": "text", "text": "Ada", "blanks": {"mode": "fill"}}, style={"size": 11, "fill": "#ffeecc"}))
+    assert r.status_code == 200 and r.data.count(b" Tj") == 1 and r.data.count(b" f Q") == 21  # one line of text, 21 coloured labels
 
 
 def test_cut_lines_and_marks_are_asked_for_in_the_request(rig):
@@ -614,7 +640,7 @@ def test_layout_reports_a_picture_placement_from_its_size_alone(rig):
 
 
 @pytest.mark.parametrize("change,words", [
-    ({"copies": 0}, "Copies"), ({"copies": "2"}, "whole number"), ({"start": 99}, "1 to 21"), ({"content": {"mode": "pdf"}}, "or blank labels"),
+    ({"copies": 0}, "Copies"), ({"copies": "2"}, "whole number"), ({"start": 99}, "1 to 21"), ({"content": {"mode": "pdf"}}, "typed text or a spreadsheet"),
     ({"content": {"mode": "text", "text": 5}}, "text wasn"), ({"content": {"mode": "csv", "csv": "A,B\n1,2\n", "template": "{Z}"}}, "no column"),
     ({"style": {"size": "big"}}, "text size"), ({"style": {"shape": "star"}}, "Choose square"), ({"style": {"fill": "red"}}, "colour"),
     ({"style": {"family": "comic"}}, "font"), ({"style": {"logo": 5}}, "logo"), ({"style": {"logo": {"width": 0, "height": 5}}}, "logo"),
