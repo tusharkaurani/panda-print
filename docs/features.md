@@ -90,9 +90,9 @@ Add as many printers as you like (**Manage printers…** in the header menu). Th
 
 The tests use fakes only. `test_a_removed_printer_leaves_nothing_in_any_table` fails if a new tool adds a `printer_id` table and forgets `on_delete`, and `test_every_printer_route_answers_404_for_an_unknown_printer_and_never_500` walks the URL map, so a new per-printer route is covered automatically.
 
-## Photo Sheet Maker (inside Print Utilities)
+## Passport Sheet Maker (inside Print Utilities)
 
-Open **Print Utilities** and choose **Photo Sheet Maker** under *Built in*; a breadcrumb takes you back. 
+Open **Print Utilities** and choose **Passport Sheet Maker** under *Built in*; a breadcrumb takes you back. 
 Lay out copies of a photo you have already edited and cropped (a passport or ID photo, say) on a sheet of paper.
 
 1. **Choose the photos** (JPEG, PNG or WebP; up to 20 different photos on one sheet; the browser converts each to a high-quality JPEG, so every pixel is kept, stepping the quality down only if they together exceed the upload limit). Nothing is stored: the photos are sent for each preview, download or print and then forgotten.

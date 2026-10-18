@@ -125,7 +125,7 @@ def test_the_printer_maintenance_tabs_open_in_every_state(tmp_path, make_app_mod
 def test_the_print_utilities_tab_opens_with_the_built_in_tool_and_no_chatter(tmp_path, make_app_module):
     result = run(tmp_path, fixtures(make_app_module("normal"), "normal"), "utilities")
     text = result["text"]
-    assert "Built in" in text and "Photo Sheet Maker" in text  # the photo tool is a card on this page
+    assert "Built in" in text and "Passport Sheet Maker" in text  # the photo tool is a card on this page
     assert "Photos & IDs" in text and "checked" not in text and "Sites change" not in text  # and the page carries no disclaimer text
 
 

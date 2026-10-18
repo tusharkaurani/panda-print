@@ -1,4 +1,4 @@
-"""Presets for Photo Sheets: a saved set of choices (photo size, paper, margins, layout, finishing, print options)
+"""Presets for Passport Sheets: a saved set of choices (photo size, paper, margins, layout, finishing, print options)
 without the photos themselves. A few ship with the code (presets.yml); people can save their own, which live in the
 database so every device sees them. Settings are checked on the way in, so a stored preset is always usable."""
 from __future__ import annotations
@@ -41,7 +41,7 @@ def _int(d: dict, key: str, lo: int, hi: int, label: str, default: int | None = 
 
 
 def clean_settings(raw) -> dict:
-    """The settings of a preset, checked and reduced to what Photo Sheets understands. Lengths are in millimetres."""
+    """The settings of a preset, checked and reduced to what Passport Sheets understands. Lengths are in millimetres."""
     if not isinstance(raw, dict):
         raise PresetError("The settings are missing.")
     unknown = set(raw) - KEYS

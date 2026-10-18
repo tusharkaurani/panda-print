@@ -1,4 +1,4 @@
-// Photo Sheets: choose a photo, say how big each copy is and what paper it goes on, see the sheet, then download
+// Passport Sheets: choose a photo, say how big each copy is and what paper it goes on, see the sheet, then download
 // the PDF or print it at actual size. The layout is computed by the server (the same numbers make the PDF),
 // and drawn here as a live preview.
 import { drawPdfBytes } from '/tools/maintenance/preview.js';

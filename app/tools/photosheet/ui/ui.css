@@ -1,4 +1,4 @@
-/* Photo Sheets: the form on the left, a live preview of the sheet on the right (above the form on a phone) */
+/* Passport Sheets: the form on the left, a live preview of the sheet on the right (above the form on a phone) */
 .ps-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 470px); gap: 20px; align-items: start; }
 .ps-form { display: grid; gap: 16px; min-width: 0; }
 .ps-side { min-width: 0; align-self: stretch; }  /* as tall as the form, so the card inside can stay in view while the form scrolls */

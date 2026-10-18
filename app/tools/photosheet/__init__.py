@@ -1,4 +1,4 @@
-"""Tool: Photo Sheets. Lay out copies of an edited photo (a passport photo, say) at an exact size on a sheet of paper,
+"""Tool: Passport Sheets. Lay out copies of an edited photo (a passport photo, say) at an exact size on a sheet of paper,
 download it as a PDF, or print it through the printer's CUPS queue at actual size."""
 from __future__ import annotations
 
@@ -344,5 +344,5 @@ def create(ctx: AppContext) -> Tool:
         return resp
 
     return Tool(
-        id="photosheet", title="Photo Sheet Maker", description="Lay out passport and ID photos at an exact size on a sheet of paper, then download or print it",
+        id="photosheet", title="Passport Sheet Maker", description="Lay out passport and ID photos at an exact size on a sheet of paper, then download or print it",
         icon="image", blueprint=bp, ui_dir=HERE / "ui", order=15, needs_printer=False, parent="utilities")  # listed inside Print Utilities

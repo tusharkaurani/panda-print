@@ -1,4 +1,4 @@
-# Photo Sheets presets that ship with the app: a name and the choices to apply (never the photos).
+# Passport Sheets presets that ship with the app: a name and the choices to apply (never the photos).
 # People can save their own presets in the app. To ship one with the code, add an entry under `presets:` here; the
 # server writes the text for a saved preset at /api/photosheet/presets/<id>/yaml. Lengths are in millimetres.
 #

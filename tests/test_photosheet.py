@@ -1,4 +1,4 @@
-"""Photo Sheets: the layout maths, the PDF writer, and the API (config, layout, PDF, print), all against fakes."""
+"""Passport Sheets: the layout maths, the PDF writer, and the API (config, layout, PDF, print), all against fakes."""
 import itertools
 from pathlib import Path
 import json
