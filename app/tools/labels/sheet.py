@@ -242,6 +242,7 @@ class Style:
     color: str = "#000000"
     line_spacing: float = 1.2     # of the text size
     pad: float = 2.0              # mm inside each label
+    inset: float = 0.0            # mm between the cut line and the label itself (the cut area is the whole place)
     shape: str = "rect"           # rect | rounded | ellipse
     radius: float = 2.0           # mm, for rounded
     fill: str | None = None       # background colour
@@ -261,7 +262,9 @@ def check_style(style: Style, sheet: Sheet) -> None:
         raise SheetError("The first line can be 1 to 3 times larger.")
     if not 1.0 <= style.line_spacing <= 2.0:
         raise SheetError("The line spacing must be from 1 to 2.")
-    if not 0 <= style.pad <= MAX_PAD or style.pad * 2 >= min(sheet.width, sheet.height):
+    if not 0 <= style.inset <= MAX_PAD or style.inset * 2 >= min(sheet.width, sheet.height) - 2:
+        raise SheetError("The space around each label is too big for the label.")
+    if not 0 <= style.pad <= MAX_PAD or style.pad * 2 >= min(sheet.width, sheet.height) - 2 * style.inset:
         raise SheetError("The space inside a label is too big for the label.")
     if style.shape not in SHAPES:
         raise SheetError("Choose square corners, rounded corners, or a circle or oval.")
@@ -278,6 +281,12 @@ def shape_inset(style: Style, w: float, h: float) -> float:
     if style.shape == "rounded":
         return min(style.radius, w / 2, h / 2) * 0.29
     return 0.0
+
+
+def art_rect(cell: dict, style: Style) -> dict:
+    """The label itself inside its place: the place (what the cut lines go around) less the space around the label."""
+    i = style.inset
+    return {"x": round(cell["x"] + i, 3), "y": round(cell["y"] + i, 3), "w": round(cell["w"] - 2 * i, 3), "h": round(cell["h"] - 2 * i, 3)}
 
 
 def text_box(cell: dict, style: Style) -> tuple[dict, dict | None]:
@@ -331,7 +340,7 @@ class Result:
         return {"page_w": self.sheet.paper_w, "page_h": self.sheet.paper_h, "per_sheet": self.sheet.per_sheet, "sheets": len(self.pages),
                 "page": page, "size": self.size, "labels": self.labels, "blanks": self.blanks, "cells": self.pages[page - 1], "warnings": self.warnings,
                 "orientation": self.sheet.orientation, "region": self.sheet.region, "area": self.sheet.area, "cols": self.sheet.cols, "rows": self.sheet.rows,
-                "look": {"shape": st.shape, "radius": min(st.radius, self.sheet.width / 2, self.sheet.height / 2), "fill": st.fill, "border": st.border,
+                "look": {"shape": st.shape, "radius": min(st.radius, (self.sheet.width - 2 * st.inset) / 2, (self.sheet.height - 2 * st.inset) / 2), "fill": st.fill, "border": st.border,
                          "border_width": st.border_width, "family": st.family, "italic": st.italic, "color": st.color}}
 
 
@@ -415,7 +424,7 @@ def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1
     n_sheets = max(1, -(-(start - 1 + len(expanded)) // cap))
     if n_sheets > MAX_SHEETS:
         raise SheetError(f"That needs {n_sheets} sheets; the most is {MAX_SHEETS} at a time.")
-    box, _logo = text_box(sheet.cells[0], style)
+    box, _logo = text_box(art_rect(sheet.cells[0], style), style)
     size, bad = choose_size(expanded, style, box) if expanded else (style.size or 10.0, 0)
     if bad:
         warnings.append(f"{bad} label{'s' if bad != 1 else ''} {'has' if bad == 1 else 'have'} more text than fits at {size:g} pt. "
@@ -428,10 +437,12 @@ def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1
             idx = p * cap + k
             label = slots[idx] if idx < len(slots) else None
             entry = dict(cell)
-            entry["lines"] = _place(cell, label, style, size) if label is not None else []
+            art = art_rect(cell, style)
+            entry["art"] = art
+            entry["lines"] = _place(art, label, style, size) if label is not None else []
             entry["used"] = label is not None  # empty places (before the start, after the last label) get no shape or picture
             if style.logo and label is not None:
-                entry["logo"] = fit_logo(text_box(cell, style)[1], style.logo)
+                entry["logo"] = fit_logo(text_box(art, style)[1], style.logo)
             page.append(entry)
         pages.append(page)
     return Result(sheet, pages, size, len(expanded), style, warnings, blanks=len(expanded) - printed)

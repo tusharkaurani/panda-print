@@ -11,7 +11,9 @@
 #   look      shape rect | rounded | ellipse, radius, fill, border (colours as #rrggbb), border_width, color, family sans | serif | mono,
 #             bold, italic, line_spacing
 #   text      size (points, or null for the largest that fits), align, valign, pad, first_bold, first_scale, first_color
-#   copies, repeat, outline (cut line around each label), marks (cut marks), media_type, quality, sheet_copies
+#   look.inset  mm of space between the cut line and the label itself
+#   cut       none | grid (straight dashed lines between the places) | shape (a dashed line around each label)
+#   copies, repeat, marks (cut marks), media_type, quality, sheet_copies
 presets:
 - id: address-21
   name: Address labels, 21 per A4 sheet
@@ -51,4 +53,4 @@ presets:
     align: center
     look: {shape: ellipse, fill: '#fff4cc', border: '#d49b00', border_width: 0.4, color: '#3b2f00', family: sans, bold: true}
     text: {size: null, align: center, valign: middle, pad: 1.0, first_scale: 1.3}
-    outline: false
+    cut: shape

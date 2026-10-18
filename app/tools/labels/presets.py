@@ -11,8 +11,8 @@ from app.tools.photosheet.presets import PresetError, _int, _num, clean_name, lo
 TABLE = "lb_presets"
 MIGRATIONS = ["CREATE TABLE IF NOT EXISTS lb_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, created_at REAL NOT NULL);"]
 KEYS = {"unit", "kind", "pack", "grid", "paper", "size", "orientation", "area", "margin", "gap", "mode", "cols", "rows", "count", "align",
-        "look", "text", "copies", "repeat", "outline", "marks", "media_type", "quality", "resolution", "sheet_copies"}
-LOOK_KEYS = {"shape", "radius", "fill", "border", "border_width", "color", "family", "bold", "italic", "line_spacing"}
+        "look", "text", "copies", "repeat", "cut", "outline", "marks", "media_type", "quality", "resolution", "sheet_copies"}
+LOOK_KEYS = {"shape", "radius", "inset", "fill", "border", "border_width", "color", "family", "bold", "italic", "line_spacing"}
 TEXT_KEYS = {"size", "align", "valign", "pad", "first_bold", "first_scale", "first_color"}
 
 
@@ -109,7 +109,8 @@ def clean_settings(raw) -> dict:
                    "border_width": _num(look, "border_width", 0, 5, "The border width") if "border_width" in look else 0.3,
                    "color": _color(look.get("color", "#000000"), "The text colour") or "#000000", "family": family,
                    "bold": _bool(look, "bold", False, "Bold"), "italic": _bool(look, "italic", False, "Italic"),
-                   "line_spacing": _num(look, "line_spacing", 1, 2, "The line spacing") if "line_spacing" in look else 1.2}
+                   "line_spacing": _num(look, "line_spacing", 1, 2, "The line spacing") if "line_spacing" in look else 1.2,
+                   "inset": _num(look, "inset", 0, sh.MAX_PAD, "The space around each label") if "inset" in look else 0.0}
     text = raw.get("text", {})
     if not isinstance(text, dict) or set(text) - TEXT_KEYS:
         raise PresetError("The text settings aren't valid.")
@@ -124,7 +125,12 @@ def clean_settings(raw) -> dict:
         raise PresetError("Choose left, centre or right, and top or middle.")
     out["copies"] = _int(raw, "copies", 1, 100, "Copies of each label", 1)
     out["repeat"] = _bool(raw, "repeat", False, "Repeat to fill the sheet")
-    out["outline"] = _bool(raw, "outline", False, "Cut lines")
+    cut = raw.get("cut")
+    if cut is None:  # an older preset said yes or no: a line around each label
+        cut = "shape" if _bool(raw, "outline", False, "Cut lines") else "none"
+    if cut not in ("none", "grid", "shape"):
+        raise PresetError("Cut lines can be none, a grid or around each label.")
+    out["cut"] = cut
     out["marks"] = _bool(raw, "marks", False, "Cut marks")
     mt = raw.get("media_type")
     if mt not in (None, ""):

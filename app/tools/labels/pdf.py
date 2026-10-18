@@ -43,15 +43,36 @@ def _path(shape: str, x: float, y: float, w: float, h: float, r: float) -> str:
         f"{_n(x)} {_n(y + r - k)} {_n(x + r - k)} {_n(y)} {_n(x + r)} {_n(y)} c h"])
 
 
-def build(result: Result, *, outline: bool = False, marks: bool = False, title: str = "Labels", logo: tuple[bytes, Jpeg] | None = None,
+def _grid_lines(cells: list[dict]) -> list[tuple[float, float, float, float]]:
+    """The edges of these places as straight lines, neighbours' shared edges once, and lines that continue into each other joined."""
+    spans: dict[tuple[str, float], list[list[float]]] = {}
+    for c in cells:
+        x1, y1, x2, y2 = round(c["x"], 2), round(c["y"], 2), round(c["x"] + c["w"], 2), round(c["y"] + c["h"], 2)
+        for key, lo, hi in ((("v", x1), y1, y2), (("v", x2), y1, y2), (("h", y1), x1, x2), (("h", y2), x1, x2)):
+            spans.setdefault(key, []).append([lo, hi])
+    out = []
+    for (kind, at), ranges in spans.items():
+        merged: list[list[float]] = []
+        for lo, hi in sorted(ranges):
+            if merged and lo <= merged[-1][1] + 0.01:
+                merged[-1][1] = max(merged[-1][1], hi)
+            else:
+                merged.append([lo, hi])
+        for lo, hi in merged:
+            out.append((at, lo, at, hi) if kind == "v" else (lo, at, hi, at))
+    return out
+
+
+def build(result: Result, *, cut: str = "none", marks: bool = False, title: str = "Labels", logo: tuple[bytes, Jpeg] | None = None,
           for_media: bool = False) -> bytes:
-    """The PDF bytes. `outline` draws a thin cut line around every label that is printed, in the label's shape; `marks` draws
-    small cut marks beside the labels, in the margins. `logo` is the picture for every label. `for_media`: a landscape layout is turned onto a portrait page, the way paper is fed into the printer."""
+    """The PDF bytes. `cut` draws dashed cut lines for the labels that are printed: "grid" (straight lines along the edges of their
+    places, shared by neighbours, so a guillotine or ruler can follow them) or "shape" (a line around each label in its own shape);
+    `marks` draws small cut marks beside the labels, in the margins. `logo` is the picture for every label. `for_media`: a landscape layout is turned onto a portrait page, the way paper is fed into the printer."""
     sheet, st = result.sheet, result.style
     lw, lh = sheet.paper_w, sheet.paper_h
     rotate = for_media and lw > lh
     pw, ph = (lh, lw) if rotate else (lw, lh)
-    radius = min(st.radius, sheet.width / 2, sheet.height / 2)
+    radius = min(st.radius, (sheet.width - 2 * st.inset) / 2, (sheet.height - 2 * st.inset) / 2)
     names: dict[str, str] = {}
     for page in result.pages:
         for cell in page:
@@ -72,10 +93,15 @@ def build(result: Result, *, outline: bool = False, marks: bool = False, title: 
         if rotate:
             add(f"0 1 -1 0 {_n(pt(lh))} 0 cm")  # a quarter turn: the sheet's top-left lands at the page's top-right
         used = [c for c in page if c.get("used")]
-        if outline and used:
-            add("q 0.25 w 0.45 G")
+        if cut == "grid" and used:
+            add("q 0.25 w 0.45 G [1.6 1.2] 0 d")
+            for x1, y1, x2, y2 in _grid_lines(used):
+                add(f"{_n(pt(x1))} {_n(pt(lh - y1))} m {_n(pt(x2))} {_n(pt(lh - y2))} l S")
+            add("Q")
+        elif cut == "shape" and used:
+            add("q 0.25 w 0.45 G [1.6 1.2] 0 d")
             for c in used:
-                add(_path(st.shape, *rect(c), pt(radius)) + " S")
+                add(_path(st.shape, *rect(c["art"]), pt(radius)) + " S")
             add("Q")
         if marks and used:
             add("q 0.25 w 0.2 G")
@@ -99,7 +125,7 @@ def build(result: Result, *, outline: bool = False, marks: bool = False, title: 
         for c in page:
             if not c.get("used"):
                 continue
-            x, y, w, h = rect(c)
+            x, y, w, h = rect(c["art"])
             path = _path(st.shape, x, y, w, h, pt(radius))
             if st.fill:
                 add(f"q {_rgb(st.fill)} rg {path} f Q")

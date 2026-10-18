@@ -22,7 +22,7 @@ export async function mount(root, kit) {
     auto: false, size: 11, textAlign: 'left', valign: 'middle', pad: 3, lineSpacing: 1.2, firstBold: false, firstScale: 1, firstColor: '',
     logoPosition: 'top', logoPct: 30,
     inputMode: 'text', text: SAMPLE, perLine: false, csv: '', csvName: '', csvTemplate: '',
-    copies: 1, repeat: false, start: 1, outline: false, marks: false, page: 1,
+    copies: 1, repeat: false, start: 1, cut: 'none', inset: 0, marks: false, page: 1,
     mediaType: '', quality: '', resolution: '', sheetCopies: 1,
   };
   try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage is optional */ }
@@ -200,6 +200,7 @@ export async function mount(root, kit) {
   const lookBox = h('section', { class: 'card lb-card' }, head('eye', '3 · Label style'),
     h('div', { class: 'two' }, colour('fill', 'Background colour', { optional: true, none: 'No colour' }), colour('border', 'Border colour', { optional: true, none: 'No border' })),
     h('div', { class: 'two' }, plain('borderWidth', 'Border width (mm)', { min: 0, max: 5, step: 0.1, float: true }), colour('color', 'Text colour')),
+    plain('inset', 'Space around each label (mm)', { min: 0, max: 20, step: 0.5, float: true, hint: 'Draws the label smaller than its place, leaving a margin for the cut lines to sit in.' }),
     h('div', { class: 'two' }, select('family', 'Font', [['sans', 'Sans-serif (Helvetica)'], ['serif', 'Serif (Times)'], ['mono', 'Typewriter (Courier)']])),
     h('div', { class: 'checks' }, check('bold', 'Bold text'), check('italic', 'Italic text')),
     h('div', { class: 'field' }, h('label', {}, 'Picture or logo'),
@@ -227,9 +228,10 @@ export async function mount(root, kit) {
   const countBox = h('section', { class: 'card lb-card' }, head('hash', '6 · How many'), copyFields,
     plain('start', 'Start at label number', { max: 600, hint: 'For a part-used sheet. You can also click a label in the preview.' }));
   const finishBox = h('section', { class: 'card lb-card' }, head('check', '7 · Cut lines'),
-    check('outline', 'Cut line around each label', 'A thin line in the label’s shape (round for a circle) to cut along. Drawn only where a label is printed.'),
+    select('cut', 'Cut lines', [['none', 'None'], ['grid', 'Straight dashed lines between the labels'], ['shape', 'A dashed line around each label, in its shape']],
+      { hint: 'Straight lines suit a guillotine or a ruler: they run along the edge of every place, so leave some “space around each label” in step 3 and the cut falls in that margin. They are drawn only where a label is printed.' }),
     check('marks', 'Cut marks', 'Small ticks in the margins beside the labels, to guide a ruler or cutter.'),
-    h('p', { class: 'hint' }, 'Leave both off when printing on a pack that is already cut, or test on plain paper first and hold it against a real sheet.'));
+    h('p', { class: 'hint' }, 'Leave these off when printing on a pack that is already cut, or test on plain paper first and hold it against a real sheet.'));
 
   // ------------------------------------------------------------------ 7. printing choices (only with CUPS)
   const printBox = h('section', { class: 'card lb-card' });
@@ -384,30 +386,57 @@ export async function mount(root, kit) {
     }
     const look = L.look;
     ctx.lineWidth = 0.25;
-    for (const c of L.cells) {  // empty places: a faint outline (the guide, when it is on, is stronger)
+    for (const c of L.cells) {  // empty places: a faint outline
       if (c.used) continue;
-      shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius);
+      shapePath(ctx, look.shape, c.art.x, c.art.y, c.art.w, c.art.h, look.radius);
       if (S.start > 1 && L.page === 1 && !c.lines.length) { ctx.fillStyle = '#eceff3'; ctx.fill(); }
       ctx.strokeStyle = '#dde1e7'; ctx.setLineDash([1.2, 1]); ctx.stroke(); ctx.setLineDash([]);
     }
     for (const c of L.cells) {
       if (!c.used) continue;
-      shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius);
+      const A = c.art;
+      shapePath(ctx, look.shape, A.x, A.y, A.w, A.h, look.radius);
       if (look.fill) { ctx.fillStyle = look.fill; ctx.fill(); }
       if (c.logo && logo) {
-        ctx.save(); shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius); ctx.clip();
+        ctx.save(); shapePath(ctx, look.shape, A.x, A.y, A.w, A.h, look.radius); ctx.clip();
         ctx.drawImage(logo.bitmap, c.logo.x, c.logo.y, c.logo.w, c.logo.h); ctx.restore();
       }
-      shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius);
+      shapePath(ctx, look.shape, A.x, A.y, A.w, A.h, look.radius);
       if (look.border && look.border_width > 0) { ctx.strokeStyle = look.border; ctx.lineWidth = look.border_width; ctx.stroke(); ctx.lineWidth = 0.25; }
-      if (S.outline) { shapePath(ctx, look.shape, c.x, c.y, c.w, c.h, look.radius); ctx.strokeStyle = '#666'; ctx.lineWidth = 0.25; ctx.stroke(); }  // the cut line
       ctx.textBaseline = 'alphabetic';
       for (const ln of c.lines) {
         ctx.font = `${look.italic ? 'italic ' : ''}${ln.bold ? 'bold ' : ''}${ln.size * 25.4 / 72}px ${FONT_CSS[look.family]}`;
         ctx.fillStyle = ln.color; ctx.fillText(ln.t, ln.x, ln.y);
       }
     }
+    drawCutLines(ctx, L);
     if (S.marks) drawMarks(ctx, L);
+  }
+  function drawCutLines(ctx, L) {  // dashed cut lines for the printed labels (the PDF draws the same lines)
+    const used = L.cells.filter((c) => c.used);
+    if (!used.length || S.cut === 'none') return;
+    ctx.save(); ctx.strokeStyle = '#444'; ctx.lineWidth = 0.35; ctx.setLineDash([1.6, 1.2]);
+    if (S.cut === 'shape') {
+      for (const c of used) { shapePath(ctx, L.look.shape, c.art.x, c.art.y, c.art.w, c.art.h, L.look.radius); ctx.stroke(); }
+    } else {
+      const spans = new Map();
+      const r2 = (v) => Math.round(v * 100) / 100;
+      for (const c of used) {
+        const x1 = r2(c.x), y1 = r2(c.y), x2 = r2(c.x + c.w), y2 = r2(c.y + c.h);
+        for (const [key, lo, hi] of [[`v${x1}`, y1, y2], [`v${x2}`, y1, y2], [`h${y1}`, x1, x2], [`h${y2}`, x1, x2]]) { if (!spans.has(key)) spans.set(key, []); spans.get(key).push([lo, hi]); }
+      }
+      ctx.beginPath();
+      for (const [key, ranges] of spans) {
+        const at = Number(key.slice(1));
+        const merged = [];
+        for (const [lo, hi] of ranges.sort((a, b) => a[0] - b[0])) {
+          if (merged.length && lo <= merged[merged.length - 1][1] + 0.01) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], hi); else merged.push([lo, hi]);
+        }
+        for (const [lo, hi] of merged) { if (key[0] === 'v') { ctx.moveTo(at, lo); ctx.lineTo(at, hi); } else { ctx.moveTo(lo, at); ctx.lineTo(hi, at); } }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   function drawMarks(ctx, L) {  // cut marks in the margins beside the printed labels (the PDF draws the same ticks)
     const used = L.cells.filter((c) => c.used);
@@ -448,10 +477,10 @@ export async function mount(root, kit) {
       sheet,
       content: { mode: S.inputMode, text: S.text, per_line: S.perLine, csv: S.csv, template: S.csvTemplate, blanks: { mode: S.blanks, count: S.blankCount } },
       style: { size: S.auto ? null : S.size, align: S.textAlign, valign: S.valign, family: S.family, bold: S.bold, italic: S.italic, first_bold: S.firstBold,
-        first_scale: S.firstScale, first_color: S.firstColor || null, color: S.color, line_spacing: S.lineSpacing, pad: S.pad, shape: S.shape, radius: S.radius,
+        first_scale: S.firstScale, first_color: S.firstColor || null, color: S.color, line_spacing: S.lineSpacing, pad: S.pad, inset: S.inset, shape: S.shape, radius: S.radius,
         fill: S.fill || null, border: S.border || null, border_width: S.borderWidth,
         ...(logo ? { logo: { width: logo.width, height: logo.height, position: S.logoPosition, pct: S.logoPct } } : {}) },
-      copies: S.copies, fill: S.repeat, start: S.start, outline: S.outline, marks: S.marks, page: S.page,
+      copies: S.copies, fill: S.repeat, start: S.start, cut: S.cut, marks: S.marks, page: S.page,
       min_margin: minMargin(), borderless: matchingMedia().some((m) => m.borderless),
     };
   }
@@ -532,9 +561,9 @@ export async function mount(root, kit) {
     const paper = currentPaper();
     const [pw, ph] = paperSize();
     const out = { unit: S.unit, kind: S.kind, paper: { width: pw, height: ph, ...(paper.keyword ? { media: paper.keyword } : {}), label: paper.label },
-      look: { shape: S.shape, radius: S.radius, fill: S.fill || null, border: S.border || null, border_width: S.borderWidth, color: S.color, family: S.family, bold: S.bold, italic: S.italic, line_spacing: S.lineSpacing },
+      look: { shape: S.shape, radius: S.radius, fill: S.fill || null, border: S.border || null, border_width: S.borderWidth, color: S.color, family: S.family, bold: S.bold, italic: S.italic, line_spacing: S.lineSpacing, inset: S.inset },
       text: { size: S.auto ? null : S.size, align: S.textAlign, valign: S.valign, pad: S.pad, first_bold: S.firstBold, first_scale: S.firstScale, first_color: S.firstColor || null },
-      area: S.area, copies: S.copies, repeat: S.repeat, outline: S.outline, marks: S.marks, sheet_copies: Number(S.sheetCopies) || 1 };
+      area: S.area, copies: S.copies, repeat: S.repeat, cut: S.cut, marks: S.marks, sheet_copies: Number(S.sheetCopies) || 1 };
     if (S.kind === 'pack') {
       out.pack = S.pack;
       if (!S.pack) { out.grid = { cols: S.packCols, rows: S.packRows, left: S.left, top: S.top, gap_x: S.gapX, gap_y: S.gapY }; out.size = { width: S.width, height: S.height }; }
@@ -553,9 +582,9 @@ export async function mount(root, kit) {
     const x = p.settings;
     const before = controlState();
     const look = x.look || {}, text = x.text || {};
-    Object.assign(S, { unit: x.unit || 'mm', kind: x.kind || 'pack', start: 1, page: 1, copies: x.copies || 1, repeat: Boolean(x.repeat), outline: Boolean(x.outline), marks: Boolean(x.marks), area: ['top', 'bottom'].includes(x.area) ? x.area : 'full',
+    Object.assign(S, { unit: x.unit || 'mm', kind: x.kind || 'pack', start: 1, page: 1, copies: x.copies || 1, repeat: Boolean(x.repeat), cut: x.cut || 'none', marks: Boolean(x.marks), area: ['top', 'bottom'].includes(x.area) ? x.area : 'full',
       shape: look.shape || 'rect', radius: look.radius ?? 2, fill: look.fill || '', border: look.border || '', borderWidth: look.border_width ?? 0.3, color: look.color || '#000000',
-      family: look.family || 'sans', bold: Boolean(look.bold), italic: Boolean(look.italic), lineSpacing: look.line_spacing ?? 1.2,
+      family: look.family || 'sans', bold: Boolean(look.bold), italic: Boolean(look.italic), lineSpacing: look.line_spacing ?? 1.2, inset: look.inset ?? 0,
       auto: text.size === null, size: text.size ?? S.size, textAlign: text.align || 'left', valign: text.valign || 'middle', pad: text.pad ?? 2,
       firstBold: Boolean(text.first_bold), firstScale: text.first_scale ?? 1, firstColor: text.first_color || '', sheetCopies: x.sheet_copies || 1 });
     if (S.kind === 'pack') {

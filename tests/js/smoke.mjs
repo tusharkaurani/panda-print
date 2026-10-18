@@ -157,7 +157,8 @@ async function labelScenario() {
   await fire('lb-firstColor', '#cc0000', 'input'); await fire('lb-firstScale', '1.5', 'input'); await fire('lb-lineSpacing', '1.4', 'input');
   await fire('lb-auto', true); await fire('lb-auto', false);
   await fire('lb-textAlign', 'center'); await fire('lb-valign', 'top'); await fire('lb-pad', '2', 'input'); await fire('lb-size', '9', 'input');
-  await fire('lb-copies', '3', 'input'); await fire('lb-start', '4', 'input'); await fire('lb-repeat', true); await fire('lb-outline', true); await fire('lb-marks', true);
+  await fire('lb-copies', '3', 'input'); await fire('lb-start', '4', 'input'); await fire('lb-repeat', true); for (const cutMode of ['grid', 'shape', 'none']) await fire('lb-cut', cutMode);
+  await fire('lb-inset', '2', 'input'); await fire('lb-marks', true);
   await fire('lb-unit', 'in'); await fire('lb-unit', 'mm');
   $('.sheet-canvas').dispatchEvent(new FakeEvent('click', { clientX: 10, clientY: 10, bubbles: true })); await settle();
   // presets fill the form in

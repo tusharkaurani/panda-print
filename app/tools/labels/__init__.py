@@ -121,7 +121,7 @@ def create(ctx: AppContext) -> Tool:
                         family=str(st.get("family", "sans")), bold=bool(st.get("bold", False)), italic=bool(st.get("italic", False)),
                         first_bold=bool(st.get("first_bold", False)), first_scale=float(num(st, "first_scale", "The first line size", 1.0)),
                         first_color=color("first_color", "The first line colour"), color=color("color", "The text colour", False) if st.get("color") else "#000000",
-                        line_spacing=float(num(st, "line_spacing", "The line spacing", 1.2)), pad=float(num(st, "pad", "The space inside", 2.0)),
+                        line_spacing=float(num(st, "line_spacing", "The line spacing", 1.2)), pad=float(num(st, "pad", "The space inside", 2.0)), inset=float(num(st, "inset", "The space around each label", 0.0)),
                         shape=str(st.get("shape", "rect")), radius=float(num(st, "radius", "The corner rounding", 2.0)), fill=color("fill", "The fill colour"),
                         border=color("border", "The border colour"), border_width=float(num(st, "border_width", "The border width", 0.3)), logo=logo)
 
@@ -199,7 +199,10 @@ def create(ctx: AppContext) -> Tool:
     def pdf_for(raw: dict, logo, result: sh.Result, for_media: bool) -> bytes:
         if result.style.logo and logo is None:
             raise BadRequest("The logo picture is missing. Choose it again.")
-        return pdf.build(result, outline=bool(raw.get("outline", False)), marks=bool(raw.get("marks", False)), title="Labels",
+        cut = raw.get("cut", "shape" if raw.get("outline") else "none")  # (an older page sent a yes/no `outline`)
+        if cut not in ("none", "grid", "shape"):
+            raise BadRequest("Cut lines can be none, a grid or around each label.")
+        return pdf.build(result, cut=cut, marks=bool(raw.get("marks", False)), title="Labels",
                          logo=logo if result.style.logo else None, for_media=for_media)
 
     def printer_or_404(pid: str):

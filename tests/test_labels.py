@@ -427,14 +427,53 @@ def test_colours_shapes_and_borders_are_drawn_only_when_chosen():
     assert b" re" in square and b" c h" not in square
 
 
-def test_cut_lines_go_around_each_printed_label_in_its_shape_and_only_when_asked():
-    r = S.compute(l7160(), [["A"], ["B"]], style(), start=2)
-    assert P.build(r).count(b" S\n") == 0
-    assert P.build(r, outline=True).count(b" re S") == 2  # two labels, none of the 19 empty places
-    round_ = S.compute(l7160(), [["A"], ["B"]], style(shape="ellipse"))
-    cut = P.build(round_, outline=True)
-    assert cut.count(b" c h S") == 2 and b" re S" not in cut  # a circle is cut round, not square
-    assert P.build(S.compute(l7160(), [], style()), outline=True).count(b" S\n") == 0  # nothing printed, nothing to cut
+def segments(body):
+    return [tuple(float(v) / PT for v in m) for m in re.findall(rb"([\d.]+) ([\d.]+) m ([\d.]+) ([\d.]+) l S", body)]
+
+
+def test_a_cut_grid_is_straight_dashed_lines_between_the_places():
+    r = S.compute(plain(width=40, height=40, gap=0, margin=5), [[]], style(inset=2), blanks_fill=True)
+    body = P.build(r, cut="grid")
+    assert b"[1.6 1.2] 0 d" in body  # dashed
+    lines = segments(body)
+    cols, rows = r.sheet.cols, r.sheet.rows
+    assert len(lines) == (cols + 1) + (rows + 1)  # one line per column edge and row edge: shared edges are drawn once, and they run the whole way
+    vertical = [l for l in lines if abs(l[0] - l[2]) < 0.01]
+    assert len(vertical) == cols + 1 and all(abs(abs(l[3] - l[1]) - rows * 40) < 0.1 for l in vertical)
+    assert P.build(r).count(b" l S") == 0 and b"[1.6 1.2] 0 d" not in P.build(r)  # nothing unless asked
+
+
+def test_cut_lines_sit_on_the_edge_of_the_place_with_the_label_inset_inside_them():
+    r = S.compute(plain(width=40, height=40, gap=0, margin=5), [["Sugar"]], style(inset=2, shape="rounded", radius=4, border="#cc0000", fill="#fde8e6"))
+    cell = r.pages[0][0]
+    assert cell["art"] == {"x": cell["x"] + 2, "y": cell["y"] + 2, "w": 36, "h": 36}  # the label is smaller than the place by the inset, all round
+    xs = {round(l[0], 1) for l in segments(P.build(r, cut="grid")) if abs(l[0] - l[2]) < 0.01}
+    assert round(cell["x"], 1) in xs and round(cell["art"]["x"], 1) not in xs  # the line is at the place's edge, not the label's
+    assert all(ln["x"] >= cell["art"]["x"] for ln in cell["lines"])  # and the text stays inside the label
+
+
+def test_a_cut_line_around_each_label_follows_its_shape_inside_the_margin():
+    r = S.compute(l7160(), [["A"], ["B"]], style(shape="ellipse", inset=1), start=2)
+    cut = P.build(r, cut="shape")
+    assert cut.count(b" c h S") == 2 and b" re S" not in cut  # a circle is cut round, only for the two printed labels
+    square = P.build(S.compute(l7160(), [["A"], ["B"]], style(inset=1), start=2), cut="shape")
+    assert square.count(b" re S") == 2
+    assert P.build(S.compute(l7160(), [], style()), cut="shape").count(b" S\n") == 0  # nothing printed, nothing to cut
+
+
+def test_cut_lines_cover_only_the_places_that_hold_labels():
+    r = S.compute(plain(width=40, height=40, gap=0, margin=5), [[]] * 5, style())  # five of 24 places: one full row and one place
+    lines = segments(P.build(r, cut="grid"))
+    assert 0 < len(lines) < 10 and all(l[3] - l[1] <= 80.1 or l[2] - l[0] <= 160.1 for l in lines)
+
+
+def test_the_space_around_a_label_is_checked():
+    for bad in (dict(inset=-1), dict(inset=40), dict(inset=15, pad=5)):
+        with pytest.raises(S.SheetError):
+            S.compute(l7160(), [["A"]], style(**bad))
+    big = S.text_box(S.art_rect(l7160().cells[0], style(inset=0)), style())[0]
+    small = S.text_box(S.art_rect(l7160().cells[0], style(inset=3)), style(inset=3))[0]
+    assert small["w"] == pytest.approx(big["w"] - 6) and small["h"] == pytest.approx(big["h"] - 6)
 
 
 def test_cut_marks_sit_in_the_margins_beside_the_labels_and_only_when_asked():
@@ -467,7 +506,7 @@ def test_a_logo_is_embedded_once_and_drawn_clipped_on_every_used_label():
 
 
 def test_an_empty_sheet_still_makes_a_valid_pdf():
-    body = P.build(S.compute(l7160(), [], style()), outline=True)
+    body = P.build(S.compute(l7160(), [], style()), cut="grid", marks=True)
     assert body.startswith(b"%PDF") and b"/Count 1" in body
 
 
@@ -513,9 +552,13 @@ def test_bad_presets_are_refused_in_plain_words(change, words):
 
 
 def test_a_preset_can_use_a_half_page_for_a_pack_and_keeps_cut_lines():
-    x = pre.clean_settings({**PACK_PRESET, "area": "bottom", "outline": True, "marks": True})
-    assert x["area"] == "bottom" and x["outline"] is True and x["marks"] is True
+    x = pre.clean_settings({**PACK_PRESET, "area": "bottom", "cut": "grid", "marks": True, "look": {"inset": 1.5}})
+    assert x["area"] == "bottom" and x["cut"] == "grid" and x["marks"] is True and x["look"]["inset"] == 1.5
     assert pre.clean_settings(PACK_PRESET)["area"] == "full" and pre.clean_settings(PACK_PRESET)["marks"] is False
+    assert pre.clean_settings(PACK_PRESET)["cut"] == "none" and pre.clean_settings(PACK_PRESET)["look"]["inset"] == 0.0
+    assert pre.clean_settings({**PACK_PRESET, "outline": True})["cut"] == "shape"  # a preset saved before the grid existed keeps its line around each label
+    with pytest.raises(pre.PresetError, match="Cut lines"):
+        pre.clean_settings({**PACK_PRESET, "cut": "zigzag"})
     with pytest.raises(pre.PresetError, match="top or bottom"):
         pre.clean_settings({**PACK_PRESET, "area": "left"})
     with pytest.raises(pre.PresetError, match="half page"):
@@ -606,9 +649,21 @@ def test_blank_labels_through_the_api(rig):
 
 def test_cut_lines_and_marks_are_asked_for_in_the_request(rig):
     plain_pdf = rig.post("pdf").data
-    cut = rig.post("pdf", {**rig.body(), "outline": True, "marks": True}).data
     assert b" re S" not in plain_pdf and b" l S" not in plain_pdf
-    assert cut.count(b" re S") == 2 and b" l S" in cut
+    shape = rig.post("pdf", {**rig.body(), "cut": "shape"}).data
+    assert shape.count(b" re S") == 2 and b"[1.6 1.2] 0 d" in shape
+    grid = rig.post("pdf", {**rig.body(), "cut": "grid", "marks": True}).data
+    assert b" re S" not in grid and grid.count(b" l S") > 8
+    assert rig.post("pdf", {**rig.body(), "outline": True}).data.count(b" re S") == 2  # an older page's yes/no
+    assert rig.post("pdf", {**rig.body(), "cut": "zigzag"}).status_code == 400
+
+
+def test_the_space_around_a_label_moves_the_label_but_not_the_place(rig):
+    base = rig.post("layout", rig.body(style={"size": 11, "pad": 2})).get_json()["data"]["cells"][0]
+    inset = rig.post("layout", rig.body(style={"size": 11, "pad": 2, "inset": 3})).get_json()["data"]["cells"][0]
+    assert (inset["x"], inset["y"], inset["w"], inset["h"]) == (base["x"], base["y"], base["w"], base["h"])
+    assert inset["art"]["w"] == pytest.approx(base["art"]["w"] - 6) and inset["lines"][0]["x"] > base["lines"][0]["x"]
+    assert rig.post("layout", rig.body(style={"size": 11, "inset": 40})).status_code == 400
 
 
 def test_a_plain_sheet_through_the_api(rig):
