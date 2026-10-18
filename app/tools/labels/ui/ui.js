@@ -367,7 +367,10 @@ export async function mount(root, kit) {
     const [pw, ph] = L ? [L.page_w, L.page_h] : paperSize();
     const slim = window.matchMedia('(max-width: 900px)').matches;
     const maxH = slim ? Math.max(150, window.innerHeight * 0.28) : Math.max(240, window.innerHeight - 400);
-    let cssW = Math.min(canvas.parentElement.clientWidth || 360, 460);
+    // the width the canvas may use is the box's content width (its padding is not room for the sheet), or a wide sheet is squeezed
+    const box = canvas.parentElement, pad = typeof getComputedStyle === 'function' ? getComputedStyle(box) : null;
+    const inner = (box.clientWidth || 0) - (pad ? (parseFloat(pad.paddingLeft) || 0) + (parseFloat(pad.paddingRight) || 0) : 0);
+    let cssW = Math.min(inner > 0 ? inner : 360, 460);
     if ((ph * cssW) / pw > maxH) cssW = (maxH * pw) / ph;
     const k = cssW / pw;
     canvas.width = Math.round(cssW * ratio); canvas.height = Math.round(ph * k * ratio);
