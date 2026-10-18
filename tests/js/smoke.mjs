@@ -165,6 +165,13 @@ async function labelScenario() {
   const chips = $$('.lb .chip-wrap .chip');
   if (chips.length < 2) problems.push(`expected shipped presets, got ${chips.length}`);
   else {
+    const kitchen = chips.find((c) => /Kitchen Labels/.test(c.textContent));
+    if (!kitchen) problems.push('no Kitchen Labels preset');
+    else {
+      typeInto(el('lb-text'), 'something else'); await settle();
+      kitchen.click(); await settle();
+      if (!/^Oats\nWhole Wheat Flour/.test(el('lb-text').value) || el('lb-perLine').value !== 'true') problems.push(`the Kitchen preset did not fill in its list: ${JSON.stringify(el('lb-text').value.slice(0, 30))} perLine=${el('lb-perLine').value}`);
+    }
     chips[0].click(); await settle();
     if (el('lb-kind').value !== 'pack' || !el('lb-pack').value) problems.push(`the first preset should pick a pack, got kind=${el('lb-kind').value} pack=${el('lb-pack').value}`);
     chips.find((c) => /Round stickers/.test(c.textContent)).click(); await settle();

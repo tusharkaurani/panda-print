@@ -530,7 +530,7 @@ SIZE_PRESET = {"unit": "in", "kind": "size", "paper": {"width": 215.9, "height":
 def test_the_shipped_presets_are_all_valid():
     from app.tools.labels import HERE
     shipped = pre.load_builtin(HERE / "presets.yml", clean=pre.clean_settings)
-    assert len(shipped) >= 3 and all(p["id"].startswith("builtin-") for p in shipped)
+    assert len(shipped) == 3 and all(p["id"].startswith("builtin-") for p in shipped)
     assert {p["settings"]["kind"] for p in shipped} == {"pack", "size"}
 
 
@@ -565,6 +565,34 @@ def test_a_preset_can_use_a_half_page_for_a_pack_and_keeps_cut_lines():
         pre.clean_settings({**SIZE_PRESET, "area": "top", "orientation": "landscape"})
     with pytest.raises(pre.PresetError, match="true or false"):
         pre.clean_settings({**PACK_PRESET, "marks": 1})
+
+
+def test_a_preset_can_bring_the_label_text_with_it():
+    x = pre.clean_settings({**PACK_PRESET, "content": {"text": "Oats\nRice", "per_line": True}})
+    assert x["content"] == {"text": "Oats\nRice", "per_line": True}
+    assert "content" not in pre.clean_settings(PACK_PRESET)
+    for bad, words in (({"text": "x" * 20001}, "at most"), ({"text": 5}, "at most"), ({"zzz": 1}, "label text"), ("oats", "label text"), ({"text": "a", "per_line": "yes"}, "true or false")):
+        with pytest.raises(pre.PresetError, match=words):
+            pre.clean_settings({**PACK_PRESET, "content": bad})
+
+
+def test_the_shipped_presets_are_the_three_out_of_the_box_and_kitchen_brings_its_list():
+    from app.tools.labels import HERE
+    shipped = pre.load_builtin(HERE / "presets.yml", clean=pre.clean_settings)
+    assert [p["name"] for p in shipped] == ["Return address ×30, US Letter", "Round stickers, 40 mm on plain A4", "Kitchen Labels - A4 Sheet"]
+    kitchen = shipped[2]["settings"]
+    items = kitchen["content"]["text"].split("\n")
+    assert kitchen["content"]["per_line"] is True and len(items) == 39 and items[0] == "Oats" and items[-1] == "Quinoa" and "Biscuits & Cookies" in items
+    assert (kitchen["size"], kitchen["look"]["inset"], kitchen["cut"]) == ({"width": 50.0, "height": 31.0}, 3.0, "grid")
+    round_ = shipped[1]["settings"]
+    assert (round_["size"], round_["look"]["shape"], round_["margin"], round_["cut"], round_["look"]["inset"]) == ({"width": 40.0, "height": 40.0}, "ellipse", 0.5, "grid", 3.0)
+
+
+def test_a_saved_preset_keeps_the_label_text_only_when_asked_through_the_api(rig):
+    keep = rig.client.post("/api/labels/presets", json={"name": "With list", "settings": {**PACK_PRESET, "content": {"text": "A\nB", "per_line": True}}}, headers=rig.h)
+    assert keep.status_code == 201 and keep.get_json()["data"]["settings"]["content"]["text"] == "A\nB"
+    plain_ = rig.client.post("/api/labels/presets", json={"name": "No list", "settings": PACK_PRESET}, headers=rig.h)
+    assert "content" not in plain_.get_json()["data"]["settings"]
 
 
 def test_a_preset_for_your_own_pack_needs_its_measurements_and_a_size_preset_its_size():

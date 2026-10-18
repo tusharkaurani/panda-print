@@ -557,7 +557,7 @@ export async function mount(root, kit) {
     presets = res.ok ? res.data.presets : [];
     paintPresets();
   }
-  function presetSettings() {
+  function presetSettings(withText = false) {
     const paper = currentPaper();
     const [pw, ph] = paperSize();
     const out = { unit: S.unit, kind: S.kind, paper: { width: pw, height: ph, ...(paper.keyword ? { media: paper.keyword } : {}), label: paper.label },
@@ -572,6 +572,7 @@ export async function mount(root, kit) {
       if (S.mode === 'grid') { out.cols = S.cols; out.rows = S.rows; }
       if (S.mode === 'count') out.count = S.count;
     }
+    if (withText && S.inputMode === 'text') out.content = { text: S.text, per_line: S.perLine };
     if (S.mediaType) out.media_type = S.mediaType;
     if (S.quality) out.quality = Number(S.quality);
     if (S.resolution) out.resolution = S.resolution.split('x').map(Number);
@@ -602,6 +603,7 @@ export async function mount(root, kit) {
     const list = papers();
     const found = list.find((m) => x.paper.media && m.keyword === x.paper.media) || list.find((m) => Math.abs(m.width - x.paper.width) < 0.6 && Math.abs(m.height - x.paper.height) < 0.6);
     if (found) S.paper = found.id; else { S.paper = 'custom'; S.customW = x.paper.width; S.customH = x.paper.height; }
+    if (x.content) { S.inputMode = 'text'; S.text = x.content.text; S.perLine = Boolean(x.content.per_line); textArea.value = S.text; }  // the label text, when the preset brings it
     S.mediaType = printer?.media_types?.some((t) => t.value === x.media_type) ? x.media_type : '';
     S.quality = printer?.qualities?.some((q) => q.value === x.quality) ? String(x.quality) : '';
     S.resolution = '';
@@ -615,9 +617,11 @@ export async function mount(root, kit) {
   const saveName = h('input', { class: 'input', maxlength: 60, placeholder: 'For example: Address labels on L7160', id: 'lb-preset-name', 'aria-label': 'Preset name', oninput: () => saveNote() });
   const saveMsg = h('p', { class: 'msg', role: 'alert' });
   const saveReplace = h('p', { class: 'hint' });
+  const saveText = h('input', { type: 'checkbox', id: 'lb-save-text' });
+  const saveTextRow = h('label', { class: 'check-row', for: 'lb-save-text' }, saveText, h('span', {}, h('strong', {}, 'Also keep the label text'), h('span', { class: 'hint' }, 'The typed labels come back when you click the preset. Off keeps only the settings.')));
   const saveGo = h('button', { class: 'btn primary', type: 'button', title: 'Save the preset', onclick: () => saveAs(saveName.value) }, 'Save preset');
   const saveDialog = h('dialog', { 'aria-labelledby': 'lb-save-title' }, h('h3', { id: 'lb-save-title' }, 'Save as a preset'),
-    h('p', {}, 'Keeps the sheet or label size, the style, the text settings and the print choices. The label text and the picture are not saved.'), saveName, saveReplace, saveMsg,
+    h('p', {}, 'Keeps the sheet or label size, the style, the text settings and the print choices. The picture is not saved.'), saveName, saveTextRow, saveReplace, saveMsg,
     h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', title: 'Close without saving', onclick: () => saveDialog.close() }, 'Cancel'), saveGo));
   function saveNote() {
     saveMsg.textContent = '';
@@ -627,10 +631,11 @@ export async function mount(root, kit) {
   function openSave() {
     const t = pack();
     saveName.value = (t ? t.name.replace(/ labels?,? /i, ' ') : `${shown(S.width)} × ${shown(S.height)} ${S.unit} labels on ${currentPaper().label}`).slice(0, 60);
+    saveText.checked = false; saveTextRow.hidden = S.inputMode !== 'text';
     saveNote(); saveDialog.showModal(); saveName.select();
   }
   async function saveAs(name) {
-    const res = await api('/labels/presets', { method: 'POST', body: { name, settings: presetSettings() } });
+    const res = await api('/labels/presets', { method: 'POST', body: { name, settings: presetSettings(saveText.checked) } });
     if (!res.ok) { saveMsg.textContent = res.error?.message || 'Could not save.'; return; }
     saveDialog.close();
     toast(res.data.replaced ? `Preset “${res.data.name}” updated.` : `Preset “${res.data.name}” saved.`);

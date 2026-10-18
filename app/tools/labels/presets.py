@@ -8,10 +8,11 @@ from app.tools.labels import fonts, sheet as sh
 from app.tools.photosheet import layout as lay
 from app.tools.photosheet.presets import PresetError, _int, _num, clean_name, load_builtin, slug, to_yaml, UserPresets  # noqa: F401 (re-exported)
 
+MAX_TEXT = 20_000
 TABLE = "lb_presets"
 MIGRATIONS = ["CREATE TABLE IF NOT EXISTS lb_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, created_at REAL NOT NULL);"]
 KEYS = {"unit", "kind", "pack", "grid", "paper", "size", "orientation", "area", "margin", "gap", "mode", "cols", "rows", "count", "align",
-        "look", "text", "copies", "repeat", "cut", "outline", "marks", "media_type", "quality", "resolution", "sheet_copies"}
+        "look", "text", "content", "copies", "repeat", "cut", "outline", "marks", "media_type", "quality", "resolution", "sheet_copies"}
 LOOK_KEYS = {"shape", "radius", "inset", "fill", "border", "border_width", "color", "family", "bold", "italic", "line_spacing"}
 TEXT_KEYS = {"size", "align", "valign", "pad", "first_bold", "first_scale", "first_color"}
 
@@ -123,6 +124,14 @@ def clean_settings(raw) -> dict:
                    "first_color": _color(text.get("first_color"), "The first line colour")}
     if out["text"]["align"] not in ("left", "center", "right") or out["text"]["valign"] not in ("top", "middle"):
         raise PresetError("Choose left, centre or right, and top or middle.")
+    content = raw.get("content")
+    if content is not None:  # the label text some presets bring with them (typed labels only)
+        if not isinstance(content, dict) or set(content) - {"text", "per_line"}:
+            raise PresetError("The label text isn't valid.")
+        text_ = content.get("text", "")
+        if not isinstance(text_, str) or len(text_) > MAX_TEXT:
+            raise PresetError(f"The label text must be at most {MAX_TEXT} characters.")
+        out["content"] = {"text": text_, "per_line": _bool(content, "per_line", False, "One label per line")}
     out["copies"] = _int(raw, "copies", 1, 100, "Copies of each label", 1)
     out["repeat"] = _bool(raw, "repeat", False, "Repeat to fill the sheet")
     cut = raw.get("cut")
