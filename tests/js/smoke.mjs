@@ -38,8 +38,11 @@ async function api(p, opts = {}) {
     const n = Math.max(1, opts.body?.images?.length || 1);
     hit = fx[`${key}#${n}`] || fx[`${key}#1`];
   }
+  if (key === 'POST /labels/layout') hit = fx[`${key}#${opts.body?.content?.mode === 'csv' ? 'csv' : 'text'}`];
+  if (key === 'GET /labels/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (key === 'GET /photosheet/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (hit === undefined) {
+    if (/\/pdf/.test(p)) return { ok: true, status: 200, data: new Blob(['%PDF-1.4']), error: null, retryAfter: 0 };  // a generated file
     if (method !== 'GET') return { ok: true, status: 200, data: {}, error: null, retryAfter: 0 };  // an unrecorded change succeeds
     return { ok: false, status: 404, data: null, error: { message: `no recorded answer for ${key}` }, retryAfter: 0 };
   }
@@ -115,6 +118,33 @@ async function photoScenario() {
   await settle();
 }
 
+async function labelScenario() {
+  const el = (id) => document.getElementById(id);
+  const sheets = $$('#lb-template option');
+  if (sheets.length < 10) problems.push(`the sheet list has only ${sheets.length} choices`);
+  change(el('lb-template'), sheets[3].value); await settle();
+  if (!el('lb-cols').value || !el('lb-width').value) problems.push('the measurements are empty after choosing a sheet');
+  typeInto(el('lb-cols'), '2'); await settle();
+  if (el('lb-template').value !== '') problems.push('editing the measurements should switch to the custom grid');
+  change(el('lb-template'), sheets[0].value); await settle();
+  typeInto(el('lb-text'), 'One\nTwo\n\nThree'); await settle();
+  change(el('lb-perLine'), 'true'); await settle(); change(el('lb-perLine'), 'false'); await settle();
+  change(el('lb-mode'), 'csv'); await settle();
+  typeInto(el('lb-csv'), 'Name,City\nAda,London'); typeInto(el('lb-csvtemplate'), '{Name}'); await settle();
+  const chip = $$('.lb .chips .chip')[0]; if (!chip) problems.push('no column chips after reading a spreadsheet'); else { chip.click(); await settle(); }
+  change(el('lb-mode'), 'text'); await settle();
+  change(el('lb-align'), 'center'); change(el('lb-valign'), 'top'); await settle();
+  el('lb-auto').checked = true; change(el('lb-auto')); await settle(); el('lb-auto').checked = false; change(el('lb-auto')); await settle();
+  for (const id of ['lb-bold', 'lb-firstBold', 'lb-fill', 'lb-outline']) { el(id).checked = true; change(el(id)); await settle(); }
+  typeInto(el('lb-copies'), '3'); typeInto(el('lb-start'), '4'); typeInto(el('lb-pad'), '2'); await settle();
+  change(el('lb-unit'), 'in'); await settle(); change(el('lb-unit'), 'mm'); await settle();
+  $('.sheet-canvas').dispatchEvent(new FakeEvent('click', { clientX: 10, clientY: 10, bubbles: true })); await settle();
+  const pr = $$('.lb button').find((b) => /^Print…$/.test(b.textContent.trim()) || /Print…/.test(b.textContent)); if (pr && !pr.disabled) { pr.click(); await settle(); }
+  const dl = $$('.lb button').find((b) => /Download PDF/.test(b.textContent)); if (dl && !dl.disabled) { dl.click(); await settle(); }
+  for (const s of subs) s(PRINTER);
+  await settle();
+}
+
 async function overviewScenario() { for (const s of subs) s(PRINTER); await settle(); }
 async function nozzleScenario() {
   for (const s of subs) s(PRINTER);
@@ -125,6 +155,7 @@ async function nozzleScenario() {
 
 try {
   if (scenario === 'photos') await photoScenario();
+  else if (scenario === 'labels') await labelScenario();
   else if (tool === 'maintenance' && tab === 'overview') await overviewScenario();
   else if (tool === 'maintenance' && tab === 'nozzle') await nozzleScenario();
 } catch (e) { problems.push(`scenario threw: ${e?.stack || e}`); }

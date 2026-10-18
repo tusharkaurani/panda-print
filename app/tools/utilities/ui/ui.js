@@ -20,7 +20,7 @@ export async function mount(root, kit) {
   }
 
   // tools that live inside this page (they declare parent: "utilities"): they open in the app, not in a new tab
-  const BUILT_IN_ART = { photosheet: 'passport' };
+  const BUILT_IN_ART = { photosheet: 'passport', labels: 'labels' };
   function builtIn(t) {
     return h('a', { class: 'pu-card', href: `#${t.id}`, title: `Open ${t.title}` },
       h('span', { class: 'pu-thumb', 'aria-hidden': 'true' }, art(kit, BUILT_IN_ART[t.id] || 'document')),

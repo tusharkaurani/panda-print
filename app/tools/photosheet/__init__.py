@@ -253,30 +253,10 @@ def create(ctx: AppContext) -> Tool:
                 raise BadRequest("This print queue can't print at actual size, so the photos wouldn't come out at the size you asked for.", 400)
             if not caps["pdf"]:
                 raise BadRequest("This print queue doesn't accept PDF files.", 400)
-            media = next((m for m in caps["media"] if m["keyword"] == opts.get("media")), None)
-            if media is None:
-                raise BadRequest("Choose one of the paper sizes this printer offers.")
-            job: list[tuple[int, str, object]] = [(ipp.KEYWORD, "media", media["keyword"]), (ipp.KEYWORD, "print-scaling", "none")]
-            mt = opts.get("media_type")
-            if mt:
-                if mt not in {t["value"] for t in caps["media_types"]}:
-                    raise BadRequest("Choose one of the paper types this printer offers.")
-                job.append((ipp.KEYWORD, "media-type", mt))
-            q = opts.get("quality")
-            if q is not None:
-                if q not in {x["value"] for x in caps["qualities"]}:
-                    raise BadRequest("Choose one of the print qualities this printer offers.")
-                job.append((ipp.ENUM, "print-quality", int(q)))
-            res = opts.get("resolution")
-            if res:
-                if res not in [r["value"] for r in caps["resolutions"]]:
-                    raise BadRequest("Choose one of the resolutions this printer offers.")
-                job.append((ipp.RESOLUTION, "printer-resolution", (int(res[0]), int(res[1]), 3)))
-            copies = opts.get("copies", 1)
-            if isinstance(copies, bool) or not isinstance(copies, int) or not 1 <= copies <= 20:
-                raise BadRequest("Copies must be a whole number from 1 to 20.")
-            if copies > 1:
-                job.append((ipp.INTEGER, "copies", copies))
+            try:
+                media, job, _copies = capabilities.job_options(caps, opts)
+            except capabilities.OptionError as e:
+                raise BadRequest(str(e)) from None
             result, _counts, assign = plan(raw, len(images), 0.0 if media["borderless"] else caps["min_margin"], (media["width"], media["height"]))
             now = clock()
             times = [r["ts"] for r in db.query("SELECT ts FROM ps_prints WHERE printer_id=? AND ts>=?", (printer.id, now - rule.window))]

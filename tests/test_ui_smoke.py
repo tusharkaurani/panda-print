@@ -66,6 +66,13 @@ def fixtures(app, variant: str) -> dict:
         body = {**base, "images": [{"width": 700, "height": 900}] * n, "counts": [1] * n}
         r = client.post("/api/photosheet/layout", json=body, headers=h)
         fx[f"POST /photosheet/layout#{n}"] = r.get_json()["data"]
+    fx["GET /labels/config?printer=no"] = get(client, "/api/labels/config")
+    fx["GET /labels/config?printer=yes"] = get(client, f"/api/labels/config?printer={PID}")
+    sheet = {"paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1, "gap_x": 2.5, "gap_y": 0, "radius": 2}
+    for name, content in (("text", {"mode": "text", "text": "Ada\nWay\n\nGrace\nCourt"}),
+                          ("csv", {"mode": "csv", "csv": "Name,City\nAda,London\nGrace,Leeds\n", "template": "{Name}\n{City}"})):
+        r = client.post("/api/labels/layout", json={"sheet": sheet, "content": content, "style": {"size": 11}, "copies": 1, "start": 1}, headers=h)
+        fx[f"POST /labels/layout#{name}"] = r.get_json()["data"]
     return fx
 
 
@@ -116,6 +123,17 @@ def test_the_photo_sheets_tab_works_with_several_photos(tmp_path, make_app_modul
     assert result["chips"] >= 1
 
 
+def test_the_label_sheet_tab_opens_and_every_control_works(tmp_path, make_app_module):
+    """Opens the page, changes the sheet, switches to a spreadsheet, uses every control and clicks the preview."""
+    result = run(tmp_path, fixtures(make_app_module("normal"), "normal"), "labels", scenario="labels")
+    assert result["calls"] >= 3 and "Print these labels?" in result["text"]
+
+
+def test_the_label_sheet_tab_without_cups_still_shows_and_explains(tmp_path, make_app_module):
+    result = run(tmp_path, fixtures(make_app_module("no-cups"), "no-cups"), "labels")
+    assert "no CUPS print queue" in result["text"]
+
+
 @pytest.mark.parametrize("variant", ["normal", "no-cups", "offline"])
 @pytest.mark.parametrize("tab", ["overview", "nozzle"])
 def test_the_printer_maintenance_tabs_open_in_every_state(tmp_path, make_app_module, variant, tab):
@@ -125,7 +143,7 @@ def test_the_printer_maintenance_tabs_open_in_every_state(tmp_path, make_app_mod
 def test_the_print_utilities_tab_opens_with_the_built_in_tool_and_no_chatter(tmp_path, make_app_module):
     result = run(tmp_path, fixtures(make_app_module("normal"), "normal"), "utilities")
     text = result["text"]
-    assert "Built in" in text and "Passport Sheet Maker" in text  # the photo tool is a card on this page
+    assert "Built in" in text and "Passport Sheet Maker" in text and "Label Sheet Maker" in text  # the photo tool is a card on this page
     assert "Photos & IDs" in text and "checked" not in text and "Sites change" not in text  # and the page carries no disclaimer text
 
 

@@ -1,6 +1,7 @@
 """What a CUPS queue offers for a photo job, turned into the choices the form shows. Pure functions."""
 from __future__ import annotations
 
+from app.printer import ipp
 from app.tools.photosheet.layout import PAPERS, parse_media
 
 _COMMON = [(w, h) for _label, w, h in PAPERS.values()]  # the sizes people print photos and documents on
@@ -87,3 +88,37 @@ def from_attrs(attrs: dict) -> dict:
         "actual_size": True if scaling is None else "none" in scaling,  # can the queue print at exactly 100%
         "pdf": True if formats is None else "application/pdf" in formats,
     }
+
+
+class OptionError(ValueError):
+    """The chosen print options aren't ones the queue offers; the message is written for the person at the form."""
+
+
+def job_options(caps: dict, opts: dict) -> tuple[dict, list[tuple[int, str, object]], int]:
+    """The IPP job attributes for the paper, type, quality and resolution someone chose, checked against what the queue offers.
+    Returns the chosen paper (a dict from caps["media"]), the attributes (printed at actual size) and the copies of the sheet."""
+    media = next((m for m in caps["media"] if m["keyword"] == opts.get("media")), None)
+    if media is None:
+        raise OptionError("Choose one of the paper sizes this printer offers.")
+    job: list[tuple[int, str, object]] = [(ipp.KEYWORD, "media", media["keyword"]), (ipp.KEYWORD, "print-scaling", "none")]
+    mt = opts.get("media_type")
+    if mt:
+        if mt not in {t["value"] for t in caps["media_types"]}:
+            raise OptionError("Choose one of the paper types this printer offers.")
+        job.append((ipp.KEYWORD, "media-type", mt))
+    q = opts.get("quality")
+    if q is not None:
+        if q not in {x["value"] for x in caps["qualities"]}:
+            raise OptionError("Choose one of the print qualities this printer offers.")
+        job.append((ipp.ENUM, "print-quality", int(q)))
+    res = opts.get("resolution")
+    if res:
+        if res not in [r["value"] for r in caps["resolutions"]]:
+            raise OptionError("Choose one of the resolutions this printer offers.")
+        job.append((ipp.RESOLUTION, "printer-resolution", (int(res[0]), int(res[1]), 3)))
+    copies = opts.get("copies", 1)
+    if isinstance(copies, bool) or not isinstance(copies, int) or not 1 <= copies <= 20:
+        raise OptionError("Copies must be a whole number from 1 to 20.")
+    if copies > 1:
+        job.append((ipp.INTEGER, "copies", copies))
+    return media, job, copies
