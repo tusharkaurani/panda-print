@@ -6,7 +6,7 @@ import { drawPdfBytes } from '/tools/maintenance/preview.js';
 const UNITS = { mm: { f: 1, dp: 1 }, cm: { f: 10, dp: 2 }, in: { f: 25.4, dp: 3 } };
 const KEY = 'pp-labels';
 const MAX_LOGO_SIDE = 1400;  // px: a bigger logo is scaled down before it is sent
-const SAMPLE = 'Ada Lovelace\n12 Analytical Way\nLondon\n\nGrace Hopper\n1 Cobol Court\nArlington';
+const SAMPLE = 'Oats\nWhole Wheat Flour\nAll-Purpose Flour\nWhite Rice\nBrown Rice\nSemolina\nKidney Beans\nChickpeas\nCoffee Beans\nInstant Coffee\nTurkish Coffee\nTea Leaves\nGreen Tea\nWhite Sugar\nBrown Sugar\nMonk Fruit Sweetener\nTable Salt\nBlack Pepper\nTurmeric Powder\nRed Chilli Powder\nCoriander Powder\nCumin Seeds\nMustard Seeds\nMuesli\nCornflakes\nMixed Nuts\nChia Seeds\nFlax Seeds\nBiscuits & Cookies\nBaking Powder\nBaking Soda\nCocoa Powder\nCooking Oil\nOlive Oil\nVinegar\nHoney\nPasta\nSpaghetti\nQuinoa';
 const FONT_CSS = { sans: 'Helvetica, Arial, sans-serif', serif: '"Times New Roman", Times, serif', mono: '"Courier New", Courier, monospace' };
 
 export async function mount(root, kit) {
@@ -21,7 +21,7 @@ export async function mount(root, kit) {
     shape: 'rounded', radius: 2, fill: '', border: '', borderWidth: 0.3, color: '#000000', family: 'sans', bold: false, italic: false,
     auto: false, size: 11, textAlign: 'left', valign: 'middle', pad: 3, lineSpacing: 1.2, firstBold: false, firstScale: 1, firstColor: '',
     logoPosition: 'top', logoPct: 30,
-    inputMode: 'text', text: SAMPLE, perLine: false, csv: '', csvName: '', csvTemplate: '',
+    inputMode: 'text', text: SAMPLE, perLine: true, csv: '', csvName: '', csvTemplate: '',
     copies: 1, repeat: false, start: 1, cut: 'none', inset: 0, marks: false, page: 1,
     mediaType: '', quality: '', resolution: '', sheetCopies: 1,
   };

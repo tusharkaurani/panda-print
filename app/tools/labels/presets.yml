@@ -54,3 +54,49 @@ presets:
     look: {shape: ellipse, fill: '#fff4cc', border: '#d49b00', border_width: 0.4, color: '#3b2f00', family: sans, bold: true}
     text: {size: null, align: center, valign: middle, pad: 1.0, first_scale: 1.3}
     cut: shape
+- id: kitchen-labels-a4
+  name: Kitchen Labels - A4 Sheet
+  settings:
+    unit: mm
+    kind: size
+    paper:
+      width: 210.0
+      height: 297.0
+      media: iso_a4_210x297mm
+      label: A4 (210 × 297 mm)
+    size:
+      width: 50.0
+      height: 31.0
+    orientation: auto
+    mode: fill
+    align: center
+    margin: 5.0
+    gap: 0.0
+    area: full
+    look:
+      shape: rounded
+      radius: 2.0
+      fill: '#ffe5e8'
+      border: '#00ccff'
+      border_width: 0.5
+      color: '#3b2f00'
+      family: sans
+      bold: true
+      italic: false
+      line_spacing: 1.2
+      inset: 3.0
+    text:
+      size: null
+      align: center
+      valign: middle
+      pad: 1.0
+      first_bold: false
+      first_scale: 1.3
+      first_color: null
+    copies: 1
+    repeat: false
+    cut: grid
+    marks: true
+    media_type: stationery
+    quality: 5
+    sheet_copies: 1

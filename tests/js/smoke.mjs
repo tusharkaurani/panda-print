@@ -167,7 +167,7 @@ async function labelScenario() {
   else {
     chips[0].click(); await settle();
     if (el('lb-kind').value !== 'pack' || !el('lb-pack').value) problems.push(`the first preset should pick a pack, got kind=${el('lb-kind').value} pack=${el('lb-pack').value}`);
-    chips[chips.length - 1].click(); await settle();
+    chips.find((c) => /Round stickers/.test(c.textContent)).click(); await settle();
     if (el('lb-kind').value !== 'size') problems.push(`the last preset should switch to a plain sheet, got ${el('lb-kind').value}`);
     if (el('lb-width').value !== '40' || el('lb-height').value !== '40') problems.push(`a preset did not set the label size: ${el('lb-width').value} x ${el('lb-height').value}`);
     if (el('lb-shape').value !== 'ellipse') problems.push(`a preset did not set the shape: ${el('lb-shape').value}`);
