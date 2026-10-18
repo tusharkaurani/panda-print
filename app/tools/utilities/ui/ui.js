@@ -26,7 +26,7 @@ export async function mount(root, kit) {
       h('span', { class: 'pu-thumb', 'aria-hidden': 'true' }, art(kit, BUILT_IN_ART[t.id] || 'document')),
       h('span', { class: 'pu-name' }, t.title),
       t.description && h('span', { class: 'pu-desc' }, t.description),
-      h('span', { class: 'pu-host' }, h('span', { class: 'pu-tag own' }, 'Built in')));
+      h('span', { class: 'pu-host' }, h('span', { class: 'pu-tag own' }, icon('check', 12), 'Built in')));
   }
 
   async function load() {
@@ -40,7 +40,8 @@ export async function mount(root, kit) {
       warnings?.length > 0 && h('details', { class: 'pu-notes' }, h('summary', {}, `${warnings.length} note${warnings.length === 1 ? '' : 's'} about print-utilities.yml`),
         h('ul', {}, warnings.map((w) => h('li', {}, w)))),
       inside.length > 0 && h('section', { class: 'pu-zone own', 'aria-labelledby': 'pu-builtin' },
-        h('div', { class: 'pu-zone-head' }, icon('check', 20),
+        h('div', { class: 'pu-zone-head' },
+          h('span', { class: 'pu-seal', 'aria-hidden': 'true' }, h('img', { src: '/static/favicon.svg', alt: '', width: 40, height: 40 }), h('span', { class: 'pu-seal-check' }, icon('check', 12))),
           h('div', {}, h('h2', { id: 'pu-builtin' }, 'Built in'), h('p', {}, 'Runs inside panda-print. Nothing is sent to another site.'))),
         h('div', { class: 'pu-grid' }, inside.map(builtIn))),
       categories.length > 0 && h('section', { class: 'pu-zone ext', 'aria-labelledby': 'pu-ext' },
