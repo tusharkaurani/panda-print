@@ -103,6 +103,10 @@ class Service:
             raw = self._jobs_cache.get(self.printer.list_jobs)
             pattern = self.tracker.automation().job_pattern
             jobs = [normalize.job(j, pattern) for j in raw]
+            ours = self.store.check_names()  # CUPS sometimes lists a job we sent without its name; we know it
+            for j in jobs:
+                if j["name"] == normalize.UNNAMED and ours.get(j["id"]):
+                    j["name"] = ours[j["id"]]
             jobs.sort(key=lambda j: j["id"] or 0, reverse=True)
             data["jobs"] = jobs[: self.s.recent_jobs]
             data["queued_jobs"] = [j for j in jobs if j["state"] in ("pending", "held", "printing", "stopped")]

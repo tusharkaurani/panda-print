@@ -18,6 +18,9 @@ def first(attrs: Attrs, name: str, default=None):
     return values[0] if values else default
 
 
+UNNAMED = "(unnamed)"
+
+
 def job_name(attrs: Attrs) -> str:
     """A CUPS job's name. Jobs sent with `lp` may lack job-name; then the document name is all there is."""
     return str(first(attrs, "job-name") or first(attrs, "document-name-supplied") or "")
@@ -143,7 +146,7 @@ def printer(attrs: Attrs, ip: str | None = None) -> dict:
 
 
 def job(attrs: Attrs, nozzle_pattern: str) -> dict:
-    name = job_name(attrs) or "(unnamed)"
+    name = job_name(attrs) or UNNAMED
     code = first(attrs, "job-state")
     created = first(attrs, "time-at-creation")
     completed = first(attrs, "time-at-completed")

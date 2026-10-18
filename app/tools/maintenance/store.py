@@ -152,6 +152,11 @@ class Store:
                  0 if claimed_ts is not None or state == "failed" else pages))
             return cur.rowcount > 0
 
+    def check_names(self) -> dict[int, str]:
+        """job id -> the page name we recorded when this app sent that job (CUPS can list such a job with no name)."""
+        rows = self.db.query("SELECT job_id, page_name FROM mt_checks WHERE printer_id=? AND job_id IS NOT NULL AND page_name IS NOT NULL", (self.pid,))
+        return {int(r["job_id"]): r["page_name"] for r in rows}
+
     def unclaimed_checks(self, since_ts: float) -> list[sqlite3.Row]:
         marks = ",".join("?" * len(OK_STATES))
         return self.db.query(

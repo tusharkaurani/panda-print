@@ -303,3 +303,17 @@ def test_the_readme_is_a_short_landing_page_whose_links_and_screenshots_exist():
             if not (f.parent / m.group(1)).resolve().exists():
                 problems.append(f"{f.name}: {m.group(1)}")
     assert not problems, problems
+
+
+def test_a_job_we_sent_keeps_its_name_in_the_queue_even_if_cups_lists_it_without_one(client):
+    h = csrf_headers(client)
+    job_id = client.post(f"/api/maintenance/{PID}/nozzle/print", headers=h).get_json()["data"]["job_id"]
+    ctx = client.application.extensions["panda"]["ctx"]
+    backend = ctx.backend_for(ctx.printers.get(PID))
+    for j in backend.jobs:
+        if j["job-id"] == [job_id] or j.get("job-id") == job_id:
+            j.pop("job-name", None); j.pop("document-name-supplied", None)
+    jobs = client.get(f"/api/maintenance/{PID}/queue").get_json()["data"]["jobs"]
+    mine = next(j for j in jobs if j["id"] == job_id)
+    nz = client.get(f"/api/maintenance/{PID}/nozzle").get_json()["data"]["last_manual"]
+    assert nz["page_name"] and mine["name"] == nz["page_name"] != "(unnamed)"
