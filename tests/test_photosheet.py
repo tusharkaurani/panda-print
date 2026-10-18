@@ -1117,3 +1117,25 @@ def test_the_yaml_of_settings_refuses_bad_settings_and_needs_a_csrf_token(rig):
     assert rig.client.post("/api/photosheet/presets/yaml", json={"settings": good_settings()}).status_code == 403
     ok = rig.client.post("/api/photosheet/presets/yaml", json={"settings": good_settings()}, headers=rig.h)
     assert ok.status_code == 200 and "name: My preset" in ok.get_data(as_text=True)  # a name is filled in if there isn't one
+
+
+def test_a_sheet_goes_to_the_printer_that_was_chosen_and_to_no_other(make_app):
+    import io
+    app, first = make_app()
+    c = app.test_client()
+    h = csrf_headers(c)
+    ctx = app.extensions["panda"]["ctx"]
+    other = c.post("/api/printers", json={"name": "Hall", "ip": "192.168.1.23", "cups_queue": "HP_ENVY"}, headers=h).get_json()["data"]["id"]
+    second = ctx.backend_for(ctx.printers.get(other))
+
+    def go(pid):
+        return c.post("/api/photosheet/print", data={"printer": pid, "settings": json.dumps({"paper": {"width": 210, "height": 297}, "photo": {"width": 35, "height": 45}}),
+                                                     "options": json.dumps({"media": "iso_a4_210x297mm"}), "image": (io.BytesIO(make_jpeg()), "p.jpg")},
+                      headers=h, content_type="multipart/form-data")
+    before = len(first.submitted)
+    assert go(other).status_code == 202
+    assert len(second.submitted) == 1 and len(first.submitted) == before  # only the chosen printer got the job
+    assert go(PID).status_code == 202
+    assert len(first.submitted) == before + 1 and len(second.submitted) == 1
+    cfg = c.get(f"/api/photosheet/config?printer={other}").get_json()["data"]["printer"]
+    assert cfg["name"] == "Hall"  # the page's choices and its name come from the selected printer, not a fixed one
