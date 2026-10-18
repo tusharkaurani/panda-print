@@ -1,0 +1,53 @@
+# Label Sheet Maker presets that ship with the app: a name and the choices to apply (never the label text or logo).
+# People can save their own presets in the app. To ship one with the code, add an entry under `presets:` here; the server
+# writes the text for a saved preset at /api/labels/presets/<id>/yaml. Lengths are in millimetres.
+#
+#   kind      pack (a label pack with printed die cuts) | size (a plain sheet, laid out by label size)
+#   pack      the id of a pack in templates.yml, or empty for your own measurements (then `grid` and `size` are needed)
+#   paper     {width, height, media?, label?}   portrait size; `media` is the CUPS paper name, used when the printer offers it
+#   size      {width, height}   one label (kind: size)
+#   orientation auto | portrait | landscape;  area full | top | bottom;  margin, gap;  mode fill | grid | count; align center | start
+#   look      shape rect | rounded | ellipse, radius, fill, border (colours as #rrggbb), border_width, color, family sans | serif | mono,
+#             bold, italic, line_spacing
+#   text      size (points, or null for the largest that fits), align, valign, pad, first_bold, first_scale, first_color
+#   copies, repeat, outline, media_type, quality, sheet_copies
+presets:
+- id: address-21
+  name: Address labels, 21 per A4 sheet
+  settings:
+    unit: mm
+    kind: pack
+    pack: l7160
+    paper: {width: 210.0, height: 297.0, media: iso_a4_210x297mm, label: A4 (210 × 297 mm)}
+    look: {shape: rounded, radius: 2.0, color: '#000000', family: sans}
+    text: {size: 11.0, align: left, valign: middle, pad: 3.0, first_bold: true}
+    media_type: labels
+    quality: 4
+- id: return-address-30
+  name: Return address ×30, US Letter
+  settings:
+    unit: in
+    kind: pack
+    pack: '5160'
+    paper: {width: 215.9, height: 279.4, media: na_letter_8.5x11in, label: Letter (8.5 × 11 in)}
+    look: {shape: rounded, radius: 2.0, color: '#000000', family: sans}
+    text: {size: 9.0, align: left, valign: middle, pad: 2.0}
+    repeat: true
+    media_type: labels
+- id: round-stickers-40
+  name: Round stickers, 40 mm on plain A4
+  settings:
+    unit: mm
+    kind: size
+    pack: ''
+    paper: {width: 210.0, height: 297.0, media: iso_a4_210x297mm, label: A4 (210 × 297 mm)}
+    size: {width: 40.0, height: 40.0}
+    orientation: auto
+    area: full
+    margin: 8.0
+    gap: 3.0
+    mode: fill
+    align: center
+    look: {shape: ellipse, fill: '#fff4cc', border: '#d49b00', border_width: 0.4, color: '#3b2f00', family: sans, bold: true}
+    text: {size: null, align: center, valign: middle, pad: 1.0, first_scale: 1.3}
+    outline: false

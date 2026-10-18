@@ -68,10 +68,14 @@ def fixtures(app, variant: str) -> dict:
         fx[f"POST /photosheet/layout#{n}"] = r.get_json()["data"]
     fx["GET /labels/config?printer=no"] = get(client, "/api/labels/config")
     fx["GET /labels/config?printer=yes"] = get(client, f"/api/labels/config?printer={PID}")
-    sheet = {"paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1, "gap_x": 2.5, "gap_y": 0, "radius": 2}
-    for name, content in (("text", {"mode": "text", "text": "Ada\nWay\n\nGrace\nCourt"}),
-                          ("csv", {"mode": "csv", "csv": "Name,City\nAda,London\nGrace,Leeds\n", "template": "{Name}\n{City}"})):
-        r = client.post("/api/labels/layout", json={"sheet": sheet, "content": content, "style": {"size": 11}, "copies": 1, "start": 1}, headers=h)
+    fx["GET /labels/presets"] = get(client, "/api/labels/presets")
+    pack = {"kind": "pack", "paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1, "gap_x": 2.5, "gap_y": 0}
+    size = {"kind": "size", "paper": {"width": 210, "height": 297}, "width": 40, "height": 40, "margin": 8, "gap": 3, "mode": "fill"}
+    look = {"size": 11, "shape": "ellipse", "fill": "#ffeecc", "border": "#aa7700", "first_scale": 1.3}
+    for name, sheet, content in (("text", pack, {"mode": "text", "text": "Ada\nWay\n\nGrace\nCourt"}),
+                                 ("csv", pack, {"mode": "csv", "csv": "Name,City\nAda,London\nGrace,Leeds\n", "template": "{Name}\n{City}"}),
+                                 ("size", size, {"mode": "text", "text": "Ada\nWay\n\nGrace\nCourt"})):
+        r = client.post("/api/labels/layout", json={"sheet": sheet, "content": content, "style": look if name == "size" else {"size": 11}, "copies": 1, "start": 1}, headers=h)
         fx[f"POST /labels/layout#{name}"] = r.get_json()["data"]
     return fx
 

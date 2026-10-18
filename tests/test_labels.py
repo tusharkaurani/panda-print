@@ -1,26 +1,56 @@
-"""Label Sheet Maker: the sheet geometry, the text setting, the spreadsheet reading, the PDF writer, and the API, against fakes."""
+"""Label Sheet Maker: the sheet geometry (packs and plain sheets), the text setting and styling, the spreadsheet reading,
+the PDF writer, the presets, and the API, against fakes."""
 import json
 import re
 
 import pytest
 
-from app.tools.labels import fonts, pdf as P, sheet as S
+from app.tools.labels import fonts, pdf as P, presets as pre, sheet as S
 from conftest import PID, csrf_headers
+from test_photosheet import make_jpeg
+from app.tools.photosheet import pdfsheet
 
 A4 = "iso_a4_210x297mm"
+PT = 72 / 25.4
 
 
 def l7160(**kw):
-    base = dict(paper_w=210, paper_h=297, cols=3, rows=7, width=63.5, height=38.1, left=7.2, top=15.1, gap_x=2.5, gap_y=0, radius=2)
+    base = dict(paper_w=210, paper_h=297, cols=3, rows=7, width=63.5, height=38.1, left=7.2, top=15.1, gap_x=2.5, gap_y=0)
     base.update(kw)
-    return S.make_sheet(**base)
+    return S.pack_sheet(**base)
+
+
+def plain(**kw):
+    base = dict(paper_w=210, paper_h=297, width=40, height=40, margin=8, gap=3)
+    base.update(kw)
+    return S.size_sheet(**base)
+
+
+def style(**kw):
+    base = dict(size=11, pad=3)
+    base.update(kw)
+    return S.Style(**base)
+
+
+def lines(result, page=0, cell=0):
+    return [ln["t"] for ln in result.pages[page][cell]["lines"]]
 
 
 # ------------------------------------------------------------------ fonts
 
-def test_text_is_measured_with_the_real_helvetica_widths():
-    assert fonts.text_width("Hello World", 10) == pytest.approx(51.67)  # H e l l o space W o r l d, from the font's own table
-    assert fonts.text_width("Hello World", 10, bold=True) > fonts.text_width("Hello World", 10)
+def test_text_is_measured_with_the_real_font_widths():
+    assert fonts.text_width("Hello World", 10) == pytest.approx(51.67)  # H e l l o space W o r l d, from Helvetica's own table
+    assert fonts.text_width("Hello World", 10, "Helvetica-Bold") > fonts.text_width("Hello World", 10)
+    assert fonts.text_width("Hello", 10, "Courier") == 30  # every typewriter character is 0.6 wide
+    assert fonts.text_width("Hello World", 10, "Times-Roman") == pytest.approx(50.27)
+    assert fonts.text_width("Hello", 10, "Helvetica-Oblique") == fonts.text_width("Hello", 10)  # slanted, same widths
+
+
+def test_every_family_has_all_four_faces():
+    names = {fonts.font_name(f, b, i) for f in fonts.FAMILIES for b in (False, True) for i in (False, True)}
+    assert len(names) == 12 and fonts.font_name("serif", True, True) == "Times-BoldItalic" and fonts.font_name() == "Helvetica"
+    for n in names:
+        assert fonts.text_width("Ag", 10, n) > 0
 
 
 def test_characters_the_font_lacks_are_replaced_and_reported():
@@ -40,30 +70,65 @@ def test_pdf_strings_escape_the_special_characters():
     assert fonts.pdf_escape("é") == b"\xe9"
 
 
-# ------------------------------------------------------------------ the sheet
+# ------------------------------------------------------------------ a label pack
 
-def test_a_sheet_lists_its_cells_row_by_row():
+def test_a_pack_lists_its_cells_row_by_row():
     sh = l7160()
-    cells = sh.cells()
-    assert sh.per_sheet == 21 and len(cells) == 21
-    assert cells[0] == {"x": 7.2, "y": 15.1, "w": 63.5, "h": 38.1} and cells[1]["x"] == pytest.approx(73.2) and cells[3]["y"] == pytest.approx(53.2)
+    assert sh.per_sheet == 21 and (sh.cols, sh.rows) == (3, 7)
+    assert sh.cells[0] == {"x": 7.2, "y": 15.1, "w": 63.5, "h": 38.1} and sh.cells[1]["x"] == pytest.approx(73.2) and sh.cells[3]["y"] == pytest.approx(53.2)
 
 
 @pytest.mark.parametrize("kw,words", [
     ({"cols": 4}, "wide"), ({"rows": 9}, "tall"), ({"cols": 0}, "columns"), ({"cols": True}, "columns"), ({"width": 2}, "between 5 and 300"),
     ({"left": -1}, "negative"), ({"gap_x": 60}, "negative"), ({"paper_w": 10, "paper_h": 20}, "paper"), ({"top": "3"}, "top margin")])
-def test_a_sheet_that_does_not_fit_or_makes_no_sense_is_refused_in_plain_words(kw, words):
+def test_a_pack_that_does_not_fit_or_makes_no_sense_is_refused_in_plain_words(kw, words):
     with pytest.raises(S.SheetError, match=words):
         l7160(**kw)
 
 
-def test_every_shipped_template_fits_its_paper():
+def test_every_shipped_pack_fits_its_paper():
     from app.tools.labels import load_templates, HERE
     templates = load_templates(HERE / "templates.yml")
     assert len(templates) >= 15 and len({t["id"] for t in templates}) == len(templates)
     assert {t["paper"] for t in templates} == {"a4", "letter"}
     for t in templates:
-        S.make_sheet(t["paper_width"], t["paper_height"], t["cols"], t["rows"], t["width"], t["height"], t["left"], t["top"], t["gap_x"], t["gap_y"], t["radius"])
+        S.pack_sheet(t["paper_width"], t["paper_height"], t["cols"], t["rows"], t["width"], t["height"], t["left"], t["top"], t["gap_x"], t["gap_y"])
+
+
+# ------------------------------------------------------------------ a plain sheet laid out by label size
+
+def test_a_plain_sheet_is_filled_by_label_size_like_the_passport_tool():
+    sh = plain()
+    assert (sh.cols, sh.rows, sh.per_sheet) == (4, 6, 24)  # 40 mm labels, 8 mm margins and 3 mm gaps on A4
+    assert sh.cells[0] == {"x": pytest.approx(sh.cells[0]["x"]), "y": pytest.approx(sh.cells[0]["y"]), "w": 40, "h": 40}
+    assert plain(mode="grid", cols=2, rows=3).per_sheet == 6 and plain(mode="count", count=5).per_sheet == 5
+
+
+def test_a_plain_sheet_can_be_turned_or_used_by_half_and_reports_it():
+    land = plain(orientation="landscape")
+    assert land.orientation == "landscape" and land.paper_w > land.paper_h
+    top = plain(area="top")
+    assert top.area == "top" and all(c["y"] + c["h"] <= 297 / 2 + 0.01 for c in top.cells) and top.region["h"] == pytest.approx(148.5)
+    assert plain(area="bottom").cells[0]["y"] > 148.5
+    with pytest.raises(S.SheetError, match="half page"):
+        plain(area="top", orientation="landscape")
+
+
+def test_a_plain_sheet_speaks_of_labels_not_photos():
+    with pytest.raises(S.SheetError) as e:
+        plain(width=290, height=290)
+    assert "label" in str(e.value).lower() and "photo" not in str(e.value).lower()
+    sh = plain(mode="grid", cols=9, rows=9)
+    assert sh.warnings and all("photo" not in w.lower() for w in sh.warnings) and any("labels fit" in w for w in sh.warnings)
+    close = plain(margin=1, min_margin=3)
+    assert any("margin" in w for w in close.warnings)
+    assert not plain(margin=1, min_margin=0).warnings
+
+
+def test_the_common_sizes_all_fit_on_a4():
+    for name, w, h, shape in S.SIZES:
+        assert shape in S.SHAPES
+        assert S.size_sheet(210, 297, w, h, margin=5, gap=2).per_sheet >= 1, name
 
 
 # ------------------------------------------------------------------ what goes on the labels
@@ -82,13 +147,11 @@ def test_a_spreadsheet_becomes_one_label_per_row_and_skips_empty_lines():
 
 
 def test_a_spreadsheet_template_mixes_columns_and_matches_names_loosely():
-    labels, _ = S.labels_from_csv("First,Last,Town\nAda,Lovelace,London\n", "{first} {LAST}\n{Town}")
-    assert labels == [["Ada Lovelace", "London"]]
+    assert S.labels_from_csv("First,Last,Town\nAda,Lovelace,London\n", "{first} {LAST}\n{Town}")[0] == [["Ada Lovelace", "London"]]
 
 
 def test_a_spreadsheet_with_no_template_prints_every_column():
-    labels, _ = S.labels_from_csv("A,B\n1,2\n3,\n", "")
-    assert labels == [["1", "2"], ["3"]]
+    assert S.labels_from_csv("A,B\n1,2\n3,\n", "")[0] == [["1", "2"], ["3"]]
 
 
 @pytest.mark.parametrize("text", ["A;B\n1;2\n", "A\tB\n1\t2\n", "﻿A,B\r\n1,2\r\n"])
@@ -109,13 +172,8 @@ def test_a_template_naming_a_missing_column_lists_the_real_ones():
 
 # ------------------------------------------------------------------ setting the text
 
-def lines(result, page=0, cell=0):
-    return [ln["t"] for ln in result.pages[page][cell]["lines"]]
-
-
 def test_text_lands_inside_its_label():
-    sh = l7160()
-    r = S.compute(sh, [["Ada Lovelace", "12 Analytical Way", "London"]], S.Style(size=11, pad=3))
+    r = S.compute(l7160(), [["Ada Lovelace", "12 Analytical Way", "London"]], style())
     cell = r.pages[0][0]
     assert lines(r) == ["Ada Lovelace", "12 Analytical Way", "London"]
     for ln in cell["lines"]:
@@ -125,92 +183,152 @@ def test_text_lands_inside_its_label():
 
 def test_alignment_moves_the_text_across_the_label():
     sh = l7160()
-    x = lambda a: S.compute(sh, [["Hi"]], S.Style(size=12, align=a, pad=3)).pages[0][0]["lines"][0]["x"]
+    x = lambda a: S.compute(sh, [["Hi"]], style(size=12, align=a)).pages[0][0]["lines"][0]["x"]
     assert x("left") < x("center") < x("right")
-    c = sh.cells()[0]
+    c = sh.cells[0]
     assert x("left") == pytest.approx(c["x"] + 3, abs=0.01)
-    width = fonts.text_width("Hi", 12) * S.MM_PER_PT
-    assert x("right") == pytest.approx(c["x"] + c["w"] - 3 - width, abs=0.01)
+    assert x("right") == pytest.approx(c["x"] + c["w"] - 3 - fonts.text_width("Hi", 12) * S.MM_PER_PT, abs=0.01)
 
 
 def test_top_and_middle_vertical_alignment():
-    sh = l7160()
-    y = lambda v: S.compute(sh, [["Hi"]], S.Style(size=10, valign=v, pad=2)).pages[0][0]["lines"][0]["y"]
+    y = lambda v: S.compute(l7160(), [["Hi"]], style(size=10, valign=v, pad=2)).pages[0][0]["lines"][0]["y"]
     assert y("top") < y("middle")
 
 
 def test_long_lines_wrap_inside_the_label():
-    r = S.compute(l7160(), [["A very long name that cannot possibly fit on one line of this label"]], S.Style(size=12, pad=3))
+    r = S.compute(l7160(), [["A very long name that cannot possibly fit on one line of this label"]], style(size=12))
     assert len(lines(r)) > 1 and r.warnings == []
-    inner = (63.5 - 6) / S.MM_PER_PT
-    assert all(fonts.text_width(t, 12) <= inner + 0.01 for t in lines(r))
+    assert all(fonts.text_width(t, 12) <= (63.5 - 6) / S.MM_PER_PT + 0.01 for t in lines(r))
 
 
-def test_automatic_size_is_the_largest_that_fits_every_label_and_stays_small_enough_for_the_longest():
+def test_automatic_size_is_the_largest_that_fits_every_label():
     sh = l7160()
-    short = S.compute(sh, [["Hi"]], S.Style(size=None)).size
-    mixed = S.compute(sh, [["Hi"], ["Line one", "Line two", "Line three", "Line four", "Line five", "Line six"]], S.Style(size=None)).size
+    short = S.compute(sh, [["Hi"]], style(size=None)).size
+    mixed = S.compute(sh, [["Hi"], ["Line one", "Line two", "Line three", "Line four", "Line five", "Line six"]], style(size=None)).size
     assert short > mixed >= S.MIN_SIZE  # one long label makes all of them smaller, so the sheet looks even
 
 
 def test_text_that_cannot_fit_is_reported_with_how_many_labels_are_affected():
-    r = S.compute(l7160(), [["x"] * 40, ["ok"]], S.Style(size=12))
+    r = S.compute(l7160(), [["x"] * 40, ["ok"]], style(size=12))
     assert any("1 label has more text than fits at 12 pt" in w for w in r.warnings)
 
 
 def test_characters_that_cannot_be_printed_are_warned_about():
-    r = S.compute(l7160(), [["日本"]], S.Style(size=12))
+    r = S.compute(l7160(), [["日本"]], style(size=12))
     assert any("日" in w and "?" in w for w in r.warnings) and lines(r) == ["??"]
 
 
-def test_first_line_bold_and_all_bold():
-    r = S.compute(l7160(), [["Name", "Street"]], S.Style(size=11, first_bold=True))
-    assert [ln["bold"] for ln in r.pages[0][0]["lines"]] == [True, False]
-    r = S.compute(l7160(), [["Name", "Street"]], S.Style(size=11, bold=True))
-    assert all(ln["bold"] for ln in r.pages[0][0]["lines"])
+def test_bold_italic_and_first_line_choices_reach_each_line():
+    r = S.compute(l7160(), [["Name", "Street"]], style(first_bold=True))
+    assert [(ln["bold"], ln["font"]) for ln in r.pages[0][0]["lines"]] == [(True, "Helvetica-Bold"), (False, "Helvetica")]
+    r = S.compute(l7160(), [["Name", "Street"]], style(bold=True, italic=True, family="serif"))
+    assert [ln["font"] for ln in r.pages[0][0]["lines"]] == ["Times-BoldItalic"] * 2
+
+
+def test_a_larger_first_line_and_its_own_colour():
+    r = S.compute(l7160(), [["Name", "Street"]], style(size=10, first_scale=1.5, first_color="#cc0000", color="#222222"))
+    first, second = r.pages[0][0]["lines"]
+    assert first["size"] == 15 and second["size"] == 10 and first["color"] == "#cc0000" and second["color"] == "#222222"
+    assert second["y"] - first["y"] > 10 * S.MM_PER_PT * 1.2  # the gap grows with the larger line above it
+
+
+def test_line_spacing_spreads_the_lines():
+    gap = lambda ls: (lambda ls_: ls_[1]["y"] - ls_[0]["y"])(S.compute(l7160(), [["A", "B"]], style(size=10, line_spacing=ls)).pages[0][0]["lines"])
+    assert gap(1.0) < gap(1.2) < gap(2.0) and gap(1.5) == pytest.approx(10 * 1.5 * S.MM_PER_PT, abs=0.01)
+
+
+# ------------------------------------------------------------------ the look: shapes, colours, picture
+
+def test_only_places_that_hold_a_label_are_marked_used():
+    r = S.compute(l7160(), [["A"], ["B"]], style(), start=2)
+    assert [c["used"] for c in r.pages[0][:4]] == [False, True, True, False]
+
+
+def test_text_stays_inside_an_oval_and_a_rounded_label():
+    box = lambda **kw: S.text_box(l7160().cells[0], style(**kw))[0]
+    rect, rounded, oval = box(shape="rect"), box(shape="rounded", radius=10), box(shape="ellipse")
+    assert rect["w"] > rounded["w"] > oval["w"] and rect["h"] > rounded["h"] > oval["h"]
+    assert oval["w"] == pytest.approx(63.5 * S.INSET_ELLIPSE - 6, abs=0.01)  # the rectangle that fits inside an ellipse, less the padding
+    r = S.compute(l7160(), [["x"]], style(shape="ellipse", fill="#ffeecc"))
+    d = r.to_dict()["look"]
+    assert d["shape"] == "ellipse" and d["fill"] == "#ffeecc"
+
+
+def test_a_picture_takes_space_from_the_text():
+    plain_box = S.text_box(l7160().cells[0], style())[0]
+    logo = S.Logo(200, 100, "top", 30)
+    top_box, top_logo = S.text_box(l7160().cells[0], style(logo=logo))
+    assert top_box["h"] < plain_box["h"] and top_box["w"] == plain_box["w"] and top_logo["y"] < top_box["y"]
+    left_box, left_logo = S.text_box(l7160().cells[0], style(logo=S.Logo(200, 100, "left", 30)))
+    assert left_box["w"] < plain_box["w"] and left_logo["x"] < left_box["x"]
+    back_box, back_logo = S.text_box(l7160().cells[0], style(logo=S.Logo(200, 100, "background", 30)))
+    assert back_box == plain_box and back_logo["cover"] is True
+
+
+def test_a_picture_keeps_its_shape_and_a_background_covers_the_label():
+    contain = S.fit_logo({"x": 0, "y": 0, "w": 40, "h": 40}, S.Logo(200, 100))
+    assert contain["w"] == 40 and contain["h"] == 20 and contain["y"] == 10  # all of it, centred
+    cover = S.fit_logo({"x": 0, "y": 0, "w": 40, "h": 40, "cover": True}, S.Logo(200, 100))
+    assert cover["h"] == 40 and cover["w"] == 80 and cover["x"] == -20  # crops the sides
+
+
+def test_only_used_places_get_a_picture():
+    r = S.compute(l7160(), [["A"]], style(logo=S.Logo(100, 100)), start=2)
+    assert "logo" not in r.pages[0][0] and "logo" in r.pages[0][1]
+
+
+@pytest.mark.parametrize("bad", [dict(size=2), dict(align="justify"), dict(pad=40), dict(valign="bottom"), dict(family="comic"), dict(first_scale=5),
+                                 dict(line_spacing=0.5), dict(shape="star"), dict(radius=-1), dict(border_width=9),
+                                 dict(logo=S.Logo(10, 10, "middle", 30)), dict(logo=S.Logo(10, 10, "top", 90))])
+def test_style_values_are_checked(bad):
+    with pytest.raises(S.SheetError):
+        S.compute(l7160(), [["A"]], style(**bad))
+
+
+@pytest.mark.parametrize("value,ok", [("#a1B2c3", True), (None, True), ("", True), ("red", False), ("#123", False), (5, False)])
+def test_colours_must_be_hex(value, ok):
+    if ok:
+        S.clean_color(value, "c")
+    else:
+        with pytest.raises(S.SheetError, match="colour"):
+            S.clean_color(value, "c")
 
 
 # ------------------------------------------------------------------ how many, and where they start
 
 def test_copies_repeat_each_label_one_after_another():
-    r = S.compute(l7160(), [["A"], ["B"]], S.Style(size=11), copies=3)
+    r = S.compute(l7160(), [["A"], ["B"]], style(), copies=3)
     assert [lines(r, cell=i) for i in range(7)] == [["A"], ["A"], ["A"], ["B"], ["B"], ["B"], []] and r.labels == 6
 
 
 def test_a_part_used_sheet_starts_at_the_chosen_place():
-    r = S.compute(l7160(), [["A"], ["B"]], S.Style(size=11), start=5)
+    r = S.compute(l7160(), [["A"], ["B"]], style(), start=5)
     assert [bool(c["lines"]) for c in r.pages[0][:7]] == [False, False, False, False, True, True, False]
     with pytest.raises(S.SheetError, match="1 to 21"):
-        S.compute(l7160(), [["A"]], S.Style(size=11), start=22)
+        S.compute(l7160(), [["A"]], style(), start=22)
 
 
-def test_more_labels_than_fit_run_on_to_more_sheets_and_the_first_sheet_honours_start():
-    labels = [[f"L{i}"] for i in range(25)]
-    r = S.compute(l7160(), labels, S.Style(size=11), start=3)
+def test_more_labels_than_fit_run_on_to_more_sheets():
+    r = S.compute(l7160(), [[f"L{i}"] for i in range(25)], style(), start=3)
     assert len(r.pages) == 2 and lines(r, 0, 2) == ["L0"] and lines(r, 0, 20) == ["L18"] and lines(r, 1, 0) == ["L19"] and lines(r, 1, 5) == ["L24"]
     assert not r.pages[1][6]["lines"]
 
 
-def test_fill_repeats_the_list_until_the_last_sheet_is_full():
-    r = S.compute(l7160(), [["A"], ["B"]], S.Style(size=11), fill=True)
+def test_repeat_fills_the_last_sheet_and_works_on_a_plain_sheet_too():
+    r = S.compute(l7160(), [["A"], ["B"]], style(), fill=True)
     assert r.labels == 21 and all(c["lines"] for c in r.pages[0]) and lines(r, cell=20) == ["A"]
-    r = S.compute(l7160(), [["A"]], S.Style(size=11), fill=True, start=20)
-    assert r.labels == 2  # only places 20 and 21 are free
+    assert S.compute(l7160(), [["A"]], style(), fill=True, start=20).labels == 2
+    assert S.compute(plain(), [["A"]], style(), fill=True).labels == 24
+    assert S.compute(plain(mode="count", count=5), [["A"]], style(), fill=True).labels == 5
 
 
 def test_limits_on_copies_sheets_and_labels():
     with pytest.raises(S.SheetError, match="Copies"):
-        S.compute(l7160(), [["A"]], S.Style(size=11), copies=0)
+        S.compute(l7160(), [["A"]], style(), copies=0)
     with pytest.raises(S.SheetError, match="sheets"):
-        S.compute(l7160(), [["A"]] * 2200, S.Style(size=11), copies=1)
+        S.compute(l7160(), [["A"]] * 2200, style())
     with pytest.raises(S.SheetError, match="the most is"):
-        S.compute(l7160(), [["A"]] * 60, S.Style(size=11), copies=100)
-
-
-def test_style_values_are_checked():
-    for bad in (S.Style(size=2), S.Style(size=11, align="justify"), S.Style(size=11, pad=40), S.Style(size=11, valign="bottom")):
-        with pytest.raises(S.SheetError):
-            S.compute(l7160(), [["A"]], bad)
+        S.compute(l7160(), [["A"]] * 60, style(), copies=100)
 
 
 # ------------------------------------------------------------------ the PDF
@@ -221,42 +339,117 @@ def mediabox(pdf_bytes):
 
 
 def test_the_pdf_is_the_paper_size_with_one_page_per_sheet_and_the_text_in_it():
-    r = S.compute(l7160(), [[f"Name {i}", "Street"] for i in range(25)], S.Style(size=11, first_bold=True))
+    r = S.compute(l7160(), [[f"Name {i}", "Street"] for i in range(25)], style(first_bold=True))
     body = P.build(r)
     assert body.startswith(b"%PDF") and body.rstrip().endswith(b"%%EOF")
-    assert abs(mediabox(body)[0] - 210 * 72 / 25.4) < 0.01 and abs(mediabox(body)[1] - 297 * 72 / 25.4) < 0.01  # exactly A4, nothing scaled
+    assert abs(mediabox(body)[0] - 210 * PT) < 0.01 and abs(mediabox(body)[1] - 297 * PT) < 0.01  # exactly A4, nothing scaled
     assert b"/Count 2" in body and body.count(b"/Type /Page ") == 2
-    assert b"(Name 0) Tj" in body and b"(Name 24) Tj" in body and b"/F2 11 Tf" in body and b"/F1 11 Tf" in body
+    assert b"(Name 0) Tj" in body and b"(Name 24) Tj" in body and b" 11 Tf" in body
     assert b"/BaseFont /Helvetica " in body and b"/BaseFont /Helvetica-Bold " in body and b"WinAnsiEncoding" in body
 
 
+def test_only_the_fonts_in_use_are_included():
+    body = P.build(S.compute(l7160(), [["Hi"]], style(family="serif", italic=True)))
+    assert b"/BaseFont /Times-Italic " in body and b"/BaseFont /Courier" not in body
+
+
 def test_the_pdf_places_text_where_the_layout_says():
-    r = S.compute(l7160(), [["Hi"]], S.Style(size=12, pad=3, valign="top"))
+    r = S.compute(l7160(), [["Hi"]], style(size=12, valign="top"))
     ln = r.pages[0][0]["lines"][0]
-    body = P.build(r)
-    pt = 72 / 25.4
-    expect = f"{ln['x'] * pt:.3f}".rstrip("0").rstrip(".") + " " + f"{(297 - ln['y']) * pt:.3f}".rstrip("0").rstrip(".") + " Td (Hi) Tj"
-    assert expect.encode() in body  # the PDF's y runs upwards from the bottom of the page
+    n = lambda v: f"{v:.3f}".rstrip("0").rstrip(".")
+    assert f"{n(ln['x'] * PT)} {n((297 - ln['y']) * PT)} Td (Hi) Tj".encode() in P.build(r)  # the PDF's y runs upwards from the bottom
 
 
 def test_special_characters_cannot_break_the_pdf_text():
-    r = S.compute(l7160(), [["a (b) \\ c", "café"]], S.Style(size=11))
-    body = P.build(r)
+    body = P.build(S.compute(l7160(), [["a (b) \\ c", "café"]], style()))
     assert b"(a \\(b\\) \\\\ c) Tj" in body and b"(caf\xe9) Tj" in body
 
 
-def test_borders_are_drawn_only_when_asked_and_with_rounded_corners_when_the_sheet_has_them():
-    r = S.compute(l7160(), [["A"]], S.Style(size=11))
-    assert b" S\n" not in P.build(r)
-    with_border = P.build(r, outline=True)
-    assert with_border.count(b" S\n") == 21 and b" c h S" in with_border
-    square = S.compute(l7160(radius=0), [["A"]], S.Style(size=11))
-    assert b" re S" in P.build(square, outline=True)
+def test_colours_shapes_and_borders_are_drawn_only_when_chosen():
+    plain_body = P.build(S.compute(l7160(), [["A"]], style()))
+    assert b" rg" in plain_body and b" RG" not in plain_body and b" f Q" not in plain_body  # black text, nothing else
+    r = S.compute(l7160(), [["A"], ["B"]], style(shape="ellipse", fill="#ff8000", border="#0000ff", border_width=0.5, color="#ff0000"))
+    body = P.build(r)
+    assert b"1 0.502 0 rg" in body and b"0 0 1 RG" in body and b"1 0 0 rg" in body  # fill, border and text colours
+    assert body.count(b" f Q") == 2 and body.count(b" S Q") == 2  # only the two used places
+    assert b" c h" in body and b" re" not in body  # an ellipse is curves
+    rounded = P.build(S.compute(l7160(), [["A"]], style(shape="rounded", radius=3, border="#000000")))
+    assert b" c h" in rounded
+    square = P.build(S.compute(l7160(), [["A"]], style(shape="rect", border="#000000")))
+    assert b" re" in square and b" c h" not in square
+
+
+def test_guide_outlines_cover_every_place_and_only_when_asked():
+    r = S.compute(l7160(), [["A"]], style())
+    assert P.build(r).count(b" re S") == 0
+    assert P.build(r, outline=True).count(b" re S") == 21
+
+
+def test_a_logo_is_embedded_once_and_drawn_clipped_on_every_used_label():
+    jpeg = make_jpeg(300, 200)
+    info = pdfsheet.jpeg_info(jpeg)
+    r = S.compute(l7160(), [["A"], ["B"], ["C"]], style(logo=S.Logo(300, 200, "top", 30)))
+    body = P.build(r, logo=(jpeg, info))
+    assert body.count(b"/Subtype /Image") == 1 and body.count(b"/Im0 Do") == 3 and body.count(jpeg) == 1 and b"/Filter /DCTDecode" in body
+    assert body.count(b" W n ") == 3
+    assert b"/Im0 Do" not in P.build(S.compute(l7160(), [["A"]], style()))
 
 
 def test_an_empty_sheet_still_makes_a_valid_pdf():
-    body = P.build(S.compute(l7160(), [], S.Style(size=11)), outline=True)
+    body = P.build(S.compute(l7160(), [], style()), outline=True)
     assert body.startswith(b"%PDF") and b"/Count 1" in body
+
+
+def test_a_landscape_sheet_is_turned_onto_a_portrait_page_for_printing_only():
+    r = S.compute(plain(orientation="landscape", width=70, height=30), [["Hi"]], style(), fill=True)
+    assert r.sheet.paper_w > r.sheet.paper_h
+    view, printed = P.build(r), P.build(r, for_media=True)
+    assert mediabox(view)[0] > mediabox(view)[1] and mediabox(printed)[0] < mediabox(printed)[1]
+    assert b"0 1 -1 0" in printed and b"0 1 -1 0" not in view
+    assert abs(mediabox(printed)[0] - 210 * PT) < 0.01 and abs(mediabox(printed)[1] - 297 * PT) < 0.01
+
+
+# ------------------------------------------------------------------ presets
+
+PACK_PRESET = {"unit": "mm", "kind": "pack", "pack": "l7160", "paper": {"width": 210, "height": 297, "media": A4, "label": "A4 (210 × 297 mm)"}}
+SIZE_PRESET = {"unit": "in", "kind": "size", "paper": {"width": 215.9, "height": 279.4}, "size": {"width": 50.8, "height": 50.8}, "mode": "grid", "cols": 3, "rows": 4,
+               "look": {"shape": "ellipse", "fill": "#ffeecc", "border": "#aa7700", "family": "serif", "italic": True},
+               "text": {"size": None, "align": "center", "first_scale": 1.5, "first_color": "#cc0000"}, "copies": 2, "repeat": True}
+
+
+def test_the_shipped_presets_are_all_valid():
+    from app.tools.labels import HERE
+    shipped = pre.load_builtin(HERE / "presets.yml", clean=pre.clean_settings)
+    assert len(shipped) >= 3 and all(p["id"].startswith("builtin-") for p in shipped)
+    assert {p["settings"]["kind"] for p in shipped} == {"pack", "size"}
+
+
+def test_a_preset_is_checked_and_filled_in_with_defaults():
+    x = pre.clean_settings(PACK_PRESET)
+    assert x["look"]["shape"] == "rect" and x["text"]["size"] == 11.0 and x["copies"] == 1 and x["repeat"] is False and x["pack"] == "l7160"
+    y = pre.clean_settings(SIZE_PRESET)
+    assert y["mode"] == "grid" and (y["cols"], y["rows"]) == (3, 4) and y["text"]["size"] is None and y["look"]["fill"] == "#ffeecc" and y["margin"] == 5.0
+
+
+@pytest.mark.parametrize("change,words", [
+    ({"unit": "yd"}, "unit"), ({"kind": "round"}, "label pack"), ({"paper": None}, "paper"), ({"extra": 1}, "Unknown setting"),
+    ({"look": {"shape": "star"}}, "shape"), ({"look": {"fill": "red"}}, "colour"), ({"look": {"family": "comic"}}, "font"), ({"look": {"zzz": 1}}, "look"),
+    ({"text": {"size": 2}}, "text size"), ({"text": {"align": "full"}}, "left"), ({"copies": 0}, "Copies"), ({"repeat": "yes"}, "true or false"),
+    ({"quality": 9}, "quality"), ({"resolution": [1]}, "resolution")])
+def test_bad_presets_are_refused_in_plain_words(change, words):
+    with pytest.raises(pre.PresetError, match=words):
+        pre.clean_settings({**PACK_PRESET, **change})
+
+
+def test_a_preset_for_your_own_pack_needs_its_measurements_and_a_size_preset_its_size():
+    with pytest.raises(pre.PresetError, match="measurements"):
+        pre.clean_settings({**PACK_PRESET, "pack": ""})
+    ok = pre.clean_settings({**PACK_PRESET, "pack": "", "size": {"width": 60, "height": 30}, "grid": {"cols": 3, "rows": 8, "left": 5, "top": 10, "gap_x": 2, "gap_y": 0}})
+    assert ok["grid"]["rows"] == 8 and ok["size"]["width"] == 60
+    with pytest.raises(pre.PresetError, match="size"):
+        pre.clean_settings({k: v for k, v in SIZE_PRESET.items() if k != "size"})
+    with pytest.raises(pre.PresetError, match="half page"):
+        pre.clean_settings({**SIZE_PRESET, "area": "top", "orientation": "landscape"})
 
 
 # ------------------------------------------------------------------ the API
@@ -268,8 +461,8 @@ def rig(make_app, clock):
     h = csrf_headers(client)
 
     def body(**kw):
-        b = {"sheet": {"paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1,
-                       "gap_x": 2.5, "gap_y": 0, "radius": 2},
+        b = {"sheet": {"kind": "pack", "paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1,
+                       "gap_x": 2.5, "gap_y": 0},
              "content": {"mode": "text", "text": "Ada Lovelace\n12 Analytical Way\n\nGrace Hopper\n1 Court"},
              "style": {"size": 11, "align": "left", "valign": "middle", "pad": 3}, "copies": 1, "start": 1}
         b.update(kw)
@@ -284,17 +477,40 @@ def rig(make_app, clock):
 GOOD = {"media": A4, "media_type": "stationery", "quality": 4, "copies": 1}
 
 
-def test_config_lists_the_sheets_and_the_printers_choices(rig):
+def plain_sheet(**kw):
+    s = {"kind": "size", "paper": {"width": 210, "height": 297}, "width": 40, "height": 40, "margin": 8, "gap": 3, "mode": "fill"}
+    s.update(kw)
+    return s
+
+
+def test_config_lists_the_packs_sizes_and_the_printers_choices(rig):
     c = rig.client.get(f"/api/labels/config?printer={PID}").get_json()["data"]
     assert len(c["templates"]) >= 15 and c["templates"][0]["id"] == "l7159" and c["printer"]["id"] == PID and c["printer"]["media"]
+    assert len(c["sizes"]) >= 15 and {"label", "width", "height", "shape"} <= set(c["sizes"][0]) and len(c["papers"]) >= 5
     assert rig.client.get("/api/labels/config").get_json()["data"]["printer"] is None
     assert rig.client.get("/api/labels/config?printer=ghost").status_code == 404
 
 
-def test_layout_returns_the_placed_text_for_the_preview(rig):
+def test_layout_returns_the_placed_text_and_the_look_for_the_preview(rig):
     d = rig.post("layout").get_json()["data"]
     assert (d["sheets"], d["labels"], d["per_sheet"], d["page"]) == (1, 2, 21, 1) and d["size"] == 11
-    assert [ln["t"] for ln in d["cells"][0]["lines"]] == ["Ada Lovelace", "12 Analytical Way"] and d["cells"][2]["lines"] == []
+    assert [ln["t"] for ln in d["cells"][0]["lines"]] == ["Ada Lovelace", "12 Analytical Way"] and d["cells"][0]["used"] and not d["cells"][2]["used"]
+    assert d["look"]["shape"] == "rect" and d["look"]["family"] == "sans" and d["area"] == "full" and d["orientation"] == "portrait"
+
+
+def test_a_plain_sheet_through_the_api(rig):
+    d = rig.post("layout", rig.body(sheet=plain_sheet(), style={"size": 11, "shape": "ellipse", "fill": "#ffeecc", "border": "#aa7700", "family": "serif"},
+                                    fill=True)).get_json()["data"]
+    assert d["per_sheet"] == 24 and d["labels"] == 24 and (d["cols"], d["rows"]) == (4, 6) and d["look"]["shape"] == "ellipse" and d["look"]["family"] == "serif"
+    top = rig.post("layout", rig.body(sheet=plain_sheet(area="top"))).get_json()["data"]
+    assert top["area"] == "top" and top["region"]["h"] == pytest.approx(148.5) and top["per_sheet"] == 12
+    land = rig.post("layout", rig.body(sheet=plain_sheet(orientation="landscape"))).get_json()["data"]
+    assert land["orientation"] == "landscape" and land["page_w"] > land["page_h"]
+    grid = rig.post("layout", rig.body(sheet=plain_sheet(mode="grid", cols=2, rows=2))).get_json()["data"]
+    assert grid["per_sheet"] == 4
+    close = rig.post("layout", rig.body(sheet=plain_sheet(margin=1), min_margin=3)).get_json()["data"]
+    assert any("margin" in w for w in close["warnings"])
+    assert not any("margin" in w for w in rig.post("layout", rig.body(sheet=plain_sheet(margin=1), min_margin=3, borderless=True)).get_json()["data"]["warnings"])
 
 
 def test_layout_pages_through_a_long_list_and_reports_the_spreadsheet_columns(rig):
@@ -304,15 +520,24 @@ def test_layout_pages_through_a_long_list_and_reports_the_spreadsheet_columns(ri
     assert rig.post("layout", rig.body(content={"mode": "csv", "csv": csv_text}, page=99)).get_json()["data"]["page"] == 2  # past the end shows the last
 
 
+def test_layout_reports_a_picture_placement_from_its_size_alone(rig):
+    st = {"size": 11, "pad": 2, "logo": {"width": 400, "height": 200, "position": "left", "pct": 30}}
+    d = rig.post("layout", rig.body(style=st)).get_json()["data"]
+    assert d["cells"][0]["logo"]["w"] > 0 and "logo" not in d["cells"][2]
+
+
 @pytest.mark.parametrize("change,words", [
     ({"copies": 0}, "Copies"), ({"copies": "2"}, "whole number"), ({"start": 99}, "1 to 21"), ({"content": {"mode": "pdf"}}, "typed text or a spreadsheet"),
     ({"content": {"mode": "text", "text": 5}}, "text wasn"), ({"content": {"mode": "csv", "csv": "A,B\n1,2\n", "template": "{Z}"}}, "no column"),
-    ({"style": {"size": "big"}}, "text size"), ({"sheet": {"paper": {"width": 210, "height": 297}, "cols": 4, "rows": 7, "width": 63.5, "height": 38.1,
-                                                          "left": 7.2, "top": 15.1}}, "wide"),
-    ({"sheet": {"paper": {"width": "a", "height": 297}}}, "paper width")])
+    ({"style": {"size": "big"}}, "text size"), ({"style": {"shape": "star"}}, "Choose square"), ({"style": {"fill": "red"}}, "colour"),
+    ({"style": {"family": "comic"}}, "font"), ({"style": {"logo": 5}}, "logo"), ({"style": {"logo": {"width": 0, "height": 5}}}, "logo"),
+    ({"style": {"logo": {"width": 5, "height": 5, "position": "middle"}}}, "logo goes"),
+    ({"sheet": {"kind": "pack", "paper": {"width": 210, "height": 297}, "cols": 4, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1}}, "wide"),
+    ({"sheet": {"kind": "pack", "paper": {"width": "a", "height": 297}}}, "paper width"), ({"sheet": {"kind": "round", "paper": {"width": 210, "height": 297}}}, "label pack"),
+    ({"sheet": plain_sheet(mode="zigzag")}, "how many"), ({"sheet": plain_sheet(width=290, height=290)}, "label")])
 def test_layout_refuses_bad_requests_with_a_reason(rig, change, words):
     r = rig.post("layout", rig.body(**change))
-    assert r.status_code == 400 and words in r.get_json()["error"]["message"]
+    assert r.status_code == 400 and words.lower() in r.get_json()["error"]["message"].lower()
 
 
 def test_layout_without_a_body_is_a_400_not_a_crash(rig):
@@ -320,8 +545,8 @@ def test_layout_without_a_body_is_a_400_not_a_crash(rig):
     assert rig.client.post("/api/labels/layout", json=[1], headers=rig.h).status_code == 400
 
 
-def test_text_closer_to_the_edge_than_the_printer_reaches_is_warned_about_unless_borderless(rig):
-    tight = rig.body(sheet={**rig.body()["sheet"], "left": 0, "cols": 3}, style={"size": 11, "pad": 0.5, "align": "left", "valign": "top"}, min_margin=3)
+def test_text_closer_to_the_edge_than_the_printer_reaches_is_warned_about_on_a_pack_unless_borderless(rig):
+    tight = rig.body(sheet={**rig.body()["sheet"], "left": 0}, style={"size": 11, "pad": 0.5, "align": "left", "valign": "top"}, min_margin=3)
     assert any("edge" in w for w in rig.post("layout", tight).get_json()["data"]["warnings"])
     assert not any("edge" in w for w in rig.post("layout", {**tight, "borderless": True}).get_json()["data"]["warnings"])
     assert not any("edge" in w for w in rig.post("layout", rig.body(min_margin=3)).get_json()["data"]["warnings"])
@@ -335,6 +560,27 @@ def test_the_pdf_is_served_inline_or_as_a_download(rig):
     assert rig.post("pdf", rig.body(copies=0)).status_code == 400
 
 
+def form(rig, path, settings, logo=None):
+    import io
+    data = {"settings": json.dumps(settings)}
+    if logo is not None:
+        data["logo"] = (io.BytesIO(logo), "logo.jpg")
+    return rig.client.post(f"/api/labels/{path}", data=data, headers=rig.h, content_type="multipart/form-data")
+
+
+def test_a_pdf_with_a_logo_comes_from_a_form_with_the_picture(rig):
+    st = {"size": 11, "pad": 2, "logo": {"width": 300, "height": 200, "position": "top", "pct": 30}}
+    r = form(rig, "pdf", rig.body(style=st), make_jpeg(300, 200))
+    assert r.status_code == 200 and r.data.count(b"/Subtype /Image") == 1 and r.data.count(b"/Im0 Do") == 2
+    missing = form(rig, "pdf", rig.body(style=st))
+    assert missing.status_code == 400 and "logo picture is missing" in missing.get_json()["error"]["message"]
+    png = form(rig, "pdf", rig.body(style=st), b"\x89PNG\r\n\x1a\n" + b"0" * 50)
+    assert png.status_code == 415
+    assert form(rig, "pdf", rig.body()).status_code == 200  # a form without a logo is fine when the labels carry none
+    bad = rig.client.post("/api/labels/pdf", data={"settings": "{nope"}, headers=rig.h, content_type="multipart/form-data")
+    assert bad.status_code == 400
+
+
 def test_post_requires_the_csrf_token(rig):
     assert rig.client.post("/api/labels/layout", json=rig.body()).status_code == 403
 
@@ -346,7 +592,22 @@ def test_print_sends_the_pdf_with_the_chosen_paper_at_actual_size(rig):
     job = rig.backend.submitted[-1]
     assert job["mime"] == "application/pdf" and job["name"] == "panda-print labels"
     assert job["options"]["media"] == A4 and job["options"]["print-scaling"] == "none" and job["options"]["media-type"] == "stationery"
-    assert job["document"].startswith(b"%PDF") and abs(mediabox(job["document"])[0] - 210 * 72 / 25.4) < 0.1
+    assert job["document"].startswith(b"%PDF") and abs(mediabox(job["document"])[0] - 210 * PT) < 0.1
+
+
+def test_print_a_styled_plain_sheet_with_a_logo_from_a_form(rig):
+    st = {"size": None, "shape": "ellipse", "fill": "#ffeecc", "logo": {"width": 300, "height": 200, "position": "background", "pct": 30}}
+    r = form(rig, "print", {**rig.body(sheet=plain_sheet(), style=st), "printer": PID, "options": GOOD}, make_jpeg(300, 200))
+    assert r.status_code == 202
+    doc = rig.backend.submitted[-1]["document"]
+    assert b"/Subtype /Image" in doc and b"1 0.933 0.8 rg" in doc
+
+
+def test_a_landscape_plain_sheet_is_printed_turned_onto_a_portrait_page(rig):
+    r = rig.post("print", {**rig.body(sheet=plain_sheet(orientation="landscape", width=70, height=30)), "printer": PID, "options": GOOD})
+    assert r.status_code == 202
+    doc = rig.backend.submitted[-1]["document"]
+    assert mediabox(doc)[0] < mediabox(doc)[1] and b"0 1 -1 0" in doc
 
 
 def test_print_refuses_paper_that_is_not_the_sheets_paper(rig):
@@ -373,8 +634,8 @@ def test_print_for_a_ghost_or_a_printer_without_cups(rig):
 def test_print_while_cups_is_down_is_a_502(make_app):
     app, _ = make_app(fail=("cups",), timezone="UTC", print_cooldown=0, print_max_per_hour=1000)
     c = app.test_client()
-    r = c.post("/api/labels/print", json={"sheet": {"paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1},
-                                          "content": {"mode": "text", "text": "A"}, "style": {"size": 11}, "printer": PID, "options": GOOD}, headers=csrf_headers(c))
+    sheet = {"kind": "pack", "paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1}
+    r = c.post("/api/labels/print", json={"sheet": sheet, "content": {"mode": "text", "text": "A"}, "style": {"size": 11}, "printer": PID, "options": GOOD}, headers=csrf_headers(c))
     assert r.status_code == 502
 
 
@@ -383,7 +644,7 @@ def test_printing_is_rate_limited_per_printer_and_a_removed_printers_log_goes_wi
     c = app.test_client()
     h = csrf_headers(c)
     other = c.post("/api/printers", json={"name": "Hall", "ip": "192.168.1.23", "cups_queue": "HP_ENVY"}, headers=h).get_json()["data"]["id"]
-    sheet = {"paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1}
+    sheet = {"kind": "pack", "paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1}
 
     def go(pid):
         return c.post("/api/labels/print", json={"sheet": sheet, "content": {"mode": "text", "text": "A"}, "style": {"size": 11}, "printer": pid, "options": {"media": A4}}, headers=h)
@@ -404,7 +665,43 @@ def test_a_sheet_goes_to_the_chosen_printer_only(make_app):
     ctx = app.extensions["panda"]["ctx"]
     other = c.post("/api/printers", json={"name": "Hall", "ip": "192.168.1.23", "cups_queue": "HP_ENVY"}, headers=h).get_json()["data"]["id"]
     second = ctx.backend_for(ctx.printers.get(other))
-    sheet = {"paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1}
+    sheet = {"kind": "pack", "paper": {"width": 210, "height": 297}, "cols": 3, "rows": 7, "width": 63.5, "height": 38.1, "left": 7.2, "top": 15.1}
     c.post("/api/labels/print", json={"sheet": sheet, "content": {"mode": "text", "text": "A"}, "style": {"size": 11}, "printer": other, "options": {"media": A4}}, headers=h)
     assert len(second.submitted) == 1 and len(first.submitted) == 0
     assert c.get(f"/api/labels/config?printer={other}").get_json()["data"]["printer"]["name"] == "Hall"
+
+
+# ------------------------------------------------------------------ presets through the API
+
+def test_presets_ship_with_the_app_and_people_can_add_and_remove_their_own(rig):
+    listed = rig.client.get("/api/labels/presets").get_json()["data"]["presets"]
+    assert len(listed) >= 3 and all(p["builtin"] for p in listed)
+    made = rig.client.post("/api/labels/presets", json={"name": "Stickers", "settings": SIZE_PRESET}, headers=rig.h)
+    assert made.status_code == 201 and made.get_json()["data"]["settings"]["look"]["shape"] == "ellipse"
+    again = rig.client.post("/api/labels/presets", json={"name": "stickers", "settings": PACK_PRESET}, headers=rig.h)
+    assert again.status_code == 200 and again.get_json()["data"]["replaced"] is True  # the same name replaces
+    mine = [p for p in rig.client.get("/api/labels/presets").get_json()["data"]["presets"] if not p["builtin"]]
+    assert len(mine) == 1 and mine[0]["settings"]["kind"] == "pack"
+    assert rig.client.delete(f"/api/labels/presets/{mine[0]['id']}", headers=rig.h).status_code == 200
+    assert rig.client.delete(f"/api/labels/presets/{mine[0]['id']}", headers=rig.h).status_code == 404
+    assert rig.client.delete(f"/api/labels/presets/{listed[0]['id']}", headers=rig.h).status_code == 403  # the shipped ones stay
+
+
+def test_bad_presets_are_refused_by_the_api(rig):
+    for body, words in (({"name": "", "settings": PACK_PRESET}, "name"), ({"name": "x", "settings": {**PACK_PRESET, "look": {"shape": "star"}}}, "shape"),
+                        ({"name": "x"}, "settings"), ("nope", "preset")):
+        r = rig.client.post("/api/labels/presets", json=body, headers=rig.h) if isinstance(body, dict) else rig.client.post("/api/labels/presets", data=body, headers=rig.h, content_type="application/json")
+        assert r.status_code == 400 and words in r.get_json()["error"]["message"].lower()
+
+
+def test_a_preset_can_be_exported_as_yaml_to_ship_with_the_code(rig):
+    first = rig.client.get("/api/labels/presets").get_json()["data"]["presets"][0]
+    r = rig.client.get(f"/api/labels/presets/{first['id']}/yaml")
+    assert r.status_code == 200 and r.mimetype == "text/plain" and "presets:" in r.get_data(as_text=True)
+    assert rig.client.get("/api/labels/presets/nope/yaml").status_code == 404
+
+
+def test_presets_belong_to_everyone_and_do_not_mix_with_the_passport_tools(rig):
+    rig.client.post("/api/labels/presets", json={"name": "Mine", "settings": PACK_PRESET}, headers=rig.h)
+    passport = rig.client.get("/api/photosheet/presets").get_json()["data"]["presets"]
+    assert all(p["name"] != "Mine" for p in passport)

@@ -124,8 +124,10 @@ def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "preset"
 
 
-def load_builtin(path: Path) -> list[dict]:
-    """The presets shipped with the code. A bad entry is skipped with a log line, never fatal."""
+def load_builtin(path: Path, clean=None) -> list[dict]:
+    """The presets shipped with the code. A bad entry is skipped with a log line, never fatal.
+    `clean` checks one entry's settings (this module's own by default)."""
+    clean = clean or clean_settings
     try:
         doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as e:
@@ -141,7 +143,7 @@ def load_builtin(path: Path) -> list[dict]:
             if pid in seen:
                 raise PresetError("duplicate id")
             seen.add(pid)
-            out.append({"id": pid, "name": name, "builtin": True, "settings": clean_settings(entry.get("settings"))})
+            out.append({"id": pid, "name": name, "builtin": True, "settings": clean(entry.get("settings"))})
         except PresetError as e:
             log.warning("photo preset %d skipped: %s", i, e)
     return out
@@ -150,11 +152,12 @@ def load_builtin(path: Path) -> list[dict]:
 class UserPresets:
     """Presets people saved, in the database."""
 
-    def __init__(self, db, clock=time.time):
-        self.db, self.clock = db, clock
+    def __init__(self, db, clock=time.time, table: str = "ps_presets", clean=None, limit: int = MAX_USER_PRESETS):
+        self.db, self.clock, self.table, self.limit = db, clock, table, limit  # `table` is a fixed name from the calling tool, never user input
+        self.clean = clean or clean_settings
 
     def list(self) -> list[dict]:
-        rows = self.db.query("SELECT id, name, data FROM ps_presets ORDER BY created_at, id")
+        rows = self.db.query(f"SELECT id, name, data FROM {self.table} ORDER BY created_at, id")
         out = []
         for r in rows:
             try:
@@ -164,27 +167,27 @@ class UserPresets:
         return out
 
     def save(self, name_raw, settings_raw) -> dict:
-        name, settings = clean_name(name_raw), clean_settings(settings_raw)
+        name, settings = clean_name(name_raw), self.clean(settings_raw)
         existing = next((p for p in self.list() if p["name"].lower() == name.lower()), None)
-        if existing is None and self.db.one("SELECT COUNT(*) AS n FROM ps_presets")["n"] >= MAX_USER_PRESETS:
-            raise PresetError(f"You can keep up to {MAX_USER_PRESETS} presets. Delete one first.")
+        if existing is None and self.db.one(f"SELECT COUNT(*) AS n FROM {self.table}")["n"] >= self.limit:
+            raise PresetError(f"You can keep up to {self.limit} presets. Delete one first.")
         data = json.dumps(settings, separators=(",", ":"))
         if existing:  # same name: replaced
-            self.db.execute("UPDATE ps_presets SET name=?, data=? WHERE id=?", (name, data, existing["id"]))
+            self.db.execute(f"UPDATE {self.table} SET name=?, data=? WHERE id=?", (name, data, existing["id"]))
             return {"id": existing["id"], "name": name, "builtin": False, "settings": settings, "replaced": True}
-        ids = {r["id"] for r in self.db.query("SELECT id FROM ps_presets")}
+        ids = {r["id"] for r in self.db.query(f"SELECT id FROM {self.table}")}
         base, n = f"user-{slug(name)}", 1
         pid = base
         while pid in ids:
             n += 1
             pid = f"{base}-{n}"
-        self.db.execute("INSERT INTO ps_presets(id, name, data, created_at) VALUES(?,?,?,?)", (pid, name, data, self.clock()))
+        self.db.execute(f"INSERT INTO {self.table}(id, name, data, created_at) VALUES(?,?,?,?)", (pid, name, data, self.clock()))
         return {"id": pid, "name": name, "builtin": False, "settings": settings, "replaced": False}
 
     def delete(self, pid: str) -> bool:
-        if self.db.one("SELECT 1 AS x FROM ps_presets WHERE id=?", (pid,)) is None:
+        if self.db.one(f"SELECT 1 AS x FROM {self.table} WHERE id=?", (pid,)) is None:
             return False
-        self.db.execute("DELETE FROM ps_presets WHERE id=?", (pid,))
+        self.db.execute(f"DELETE FROM {self.table} WHERE id=?", (pid,))
         return True
 
 

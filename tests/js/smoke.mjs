@@ -38,7 +38,7 @@ async function api(p, opts = {}) {
     const n = Math.max(1, opts.body?.images?.length || 1);
     hit = fx[`${key}#${n}`] || fx[`${key}#1`];
   }
-  if (key === 'POST /labels/layout') hit = fx[`${key}#${opts.body?.content?.mode === 'csv' ? 'csv' : 'text'}`];
+  if (key === 'POST /labels/layout') hit = fx[`${key}#${opts.body?.sheet?.kind === 'size' ? 'size' : opts.body?.content?.mode === 'csv' ? 'csv' : 'text'}`];
   if (key === 'GET /labels/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (key === 'GET /photosheet/config') hit = fx[`${key}?printer=${p.includes('printer=') ? 'yes' : 'no'}`];
   if (hit === undefined) {
@@ -120,26 +120,60 @@ async function photoScenario() {
 
 async function labelScenario() {
   const el = (id) => document.getElementById(id);
-  const sheets = $$('#lb-template option');
-  if (sheets.length < 10) problems.push(`the sheet list has only ${sheets.length} choices`);
-  change(el('lb-template'), sheets[3].value); await settle();
-  if (!el('lb-cols').value || !el('lb-width').value) problems.push('the measurements are empty after choosing a sheet');
-  typeInto(el('lb-cols'), '2'); await settle();
-  if (el('lb-template').value !== '') problems.push('editing the measurements should switch to the custom grid');
-  change(el('lb-template'), sheets[0].value); await settle();
-  typeInto(el('lb-text'), 'One\nTwo\n\nThree'); await settle();
-  change(el('lb-perLine'), 'true'); await settle(); change(el('lb-perLine'), 'false'); await settle();
-  change(el('lb-mode'), 'csv'); await settle();
-  typeInto(el('lb-csv'), 'Name,City\nAda,London'); typeInto(el('lb-csvtemplate'), '{Name}'); await settle();
-  const chip = $$('.lb .chips .chip')[0]; if (!chip) problems.push('no column chips after reading a spreadsheet'); else { chip.click(); await settle(); }
-  change(el('lb-mode'), 'text'); await settle();
-  change(el('lb-align'), 'center'); change(el('lb-valign'), 'top'); await settle();
-  el('lb-auto').checked = true; change(el('lb-auto')); await settle(); el('lb-auto').checked = false; change(el('lb-auto')); await settle();
-  for (const id of ['lb-bold', 'lb-firstBold', 'lb-fill', 'lb-outline']) { el(id).checked = true; change(el(id)); await settle(); }
-  typeInto(el('lb-copies'), '3'); typeInto(el('lb-start'), '4'); typeInto(el('lb-pad'), '2'); await settle();
-  change(el('lb-unit'), 'in'); await settle(); change(el('lb-unit'), 'mm'); await settle();
+  const fire = async (id, value, type = 'change') => { const e = el(id); if (!e) { problems.push(`no control ${id}`); return; } if (type === 'input') typeInto(e, value); else if (typeof value === 'boolean') { e.checked = value; change(e); } else change(e, value); await settle(); };
+  const packs = $$('#lb-pack option');
+  if (packs.length < 10) problems.push(`the pack list has only ${packs.length} choices`);
+  await fire('lb-pack', packs[3].value);
+  if (!el('lb-width').value || !el('lb-packCols').value) problems.push('the measurements are empty after choosing a pack');
+  await fire('lb-packCols', '2', 'input');
+  if (el('lb-pack').value !== '') problems.push('editing the measurements should switch to your own pack');
+  await fire('lb-pack', packs[0].value);
+  await fire('lb-text', 'One\nTwo\n\nThree', 'input');
+  await fire('lb-perLine', 'true'); await fire('lb-perLine', 'false');
+  await fire('lb-inputMode', 'csv');
+  await fire('lb-csv', 'Name,City\nAda,London', 'input'); await fire('lb-csvtemplate', '{Name}', 'input');
+  const chip = $$('.lb .chips .chip.col')[0]; if (!chip) problems.push('no column chips after reading a spreadsheet'); else { chip.click(); await settle(); }
+  await fire('lb-inputMode', 'text');
+  // a plain sheet, laid out by label size
+  await fire('lb-kind', 'size');
+  if (!$$('#lb-sizepick option').length || $$('#lb-sizepick option').length < 10) problems.push('the common sizes list is empty');
+  await fire('lb-sizepick', '4');
+  if (!el('lb-width').value) problems.push('choosing a common size left the width empty');
+  for (const mode of ['grid', 'count', 'fill']) await fire('lb-mode', mode);
+  await fire('lb-orientation', 'landscape'); await fire('lb-orientation', 'auto');
+  for (const area of ['top', 'bottom', 'full']) await fire('lb-area', area);
+  await fire('lb-margin', '6', 'input'); await fire('lb-gap', '4', 'input');
+  if (!el('lb-paper').options?.length && !$$('#lb-paper option').length) problems.push('the paper list is empty');
+  await fire('lb-paper', 'custom'); await fire('lb-customW', '150', 'input'); await fire('lb-paper', $$('#lb-paper option')[0].value);
+  // the look and the text
+  for (const shape of ['rect', 'rounded', 'ellipse']) await fire('lb-shape', shape);
+  await fire('lb-radius', '3', 'input');
+  await fire('lb-fill', '#ffeecc', 'input'); await fire('lb-fill-none', true); await fire('lb-fill-none', false);
+  await fire('lb-border', '#aa7700', 'input'); await fire('lb-borderWidth', '0.5', 'input'); await fire('lb-color', '#112233', 'input');
+  for (const f of ['serif', 'mono', 'sans']) await fire('lb-family', f);
+  for (const id of ['lb-bold', 'lb-italic', 'lb-firstBold']) await fire(id, true);
+  await fire('lb-firstColor', '#cc0000', 'input'); await fire('lb-firstScale', '1.5', 'input'); await fire('lb-lineSpacing', '1.4', 'input');
+  await fire('lb-auto', true); await fire('lb-auto', false);
+  await fire('lb-textAlign', 'center'); await fire('lb-valign', 'top'); await fire('lb-pad', '2', 'input'); await fire('lb-size', '9', 'input');
+  await fire('lb-copies', '3', 'input'); await fire('lb-start', '4', 'input'); await fire('lb-repeat', true); await fire('lb-outline', true);
+  await fire('lb-unit', 'in'); await fire('lb-unit', 'mm');
   $('.sheet-canvas').dispatchEvent(new FakeEvent('click', { clientX: 10, clientY: 10, bubbles: true })); await settle();
-  const pr = $$('.lb button').find((b) => /^Print…$/.test(b.textContent.trim()) || /Print…/.test(b.textContent)); if (pr && !pr.disabled) { pr.click(); await settle(); }
+  // presets fill the form in
+  const chips = $$('.lb .chip-wrap .chip');
+  if (chips.length < 2) problems.push(`expected shipped presets, got ${chips.length}`);
+  else {
+    chips[0].click(); await settle();
+    if (el('lb-kind').value !== 'pack' || !el('lb-pack').value) problems.push(`the first preset should pick a pack, got kind=${el('lb-kind').value} pack=${el('lb-pack').value}`);
+    chips[chips.length - 1].click(); await settle();
+    if (el('lb-kind').value !== 'size') problems.push(`the last preset should switch to a plain sheet, got ${el('lb-kind').value}`);
+    if (el('lb-width').value !== '40' || el('lb-height').value !== '40') problems.push(`a preset did not set the label size: ${el('lb-width').value} x ${el('lb-height').value}`);
+    if (el('lb-shape').value !== 'ellipse') problems.push(`a preset did not set the shape: ${el('lb-shape').value}`);
+    if (el('lb-sizepick').value === '') problems.push('the common sizes list should show the 40 mm size after a preset');
+  }
+  const save = $$('button').find((b) => /Save these settings/.test(b.textContent)); save.click(); await settle();
+  typeInto(el('lb-preset-name'), 'Mine'); await settle();
+  const go = $$('dialog button').find((b) => b.textContent.trim() === 'Save preset'); go.click(); await settle();
+  const pr = $$('.lb button').find((b) => /Preview and print/.test(b.textContent)); if (pr && !pr.disabled) { pr.click(); await settle(); }
   const dl = $$('.lb button').find((b) => /Download PDF/.test(b.textContent)); if (dl && !dl.disabled) { dl.click(); await settle(); }
   for (const s of subs) s(PRINTER);
   await settle();

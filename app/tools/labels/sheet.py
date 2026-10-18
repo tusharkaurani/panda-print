@@ -1,7 +1,12 @@
-"""Label sheets: where each label sits on the paper, what goes on it, and how the text is set.
+"""Label sheets: where each label sits on the paper, what goes on it, and how it looks.
 
 Pure functions, lengths in millimetres (text sizes in points), origin at the page's top-left, y growing downwards.
 The same numbers draw the live preview and write the PDF.
+
+Two ways to place the labels:
+  * a label pack (an Avery-style sheet, or your own measurements): fixed positions on a fixed paper size;
+  * by label size: a plain sheet of stickers with no printed grid, filled by the same layout rules as the
+    Passport Sheet Maker (as many as fit, a grid, or a number; margins, gap, orientation, part of the page).
 """
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.tools.labels import fonts
+from app.tools.photosheet import layout as photo_layout
 
 MM_PER_PT = 25.4 / 72.0
 MAX_LABELS = 5000       # after copies are counted
@@ -18,64 +24,102 @@ MAX_SHEETS = 100
 MAX_SOURCE_CHARS = 400_000
 MAX_ROWS = 2000
 MIN_SIZE, MAX_SIZE, SIZE_STEP = 5.0, 24.0, 0.5
-LINE_HEIGHT = 1.2       # of the text size
-BASELINE = 0.9          # of the text size, from the top of a line
 MAX_PAD = 20.0
 PAPERS = {"a4": (210.0, 297.0), "letter": (215.9, 279.4)}
+SHAPES = ("rect", "rounded", "ellipse")
+POSITIONS = ("top", "left", "background")
+INSET_ELLIPSE = 0.7071  # the rectangle inside an ellipse that touches it at the corners: sqrt(2)/2 of each side
+
+# Common label sizes for plain sheets: (name, width mm, height mm, shape). A starting point, like the passport sizes.
+SIZES = [
+    ("25 mm circle", 25.0, 25.0, "ellipse"), ("38 mm circle", 38.0, 38.0, "ellipse"), ("40 mm circle", 40.0, 40.0, "ellipse"),
+    ("50 mm circle", 50.0, 50.0, "ellipse"), ("2 in circle", 50.8, 50.8, "ellipse"), ("3 in circle", 76.2, 76.2, "ellipse"),
+    ("40 × 40 mm square", 40.0, 40.0, "rounded"), ("50 × 50 mm square", 50.0, 50.0, "rounded"), ("2 × 2 in square", 50.8, 50.8, "rounded"),
+    ("50 × 30 mm", 50.0, 30.0, "rounded"), ("60 × 40 mm", 60.0, 40.0, "rounded"), ("70 × 35 mm", 70.0, 35.0, "rounded"),
+    ("89 × 36 mm (address)", 89.0, 36.0, "rounded"), ("99.1 × 38.1 mm (2 across, A4)", 99.1, 38.1, "rounded"), ("99.1 × 67.7 mm (2 across, A4)", 99.1, 67.7, "rounded"),
+    ("63.5 × 38.1 mm (3 across, A4)", 63.5, 38.1, "rounded"), ("38.1 × 21.2 mm (5 across, A4)", 38.1, 21.2, "rounded"),
+    ("2⅝ × 1 in (Address, Letter)", 66.675, 25.4, "rounded"), ("4 × 2 in (shipping)", 101.6, 50.8, "rounded"), ("4 × 3⅓ in (shipping)", 101.6, 84.667, "rounded"),
+    ("3 × 2 in", 76.2, 50.8, "rounded"), ("1¾ × ½ in (return address)", 44.45, 12.7, "rounded"),
+]
 
 
 class SheetError(ValueError):
     """The request can't be laid out; the message is written for the person using the form."""
 
 
-@dataclass(frozen=True)
+@dataclass
 class Sheet:
+    """Where the labels of one sheet sit. `paper_w` x `paper_h` is the page in the direction the labels are laid out
+    (a plain sheet can be turned to landscape)."""
     paper_w: float
     paper_h: float
-    cols: int
-    rows: int
+    cells: list[dict]
     width: float
     height: float
-    left: float
-    top: float
-    gap_x: float
-    gap_y: float
-    radius: float = 0.0
+    cols: int = 0
+    rows: int = 0
+    orientation: str = "portrait"
+    region: dict = field(default_factory=dict)
+    area: str = "full"
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def per_sheet(self) -> int:
-        return self.cols * self.rows
-
-    def cells(self) -> list[dict]:
-        return [{"x": round(self.left + c * (self.width + self.gap_x), 3), "y": round(self.top + r * (self.height + self.gap_y), 3),
-                 "w": self.width, "h": self.height} for r in range(self.rows) for c in range(self.cols)]
+        return len(self.cells)
 
 
-def make_sheet(paper_w: float, paper_h: float, cols, rows, width, height, left, top, gap_x=0.0, gap_y=0.0, radius=0.0) -> Sheet:
+def _number(name: str, v) -> float:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or abs(v) > 1000:
+        raise SheetError(f"The {name} must be a number.")
+    return float(v)
+
+
+def pack_sheet(paper_w, paper_h, cols, rows, width, height, left, top, gap_x=0.0, gap_y=0.0) -> Sheet:
+    """A label pack: fixed places (the sheet's own die cuts) on a portrait page."""
     for name, v in (("columns", cols), ("rows", rows)):
         if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 30:
             raise SheetError(f"The number of {name} must be a whole number from 1 to 30.")
-    nums = {"paper width": paper_w, "paper height": paper_h, "label width": width, "label height": height, "left margin": left,
-            "top margin": top, "gap across": gap_x, "gap down": gap_y, "corner radius": radius}
-    for name, v in nums.items():
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or abs(v) > 1000:
-            raise SheetError(f"The {name} must be a number.")
+    paper_w, paper_h, width, height, left, top, gap_x, gap_y = (_number(n, v) for n, v in (
+        ("paper width", paper_w), ("paper height", paper_h), ("label width", width), ("label height", height), ("left margin", left),
+        ("top margin", top), ("gap across", gap_x), ("gap down", gap_y)))
     pw, ph = min(paper_w, paper_h), max(paper_w, paper_h)
     if not (40 <= pw and ph <= 500):
         raise SheetError("The paper must be between 40 and 500 mm.")
     if not (5 <= width <= 300 and 5 <= height <= 300):
         raise SheetError("A label must be between 5 and 300 mm each way.")
-    if min(left, top, gap_x, gap_y, radius) < 0 or max(gap_x, gap_y) > 50:
+    if min(left, top, gap_x, gap_y) < 0 or max(gap_x, gap_y) > 50:
         raise SheetError("Margins and gaps can't be negative, and a gap is at most 50 mm.")
-    sheet = Sheet(pw, ph, cols, rows, float(width), float(height), float(left), float(top), float(gap_x), float(gap_y),
-                  float(min(radius, width / 2, height / 2)))
     need_w = left + cols * width + (cols - 1) * gap_x
     need_h = top + rows * height + (rows - 1) * gap_y
     if need_w > pw + 0.01:
         raise SheetError(f"{cols} labels across need {need_w:.1f} mm, but the paper is {pw:g} mm wide. Make the labels narrower or use fewer columns.")
     if need_h > ph + 0.01:
         raise SheetError(f"{rows} rows of labels need {need_h:.1f} mm, but the paper is {ph:g} mm tall. Make the labels shorter or use fewer rows.")
-    return sheet
+    cells = [{"x": round(left + c * (width + gap_x), 3), "y": round(top + r * (height + gap_y), 3), "w": width, "h": height}
+             for r in range(rows) for c in range(cols)]
+    return Sheet(pw, ph, cells, width, height, cols, rows, "portrait", {"x": 0.0, "y": 0.0, "w": pw, "h": ph}, "full")
+
+
+def size_sheet(paper_w, paper_h, width, height, margin=5.0, gap=2.0, mode="fill", cols=0, rows=0, count=0, orientation="auto",
+               align="center", area="full", min_margin=0.0) -> Sheet:
+    """A plain sheet of stickers (no printed grid): as many labels of this size as fit, a grid, or a number, by the same rules
+    as the Passport Sheet Maker."""
+    nums = [_number(n, v) for n, v in (("paper width", paper_w), ("paper height", paper_h), ("label width", width), ("label height", height), ("gap", gap))]
+    m = margin if isinstance(margin, (list, tuple)) else [margin] * 4
+    if len(m) != 4:
+        raise SheetError("The margins must be a number, or four numbers.")
+    margins = tuple(_number("margin", v) for v in m)
+    for name, v in (("cols", cols), ("rows", rows), ("count", count)):
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise SheetError(f"The {name} must be a whole number.")
+    try:
+        lay = photo_layout.compute(photo_layout.Request(
+            paper_w=min(nums[0], nums[1]), paper_h=max(nums[0], nums[1]), photo_w=nums[2], photo_h=nums[3], margin=margins, gap=nums[4],
+            mode=mode, cols=cols, rows=rows, count=count, orientation=orientation, align=align, min_margin=min_margin, area=area))
+    except photo_layout.LayoutError as e:
+        raise SheetError(str(e).replace("photos", "labels").replace("photo", "label").replace("Photo", "Label")) from None
+    warnings = [w.replace("photos", "labels").replace("photo", "label") for w in lay.warnings]
+    return Sheet(lay.page_w, lay.page_h, lay.cells, nums[2], nums[3], lay.cols, lay.rows, lay.orientation, lay.region, lay.area, warnings)
 
 
 # ------------------------------------------------------------------ what goes on the labels
@@ -151,15 +195,112 @@ def labels_from_csv(text: str, template: str) -> tuple[list[list[str]], list[str
     return out, headers
 
 
-# ------------------------------------------------------------------ setting the text
+# ------------------------------------------------------------------ how a label looks
+_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def clean_color(value, label: str, allow_none: bool = True) -> str | None:
+    if value in (None, "") and allow_none:
+        return None
+    if not isinstance(value, str) or not _COLOR.match(value):
+        raise SheetError(f"{label} must be a colour like #1a2b3c.")
+    return value.lower()
+
+
+@dataclass
+class Logo:
+    """A picture on every label (the file itself is only needed for the PDF; the layout needs its shape)."""
+    width: int
+    height: int
+    position: str = "top"      # top | left | background
+    pct: float = 30.0          # of the label's height (top) or width (left)
+
+
 @dataclass
 class Style:
-    size: float | None = None     # points; None = the largest that fits every label
+    size: float | None = 11.0     # points; None = the largest that fits every label
     align: str = "left"           # left | center | right
     valign: str = "middle"        # top | middle
+    family: str = "sans"          # sans | serif | mono
     bold: bool = False
+    italic: bool = False
     first_bold: bool = False
+    first_scale: float = 1.0      # the first line this many times larger
+    first_color: str | None = None
+    color: str = "#000000"
+    line_spacing: float = 1.2     # of the text size
     pad: float = 2.0              # mm inside each label
+    shape: str = "rect"           # rect | rounded | ellipse
+    radius: float = 2.0           # mm, for rounded
+    fill: str | None = None       # background colour
+    border: str | None = None
+    border_width: float = 0.3     # mm
+    logo: Logo | None = None
+
+
+def check_style(style: Style, sheet: Sheet) -> None:
+    if style.size is not None and not MIN_SIZE <= style.size <= 72:
+        raise SheetError("The text size must be between 5 and 72 points.")
+    if style.align not in ("left", "center", "right") or style.valign not in ("top", "middle"):
+        raise SheetError("Choose left, centre or right, and top or middle.")
+    if style.family not in fonts.FAMILIES:
+        raise SheetError("Choose a sans-serif, serif or typewriter font.")
+    if not 1.0 <= style.first_scale <= 3.0:
+        raise SheetError("The first line can be 1 to 3 times larger.")
+    if not 1.0 <= style.line_spacing <= 2.0:
+        raise SheetError("The line spacing must be from 1 to 2.")
+    if not 0 <= style.pad <= MAX_PAD or style.pad * 2 >= min(sheet.width, sheet.height):
+        raise SheetError("The space inside a label is too big for the label.")
+    if style.shape not in SHAPES:
+        raise SheetError("Choose square corners, rounded corners, or a circle or oval.")
+    if not 0 <= style.radius <= 50:
+        raise SheetError("The corner rounding must be from 0 to 50 mm.")
+    if not 0 <= style.border_width <= 5:
+        raise SheetError("The border width must be from 0 to 5 mm.")
+    if style.logo and (style.logo.position not in POSITIONS or not 10 <= style.logo.pct <= 70):
+        raise SheetError("The logo goes at the top, at the left or behind the text, and takes 10 to 70 percent.")
+
+
+def shape_inset(style: Style, w: float, h: float) -> float:
+    """How far text must stay in from a label's edge so a rounded label's corners don't clip it (mm, each side)."""
+    if style.shape == "rounded":
+        return min(style.radius, w / 2, h / 2) * 0.29
+    return 0.0
+
+
+def text_box(cell: dict, style: Style) -> tuple[dict, dict | None]:
+    """The rectangle a label's text may use (inside the shape and the padding), and where its logo goes."""
+    x, y, w, h = cell["x"], cell["y"], cell["w"], cell["h"]
+    if style.shape == "ellipse":
+        ix, iy = w * (1 - INSET_ELLIPSE) / 2, h * (1 - INSET_ELLIPSE) / 2
+    else:
+        ix = iy = shape_inset(style, w, h)
+    bx, by, bw, bh = x + ix, y + iy, w - 2 * ix, h - 2 * iy
+    logo = None
+    if style.logo and style.logo.position == "top":
+        used = bh * style.logo.pct / 100
+        logo = {"x": bx + style.pad, "y": by + style.pad, "w": bw - 2 * style.pad, "h": used - style.pad}
+        by, bh = by + used, bh - used
+    elif style.logo and style.logo.position == "left":
+        used = bw * style.logo.pct / 100
+        logo = {"x": bx + style.pad, "y": by + style.pad, "w": used - style.pad, "h": bh - 2 * style.pad}
+        bx, bw = bx + used, bw - used
+    elif style.logo:
+        logo = {"x": x, "y": y, "w": w, "h": h, "cover": True}
+    return {"x": bx + style.pad, "y": by + style.pad, "w": max(bw - 2 * style.pad, 0.1), "h": max(bh - 2 * style.pad, 0.1)}, logo
+
+
+def fit_logo(box: dict, logo: Logo) -> dict:
+    """The picture drawn inside `box`: all of it, centred (`contain`), or for a background cropped to cover the box."""
+    ar = logo.width / logo.height
+    if box.get("cover"):
+        w = max(box["w"], box["h"] * ar)
+        h = w / ar
+    else:
+        w = min(box["w"], box["h"] * ar)
+        h = w / ar
+    return {"x": round(box["x"] + (box["w"] - w) / 2, 3), "y": round(box["y"] + (box["h"] - h) / 2, 3), "w": round(w, 3), "h": round(h, 3),
+            "cover": bool(box.get("cover"))}
 
 
 @dataclass
@@ -168,62 +309,65 @@ class Result:
     pages: list[list[dict]]
     size: float
     labels: int
+    style: Style
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self, page: int = 1) -> dict:
         page = min(max(page, 1), len(self.pages))
+        st = self.style
         return {"page_w": self.sheet.paper_w, "page_h": self.sheet.paper_h, "per_sheet": self.sheet.per_sheet, "sheets": len(self.pages),
-                "page": page, "size": self.size, "labels": self.labels, "radius": self.sheet.radius,
-                "cells": self.pages[page - 1], "warnings": self.warnings}
+                "page": page, "size": self.size, "labels": self.labels, "cells": self.pages[page - 1], "warnings": self.warnings,
+                "orientation": self.sheet.orientation, "region": self.sheet.region, "area": self.sheet.area, "cols": self.sheet.cols, "rows": self.sheet.rows,
+                "look": {"shape": st.shape, "radius": min(st.radius, self.sheet.width / 2, self.sheet.height / 2), "fill": st.fill, "border": st.border,
+                         "border_width": st.border_width, "family": st.family, "italic": st.italic, "color": st.color}}
 
 
-def _set(label: list[str], style: Style, size: float, w_mm: float, h_mm: float) -> tuple[list[tuple[str, bool]], bool, bool]:
-    """The wrapped lines of one label at a size: (text, bold) pairs, whether it fits the height, whether a word had to be split."""
-    inner_w = (w_mm - 2 * style.pad) / MM_PER_PT
-    lines: list[tuple[str, bool]] = []
+def _font(style: Style, i: int) -> str:
+    return fonts.font_name(style.family, style.bold or (style.first_bold and i == 0), style.italic)
+
+
+def _set(label: list[str], style: Style, size: float, box: dict) -> tuple[list[dict], bool, bool]:
+    """The wrapped lines of one label at a size: [{t, font, size, color, bold}], whether they fit the box's height, and
+    whether a word had to be split."""
+    inner_w = box["w"] / MM_PER_PT
+    lines: list[dict] = []
     split = False
     for i, para in enumerate(label):
-        bold = style.bold or (style.first_bold and i == 0)
-        for ln in fonts.wrap(para, size, inner_w, bold):
-            lines.append((ln, bold))
-        words = [x for x in para.split(" ") if x]
-        if any(fonts.text_width(x, size, bold) > inner_w for x in words):
+        sz = size * (style.first_scale if i == 0 else 1.0)
+        font = _font(style, i)
+        for ln in fonts.wrap(para, sz, inner_w, font):
+            lines.append({"t": ln, "font": font, "size": sz, "bold": "Bold" in font, "color": (style.first_color or style.color) if i == 0 else style.color})
+        if any(fonts.text_width(x, sz, font) > inner_w for x in para.split(" ") if x):
             split = True
-    fits = len(lines) * size * LINE_HEIGHT * MM_PER_PT <= h_mm - 2 * style.pad + 1e-9
-    return lines, fits, split
+    height = sum(ln["size"] * style.line_spacing * MM_PER_PT for ln in lines)
+    return lines, height <= box["h"] + 1e-9, split
 
 
-def choose_size(labels: list[list[str]], style: Style, w_mm: float, h_mm: float) -> tuple[float, int]:
+def choose_size(labels: list[list[str]], style: Style, box: dict) -> tuple[float, int]:
     """One size for every label. Returns the size and how many labels still don't fit at it."""
+    ok = lambda lb, s: (lambda r: r[1] and not r[2])(_set(lb, style, s, box))
     if style.size is not None:
         size = style.size
     else:
-        unique = {tuple(lb): lb for lb in labels}.values()
+        unique = list({tuple(lb): lb for lb in labels}.values())
         size = MIN_SIZE
         s = MAX_SIZE
         while s >= MIN_SIZE:
-            if all((lambda r: r[1] and not r[2])(_set(lb, style, s, w_mm, h_mm)) for lb in unique):
+            if all(ok(lb, s) for lb in unique):
                 size = s
                 break
             s -= SIZE_STEP
-    bad = sum(1 for lb in labels if not (lambda r: r[1] and not r[2])(_set(lb, style, size, w_mm, h_mm)))
-    return size, bad
+    return size, sum(1 for lb in labels if not ok(lb, size))
 
 
 def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1, fill: bool = False, start: int = 1) -> Result:
-    if not 1 <= copies <= 100:
+    if isinstance(copies, bool) or not isinstance(copies, int) or not 1 <= copies <= 100:
         raise SheetError("Copies of each label must be a whole number from 1 to 100.")
     cap = sheet.per_sheet
     if isinstance(start, bool) or not isinstance(start, int) or not 1 <= start <= cap:
         raise SheetError(f"Start at a place from 1 to {cap}.")
-    if style.size is not None and not MIN_SIZE <= style.size <= 72:
-        raise SheetError("The text size must be between 5 and 72 points.")
-    if not 0 <= style.pad <= MAX_PAD or style.pad * 2 >= min(sheet.width, sheet.height):
-        raise SheetError("The space inside a label is too big for the label.")
-    if style.align not in ("left", "center", "right") or style.valign not in ("top", "middle"):
-        raise SheetError("Choose left, centre or right, and top or middle.")
-    warnings: list[str] = []
-    # clean the text for the font, remembering what couldn't be shown
+    check_style(style, sheet)
+    warnings: list[str] = list(sheet.warnings)
     lost: list[str] = []
     clean: list[list[str]] = []
     for lb in labels:
@@ -234,16 +378,12 @@ def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1
             lost += [c for c in bad if c not in lost]
         clean.append(row)
     if lost:
-        shown = " ".join(lost[:8])
-        warnings.append(f"These characters can't be printed in this font and show as “?”: {shown}")
+        warnings.append(f"These characters can't be printed in this font and show as “?”: {' '.join(lost[:8])}")
     expanded = [lb for lb in clean for _ in range(copies)]
-    if not expanded:
-        expanded = []
     if fill and expanded:
         total_pages = -(-(start - 1 + len(expanded)) // cap)
         target = total_pages * cap - (start - 1)
-        i = 0
-        base = list(expanded)
+        base, i = list(expanded), 0
         while len(expanded) < target:
             expanded.append(base[i % len(base)])
             i += 1
@@ -252,41 +392,48 @@ def compute(sheet: Sheet, labels: list[list[str]], style: Style, copies: int = 1
     n_sheets = max(1, -(-(start - 1 + len(expanded)) // cap))
     if n_sheets > MAX_SHEETS:
         raise SheetError(f"That needs {n_sheets} sheets; the most is {MAX_SHEETS} at a time.")
-    size, bad = choose_size(expanded, style, sheet.width, sheet.height) if expanded else (style.size or 10.0, 0)
+    box, _logo = text_box(sheet.cells[0], style)
+    size, bad = choose_size(expanded, style, box) if expanded else (style.size or 10.0, 0)
     if bad:
-        what = "has" if bad == 1 else "have"
-        warnings.append(f"{bad} label{'s' if bad != 1 else ''} {what} more text than fits at {size:g} pt. "
+        warnings.append(f"{bad} label{'s' if bad != 1 else ''} {'has' if bad == 1 else 'have'} more text than fits at {size:g} pt. "
                         f"Use a smaller size, shorter text, or a bigger label.")
-    grid = sheet.cells()
     slots = [None] * (start - 1) + expanded
     pages: list[list[dict]] = []
     for p in range(n_sheets):
         page = []
-        for k, cell in enumerate(grid):
+        for k, cell in enumerate(sheet.cells):
             idx = p * cap + k
             label = slots[idx] if idx < len(slots) else None
             entry = dict(cell)
             entry["lines"] = _place(cell, label, style, size) if label is not None else []
+            entry["used"] = label is not None  # empty places (before the start, after the last label) get no shape or picture
+            if style.logo and label is not None:
+                entry["logo"] = fit_logo(text_box(cell, style)[1], style.logo)
             page.append(entry)
         pages.append(page)
-    return Result(sheet, pages, size, len(expanded), warnings)
+    return Result(sheet, pages, size, len(expanded), style, warnings)
 
 
 def _place(cell: dict, label: list[str], style: Style, size: float) -> list[dict]:
-    lines, _fits, _split = _set(label, style, size, cell["w"], cell["h"])
-    lh = size * LINE_HEIGHT * MM_PER_PT
-    block = len(lines) * lh
-    top = cell["y"] + style.pad
+    box, _logo = text_box(cell, style)
+    lines, _fits, _split = _set(label, style, size, box)
+    heights = [ln["size"] * style.line_spacing * MM_PER_PT for ln in lines]
+    block = sum(heights)
+    top = box["y"]
     if style.valign == "middle":
-        top = max(cell["y"], cell["y"] + (cell["h"] - block) / 2)
+        top = max(cell["y"], box["y"] + (box["h"] - block) / 2)
     out = []
-    for i, (text, bold) in enumerate(lines):
-        width = fonts.text_width(text, size, bold) * MM_PER_PT
+    y = top
+    for ln, lh in zip(lines, heights):
+        width = fonts.text_width(ln["t"], ln["size"], ln["font"]) * MM_PER_PT
         if style.align == "left":
-            x = cell["x"] + style.pad
+            x = box["x"]
         elif style.align == "center":
-            x = cell["x"] + (cell["w"] - width) / 2
+            x = box["x"] + (box["w"] - width) / 2
         else:
-            x = cell["x"] + cell["w"] - style.pad - width
-        out.append({"t": text, "x": round(x, 3), "y": round(top + i * lh + size * BASELINE * MM_PER_PT, 3), "bold": bold})
+            x = box["x"] + box["w"] - width
+        baseline = y + ((style.line_spacing - 1) / 2 + 0.8) * ln["size"] * MM_PER_PT
+        out.append({"t": ln["t"], "x": round(x, 3), "y": round(baseline, 3), "bold": ln["bold"], "size": round(ln["size"], 3),
+                    "font": ln["font"], "color": ln["color"]})
+        y += lh
     return out

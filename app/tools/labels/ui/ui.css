@@ -8,6 +8,7 @@
 .lb .actions.center { justify-content: center; }
 .lb .lb-head { display: flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 680; letter-spacing: -.01em; margin: 0; }
 .lb .lb-head svg { box-sizing: content-box; padding: 6px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.lb .three { display: grid; grid-template-columns: 1fr 1fr 96px; gap: 12px; align-items: start; }
 .lb .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 .lb .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 14px; }
 .lb .hint { margin: 0; }
@@ -22,7 +23,8 @@
 .lb .adjust[open] > summary svg { transform: rotate(180deg); }
 .lb .adjust-body { display: grid; gap: 12px; padding: 12px 0 2px; }
 .lb .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.lb .chip { padding: 5px 11px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font: 600 13px var(--mono); cursor: pointer; }
+.lb .chip { padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); font: 600 13.5px var(--font); cursor: pointer; }
+.lb .chip.col { padding: 5px 11px; font: 600 13px var(--mono); }
 .lb .chip:hover { border-color: var(--accent); }
 
 .lb .sheet-wrap { display: grid; place-items: center; padding: 18px; border-radius: 14px; background: var(--surface-2); }
@@ -45,3 +47,14 @@
   .lb .narrow-only { display: grid; }
 }
 @media (max-width: 520px) { .lb .two { grid-template-columns: 1fr; } .lb .lb-card { padding: 16px; } }
+
+.lb .colour { width: 52px; height: 40px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; }
+.lb .colour-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lb .checks { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.lb .chip-wrap { display: inline-flex; align-items: center; }
+.lb .chip-wrap.mine .chip { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 10px; }
+.lb .chip-x { display: grid; place-items: center; width: 28px; align-self: stretch; border: 1px solid var(--line); border-left: 0; border-radius: 0 99px 99px 0; background: var(--surface); color: var(--muted); cursor: pointer; }
+.lb .chip-x:hover { color: var(--bad); border-color: var(--bad); }
+@keyframes lbflash { from { background: color-mix(in srgb, var(--accent) 28%, transparent); } to { background: transparent; } }
+.lb .flash { animation: lbflash 1.6s ease-out; border-radius: 10px; }
+@media (max-width: 520px) { .lb .three { grid-template-columns: 1fr; } }

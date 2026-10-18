@@ -27,7 +27,7 @@ needs about 40 MB of memory.
 - **Print now:** shows the page that will print first, then asks you to confirm.
 - **Several printers:** add as many as you like, each with its own settings and history. A first-run wizard finds your printer on the network.
 - **Passport Sheet Maker** (inside Print Utilities): lay out copies of one or several edited passport or ID photos at an exact size (mm, cm or inches) on the paper you choose, with per-photo cropping, the option to use only half of the paper, a live preview that stays in view, and presets for the jobs you repeat, then download a PDF or print it at actual size with the paper type and quality your printer offers.
-- **Label Sheet Maker** (inside Print Utilities): put names, addresses or any text onto the labels of a sticker sheet (Avery-style packs for A4 and Letter, or your own grid), typed or from a spreadsheet (CSV), with a live preview, a part-used-sheet start, then download a PDF or print it at actual size.
+- **Label Sheet Maker** (inside Print Utilities): put names, addresses or any text on the labels of an Avery-style pack or a plain sheet of stickers, typed or from a spreadsheet (CSV), styled with shapes, colours, borders, fonts and a logo, with presets, a live preview, a part-used-sheet start, then download a PDF or print it at actual size.
 - **Quick links and Print Utilities:** links to each printer's own pages, plus a Print Utilities tab with the built-in photo tool and links to free online tools (passport photos, worksheets, calendars, posters).
 - **Careful by design:** no cloud, no CDN, no accounts. Printing is rate-limited and requests are CSRF-protected. Light and dark themes, and a phone-friendly layout.
 
